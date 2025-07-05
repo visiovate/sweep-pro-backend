@@ -6,7 +6,6 @@ const jwt = require('jsonwebtoken');
 
 const prisma = new PrismaClient();
 
-// Register route
 router.post('/register', async (req, res) => {
   try {
     const { email, password, name } = req.body;
