@@ -1,0 +1,817 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://neondb_owner:npg_jBQxq3AfopN5@ep-bold-hall-a4oqwqjg-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  role          UserRole  @default(CUSTOMER)
+  name          String
+  phone         String    @unique
+  address       String?
+  latitude      Float?
+  longitude     Float?
+  status        UserStatus @default(ACTIVE)
+  profileImage  String?
+  languagePreferences String[] @default([])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Profile relations
+  customerProfile CustomerProfile?
+  maidProfile    MaidProfile?
+  adminProfile   AdminProfile?
+
+  // Booking relations
+  customerBookings Booking[] @relation("CustomerBookings")
+  maidBookings    Booking[] @relation("MaidBookings")
+  
+  // Communication relations
+  feedbacks     Feedback[]
+  notifications Notification[]
+  reportedIssues Issue[] @relation("ReportedIssues")
+  resolvedIssues Issue[] @relation("ResolvedIssues")
+  
+  // Payment relations
+  payments      Payment[] @relation("CustomerPayments")
+  
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+}
+
+enum UserRole {
+  CUSTOMER
+  MAID
+  FLOATING_MAID
+  ADMIN
+  SUPERVISOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BLACKLISTED
+  PENDING_VERIFICATION
+}
+
+model CustomerProfile {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferences   Json?
+  emergencyContact String?
+  specialInstructions String?
+  subscription  Subscription?
+  taskCustomizations TaskCustomization[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model MaidProfile {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills        String[]
+  languages     String[]
+  availability  Json
+  rating        Float     @default(0)
+  totalRatings  Int       @default(0)
+  status        MaidStatus @default(PENDING_VERIFICATION)
+  isFloatingMaid Boolean   @default(false)
+  maxDailyBookings Int     @default(3)
+  serviceRadius Float     @default(2.0) // in km
+  currentLatitude Float?
+  currentLongitude Float?
+  lastLocationUpdate DateTime?
+  
+  // Performance tracking
+  completedBookings Int     @default(0)
+  cancelledBookings Int     @default(0)
+  attendanceStreak  Int     @default(0)
+  performanceScore  Float   @default(0)
+  
+  // Financial
+  hourlyRate       Float?
+  commissionRate   Float   @default(0.15)
+  
+  // Relations
+  zones         MaidZone[]
+  documents     MaidDocument[]
+  attendance    Attendance[]
+  performanceMetrics PerformanceMetric[]
+  locationHistory LocationHistory[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([status])
+  @@index([isFloatingMaid])
+  @@index([rating])
+}
+
+enum MaidStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BLACKLISTED
+  ON_LEAVE
+}
+
+model Zone {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  boundaries  Json      // GeoJSON polygon
+  isActive    Boolean   @default(true)
+  maxMaids    Int       @default(10)
+  
+  // Relations
+  maidZones   MaidZone[]
+  bookings    Booking[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([name])
+}
+
+model MaidZone {
+  id        String  @id @default(uuid())
+  maidId    String
+  zoneId    String
+  isPrimary Boolean @default(false)
+  
+  maid      MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
+  zone      Zone        @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([maidId, zoneId])
+  @@index([maidId])
+  @@index([zoneId])
+}
+
+model Service {
+  id            String    @id @default(uuid())
+  name          String
+  description   String
+  category      ServiceCategory
+  baseDuration  Int       // Duration in minutes
+  basePrice     Float
+  isActive      Boolean   @default(true)
+  
+  // Service configuration
+  bufferTime    Int       @default(30) // minutes between services
+  maxDailyBookings Int    @default(50)
+  
+  tasks         Task[]
+  bookings      Booking[]
+  servicePlans  ServicePlan[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([category])
+  @@index([isActive])
+}
+
+enum ServiceCategory {
+  CLEANING
+  DEEP_CLEANING
+  MAINTENANCE
+  SPECIAL_EVENT
+}
+
+model Task {
+  id            String    @id @default(uuid())
+  serviceId     String
+  service       Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  name          String
+  description   String
+  estimatedDuration Int   // Duration in minutes
+  isRequired    Boolean   @default(true)
+  order         Int       @default(0)
+  checklist     Json      // Array of checklist items
+  
+  // Multi-language support for instructions
+  instructionsMultiLang Json? // {"en": "Clean the floor", "hi": "फर्श साफ करें", "te": "నేలను శుభ్రం చేయండి"}
+  
+  taskCustomizations TaskCustomization[]
+  taskCompletions   TaskCompletion[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([serviceId])
+  @@index([order])
+}
+
+model TaskCustomization {
+  id           String  @id @default(uuid())
+  customerId   String
+  taskId       String
+  modifications Json   // Custom instructions or checklist modifications
+  isActive     Boolean @default(true)
+  
+  customer     CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  task         Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@unique([customerId, taskId])
+  @@index([customerId])
+}
+
+model Booking {
+  id            String    @id @default(uuid())
+  customerId    String
+  customer      User      @relation("CustomerBookings", fields: [customerId], references: [id])
+  maidId        String?
+  maid          User?     @relation("MaidBookings", fields: [maidId], references: [id])
+  serviceId     String
+  service       Service   @relation(fields: [serviceId], references: [id])
+  zoneId        String?
+  zone          Zone?     @relation(fields: [zoneId], references: [id])
+  
+  status        BookingStatus @default(PENDING)
+  priority      BookingPriority @default(NORMAL)
+  
+  // Scheduling
+  scheduledAt   DateTime
+  estimatedDuration Int   // in minutes
+  actualStartTime DateTime?
+  actualEndTime   DateTime?
+  completedAt   DateTime?
+  
+  // Location
+  serviceAddress String
+  serviceLatitude Float?
+  serviceLongitude Float?
+  
+  // Financial
+  totalAmount   Float
+  discount      Float     @default(0)
+  finalAmount   Float
+  
+  // Special instructions
+  specialInstructions String?
+  
+  // Relations
+  feedback      Feedback?
+  payment       Payment?
+  taskCompletions TaskCompletion[]
+  issues        Issue[]
+  rescheduleHistory RescheduleHistory[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([customerId])
+  @@index([maidId])
+  @@index([serviceId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([zoneId])
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+  NO_SHOW
+}
+
+enum BookingPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model RescheduleHistory {
+  id            String   @id @default(uuid())
+  bookingId     String
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  oldDateTime   DateTime
+  newDateTime   DateTime
+  reason        String
+  requestedBy   String   // USER_ID who requested
+  
+  createdAt     DateTime @default(now())
+  
+  @@index([bookingId])
+}
+
+model TaskCompletion {
+  id            String   @id @default(uuid())
+  bookingId     String
+  taskId        String
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  task          Task     @relation(fields: [taskId], references: [id])
+  
+  status        TaskStatus @default(PENDING)
+  completedAt   DateTime?
+  notes         String?
+  proofImages   String[] @default([])
+  timeSpent     Int?     // minutes
+  
+  // Customer verification without media
+  customerOtp   String?   // OTP sent to customer for verification
+  otpSentAt     DateTime?
+  otpVerifiedAt DateTime?
+  customerVerified Boolean @default(false)
+  verificationMethod VerificationMethod @default(PHOTO)
+  
+  // Alternative verification methods
+  customerSignature String? // Digital signature or pin
+  proximityVerified Boolean @default(false) // GPS-based verification
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@unique([bookingId, taskId])
+  @@index([bookingId])
+  @@index([taskId])
+}
+
+enum VerificationMethod {
+  PHOTO
+  VIDEO  
+  OTP
+  SIGNATURE
+  PROXIMITY
+  CUSTOMER_CONFIRMATION
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  ISSUE_REPORTED
+}
+
+model Feedback {
+  id            String    @id @default(uuid())
+  bookingId     String    @unique
+  booking       Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customerId    String
+  customer      User      @relation(fields: [customerId], references: [id])
+  
+  // Detailed ratings
+  overallRating    Int    // 1-5 rating
+  qualityRating    Int?   // 1-5 rating
+  punctualityRating Int?  // 1-5 rating
+  behaviorRating   Int?   // 1-5 rating
+  
+  comment       String?
+  improvements  String?
+  wouldRecommend Boolean?
+  
+  // Admin response
+  adminResponse String?
+  adminResponseAt DateTime?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([customerId])
+  @@index([overallRating])
+}
+
+model Payment {
+  id            String    @id @default(uuid())
+  bookingId     String    @unique
+  booking       Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customerId    String
+  customer      User      @relation("CustomerPayments", fields: [customerId], references: [id])
+  
+  amount        Float
+  discount      Float     @default(0)
+  tax           Float     @default(0)
+  finalAmount   Float
+  
+  status        PaymentStatus @default(PENDING)
+  paymentMethod PaymentMethod
+  gateway       String?   // razorpay, stripe, etc.
+  transactionId String?
+  gatewayResponse Json?
+  
+  // Refund details
+  refundAmount  Float?
+  refundReason  String?
+  refundedAt    DateTime?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([customerId])
+  @@index([status])
+  @@index([transactionId])
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  UPI
+  NET_BANKING
+  WALLET
+  CASH
+  BANK_TRANSFER
+}
+
+model Subscription {
+  id            String    @id @default(uuid())
+  customerId    String    @unique
+  customer      CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  planId        String
+  plan          ServicePlan @relation(fields: [planId], references: [id])
+  
+  status        SubscriptionStatus @default(ACTIVE)
+  startDate     DateTime
+  endDate       DateTime
+  
+  // Billing
+  billingCycle  BillingCycle @default(MONTHLY)
+  amount        Float
+  discount      Float        @default(0)
+  
+  // Auto renewal
+  autoRenew     Boolean      @default(true)
+  nextBillDate  DateTime?
+  
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  
+  @@index([status])
+  @@index([endDate])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  SUSPENDED
+  PENDING_PAYMENT
+}
+
+enum BillingCycle {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+model ServicePlan {
+  id            String    @id @default(uuid())
+  name          String    @unique
+  description   String
+  serviceId     String
+  service       Service   @relation(fields: [serviceId], references: [id])
+  
+  // Plan details
+  sessionsPerWeek Int
+  sessionsPerMonth Int
+  duration      Int       // in months
+  
+  // Pricing
+  basePrice     Float
+  discountPercent Float   @default(0)
+  finalPrice    Float
+  
+  isActive      Boolean   @default(true)
+  isPopular     Boolean   @default(false)
+  
+  subscriptions Subscription[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([serviceId])
+  @@index([isActive])
+}
+
+model MaidDocument {
+  id            String    @id @default(uuid())
+  maidId        String
+  maid          MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
+  
+  type          DocumentType
+  documentNumber String?
+  url           String
+  verified      Boolean   @default(false)
+  verifiedBy    String?
+  verifiedAt    DateTime?
+  expiryDate    DateTime?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([maidId])
+  @@index([type])
+  @@index([verified])
+}
+
+enum DocumentType {
+  AADHAR_CARD
+  PAN_CARD
+  VOTER_ID
+  DRIVING_LICENSE
+  PASSPORT
+  ADDRESS_PROOF
+  POLICE_VERIFICATION
+  MEDICAL_CERTIFICATE
+  BANK_ACCOUNT_PROOF
+  PHOTO
+}
+
+model Attendance {
+  id            String    @id @default(uuid())
+  maidId        String
+  maid          MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
+  
+  date          DateTime  @db.Date
+  checkIn       DateTime?
+  checkOut      DateTime?
+  checkInLocation Json?   // lat, lng
+  checkOutLocation Json?  // lat, lng
+  
+  status        AttendanceStatus @default(PRESENT)
+  hoursWorked   Float?
+  overtime      Float?    @default(0)
+  
+  // Admin adjustments
+  adminAdjusted Boolean   @default(false)
+  adminNotes    String?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@unique([maidId, date])
+  @@index([maidId])
+  @@index([date])
+  @@index([status])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  ON_LEAVE
+  SICK_LEAVE
+}
+
+model PerformanceMetric {
+  id            String    @id @default(uuid())
+  maidId        String
+  maid          MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
+  
+  month         Int
+  year          Int
+  
+  // Performance indicators
+  totalBookings      Int     @default(0)
+  completedBookings  Int     @default(0)
+  cancelledBookings  Int     @default(0)
+  averageRating      Float   @default(0)
+  onTimePercentage   Float   @default(0)
+  customerRetention  Float   @default(0)
+  
+  // Calculated scores
+  qualityScore       Float   @default(0)
+  reliabilityScore   Float   @default(0)
+  overallScore       Float   @default(0)
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@unique([maidId, month, year])
+  @@index([maidId])
+  @@index([year, month])
+}
+
+model LocationHistory {
+  id            String    @id @default(uuid())
+  maidId        String
+  maid          MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
+  
+  latitude      Float
+  longitude     Float
+  accuracy      Float?
+  timestamp     DateTime  @default(now())
+  
+  // Context
+  bookingId     String?
+  activity      LocationActivity @default(GENERAL)
+  
+  @@index([maidId])
+  @@index([timestamp])
+  @@index([bookingId])
+}
+
+enum LocationActivity {
+  GENERAL
+  TRAVELING_TO_CUSTOMER
+  AT_CUSTOMER_LOCATION
+  TRAVELING_BETWEEN_CUSTOMERS
+  BREAK
+  END_OF_DAY
+}
+
+model Notification {
+  id            String    @id @default(uuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type          NotificationType
+  title         String
+  message       String
+  data          Json?     // Additional data for the notification
+  
+  // Delivery tracking
+  read          Boolean   @default(false)
+  readAt        DateTime?
+  delivered     Boolean   @default(false)
+  deliveredAt   DateTime?
+  
+  // Scheduling
+  scheduledFor  DateTime?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([type])
+  @@index([read])
+  @@index([scheduledFor])
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMED
+  BOOKING_REMINDER
+  BOOKING_CANCELLED
+  MAID_ASSIGNED
+  MAID_ARRIVED
+  SERVICE_STARTED
+  SERVICE_COMPLETED
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  FEEDBACK_REQUEST
+  PROMOTION
+  SYSTEM_ALERT
+  ATTENDANCE_ALERT
+  PERFORMANCE_ALERT
+}
+
+model AdminProfile {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  permissions   Json      // Store admin permissions
+  department    String?
+  designation   String?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Issue {
+  id          String      @id @default(uuid())
+  bookingId   String
+  reportedBy  String
+  
+  type        IssueType
+  category    IssueCategory
+  priority    IssuePriority @default(MEDIUM)
+  status      IssueStatus   @default(OPEN)
+  
+  title       String
+  description String
+  
+  // Resolution
+  resolution  String?
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  
+  // Escalation
+  escalatedAt DateTime?
+  escalatedTo String?
+  
+  // Media
+  attachments String[]      @default([])
+  
+  booking     Booking       @relation(fields: [bookingId], references: [id])
+  reporter    User          @relation("ReportedIssues", fields: [reportedBy], references: [id])
+  resolver    User?         @relation("ResolvedIssues", fields: [resolvedBy], references: [id])
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([bookingId])
+  @@index([reportedBy])
+  @@index([resolvedBy])
+  @@index([status])
+  @@index([priority])
+}
+
+enum IssueType {
+  SERVICE_QUALITY
+  MAID_BEHAVIOR
+  TIMING_ISSUE
+  PAYMENT_ISSUE
+  TECHNICAL_ISSUE
+  SAFETY_CONCERN
+  DAMAGE_CLAIM
+  OTHER
+}
+
+enum IssueCategory {
+  CUSTOMER_COMPLAINT
+  MAID_COMPLAINT
+  SYSTEM_ISSUE
+  BILLING_ISSUE
+  SAFETY_INCIDENT
+}
+
+enum IssuePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  ESCALATED
+}
+
+// System Configuration Tables
+
+model SystemConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  type      ConfigType @default(STRING)
+  description String?
+  updatedBy String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([key])
+}
+
+enum ConfigType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  resource  String
+  resourceId String?
+  oldValues Json?
+  newValues Json?
+  ipAddress String?
+  userAgent String?
+  
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+}
