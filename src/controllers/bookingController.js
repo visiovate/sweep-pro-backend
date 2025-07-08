@@ -34,15 +34,46 @@ const createBooking = async (req, res) => {
       });
     }
 
+    // Check subscription status
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        customerId,
+        status: 'ACTIVE',
+        endDate: { gte: new Date() },
+      },
+      include: {
+        plan: true
+      }
+    });
+
+    if (!subscription) {
+      return res.status(403).json({
+        message: 'You need an active subscription to book a service'
+      });
+    }
+
+    // Get service details for pricing
+    const service = await prisma.service.findUnique({
+      where: { id: serviceId }
+    });
+
+    if (!service) {
+      return res.status(404).json({ message: 'Service not found' });
+    }
+
     // Create the booking
     const booking = await prisma.booking.create({
       data: {
         customerId,
         serviceId,
-        notes,
-        address,
+        specialInstructions: notes,
+        serviceAddress: address,
         status: 'PENDING',
-        scheduledAt
+        scheduledAt,
+        estimatedDuration: service.baseDuration,
+        totalAmount: subscription.plan.finalPrice / (subscription.plan.sessionsPerMonth || 1),
+        finalAmount: subscription.plan.finalPrice / (subscription.plan.sessionsPerMonth || 1),
+        discount: 0
       },
       include: {
         service: true,

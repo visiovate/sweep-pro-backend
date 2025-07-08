@@ -11,9 +11,9 @@ const auth = async (req, res, next) => {
       throw new Error();
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'test-secret');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
+      where: { id: decoded.userId || decoded.id },
     });
 
     if (!user) {
@@ -36,9 +36,9 @@ const authenticateToken = async (req, res, next) => {
       throw new Error();
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'test-secret');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
+      where: { id: decoded.userId || decoded.id },
     });
 
     if (!user) {
@@ -55,9 +55,12 @@ const authenticateToken = async (req, res, next) => {
 
 const authorizeAdmin = async (req, res, next) => {
   try {
+    console.log('User role check:', req.user?.role, 'User ID:', req.user?.id);
     if (req.user?.role !== 'ADMIN') {
+      console.log('Access denied - user role is:', req.user?.role);
       throw new Error();
     }
+    console.log('Admin access granted');
     next();
   } catch (error) {
     res.status(403).json({ error: 'Access denied. Admin privileges required.' });

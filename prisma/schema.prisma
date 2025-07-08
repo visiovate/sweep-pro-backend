@@ -173,6 +173,9 @@ model Service {
   bufferTime    Int       @default(30) // minutes between services
   maxDailyBookings Int    @default(50)
   
+  // Subscription service flag
+  isSubscriptionService Boolean @default(false)
+  
   tasks         Task[]
   bookings      Booking[]
   servicePlans  ServicePlan[]
@@ -182,6 +185,7 @@ model Service {
   
   @@index([category])
   @@index([isActive])
+  @@index([isSubscriptionService])
 }
 
 enum ServiceCategory {
@@ -272,6 +276,7 @@ model Booking {
   taskCompletions TaskCompletion[]
   issues        Issue[]
   rescheduleHistory RescheduleHistory[]
+  serviceOTP    ServiceOTP?
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -676,6 +681,7 @@ enum NotificationType {
   BOOKING_REMINDER
   BOOKING_CANCELLED
   MAID_ASSIGNED
+  SERVICE_ASSIGNED
   MAID_ARRIVED
   SERVICE_STARTED
   SERVICE_COMPLETED
@@ -795,6 +801,28 @@ enum ConfigType {
   NUMBER
   BOOLEAN
   JSON
+}
+
+model ServiceOTP {
+  id        String   @id @default(uuid())
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  startOTP  String?  // OTP for service start verification
+  endOTP    String?  // OTP for service completion verification
+  
+  startOTPGeneratedAt DateTime?
+  endOTPGeneratedAt   DateTime?
+  startOTPVerifiedAt  DateTime?
+  endOTPVerifiedAt    DateTime?
+  
+  startVerified Boolean @default(false)
+  endVerified   Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([bookingId])
 }
 
 model AuditLog {

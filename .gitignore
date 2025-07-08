@@ -30,3 +30,25 @@ coverage/
 # Prisma
 prisma/*.db
 prisma/migrations/ 
+
+# OS files
+Thumbs.db
+ehthumbs.db
+.Trash-*
+
+# npm cache
+.npm/
+
+# Editor swap files
+*~
+.*.swp
+.*.swo
+
+# Jest snapshots
+*.snap
+
+# Editor local history
+.history/
+
+# Prisma local SQLite DB (if used)
+prisma/dev.db 

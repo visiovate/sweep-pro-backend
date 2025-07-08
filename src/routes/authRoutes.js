@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, phone, address, role } = req.body;
     
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -27,7 +27,10 @@ router.post('/register', async (req, res) => {
       data: {
         email,
         password: hashedPassword,
-        name
+        name,
+        phone,
+        address,
+        role // This will default to CUSTOMER if not provided
       }
     });
 
@@ -44,7 +47,10 @@ router.post('/register', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        name: user.name
+        name: user.name,
+        phone: user.phone,
+        address: user.address,
+        role: user.role
       }
     });
   } catch (error) {

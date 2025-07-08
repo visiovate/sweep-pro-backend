@@ -6,22 +6,24 @@ const {
   getMaidById,
   updateMaidProfile,
   updateMaidStatus,
-  deleteMaid
+  deleteMaid,
+  verifyStartOTP,
+  completeService,
+  getMaidAssignments,
+  generateEndOTP
 } = require('../controllers/maidController');
 
-// Get all maids (admin only)
-router.get('/', authenticateToken, authorizeAdmin, getAllMaids);
-
-// Get a maid by ID (admin only)
-router.get('/:id', authenticateToken, authorizeAdmin, getMaidById);
-
-// Update own maid profile (maid only)
+// Maid service workflow routes (put specific routes first)
+router.get('/my-assignments', authenticateToken, getMaidAssignments);
 router.put('/profile', authenticateToken, updateMaidProfile);
+router.post('/verify-start-otp', authenticateToken, verifyStartOTP);
+router.post('/generate-end-otp', authenticateToken, generateEndOTP);
+router.post('/complete-service', authenticateToken, completeService);
 
-// Update maid status (admin only)
+// Admin routes for maid management
+router.get('/', authenticateToken, authorizeAdmin, getAllMaids);
+router.get('/:id', authenticateToken, authorizeAdmin, getMaidById);
 router.put('/:id/status', authenticateToken, authorizeAdmin, updateMaidStatus);
-
-// Delete maid (admin only)
 router.delete('/:id', authenticateToken, authorizeAdmin, deleteMaid);
 
-module.exports = router; 
+module.exports = router;

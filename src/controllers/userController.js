@@ -10,17 +10,25 @@ const register = async (req, res) => {
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
-      where: { email },
+      where: { email }
     });
 
     if (existingUser) {
-      return res.status(400).json({ error: 'Email already registered' });
+      return res.status(400).json({ error: 'User already exists' });
+    }
+
+    // Check if phone already exists
+    const existingPhone = await prisma.user.findUnique({
+      where: { phone }
+    });
+    if (existingPhone) {
+      return res.status(400).json({ error: 'Phone number already registered' });
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user with appropriate profile
+    // Create user
     const user = await prisma.user.create({
       data: {
         email,
@@ -28,55 +36,31 @@ const register = async (req, res) => {
         name,
         phone,
         address,
-        role,
-        ...(role === 'CUSTOMER' && {
-          customerProfile: {
-            create: {
-              preferences: {}
-            }
-          }
-        }),
-        ...(role === 'MAID' && {
-          maidProfile: {
-            create: {
-              skills: [],
-              languages: [],
-              availability: {},
-              status: 'ACTIVE',
-              rating: 0,
-              zone: 'DEFAULT'
-            }
-          }
-        }),
-        ...(role === 'ADMIN' && {
-          adminProfile: {
-            create: {
-              permissions: {
-                canManageUsers: true,
-                canManageServices: true,
-                canManageBookings: true,
-                canManagePayments: true
-              }
-            }
-          }
-        })
-      },
-      include: {
-        customerProfile: true,
-        maidProfile: true,
-        adminProfile: true
+        role // This will default to CUSTOMER if not provided
       }
     });
 
-    // Generate JWT token
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET || 'fallback-secret-key');
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '24h' }
+    );
 
-    // Remove password from response
-    const { password: _, ...userWithoutPassword } = user;
-
-    res.status(201).json({ user: userWithoutPassword, token });
+    res.status(201).json({
+      message: 'User registered successfully',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        address: user.address,
+        role: user.role
+      }
+    });
   } catch (error) {
-    console.error('Error registering user:', error);
+    console.error('Registration error:', error);
     res.status(500).json({ error: 'Error registering user' });
   }
 };

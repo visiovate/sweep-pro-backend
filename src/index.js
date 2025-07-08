@@ -17,6 +17,8 @@ const bookingRoutes = require('./routes/bookingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const issueRoutes = require('./routes/issueRoutes');
 const maidRoutes = require('./routes/maidRoutes');
+const subscriptionRoutes = require('./routes/subscriptionRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 // Create Express app
 const app = express();
@@ -28,11 +30,13 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/v1/services', serviceRoutes);
+app.use('/api/services', serviceRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/maids', maidRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {
