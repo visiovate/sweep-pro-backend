@@ -4,13 +4,29 @@ const prisma = new PrismaClient();
 // Create a new service
 const createService = async (req, res) => {
   try {
-    const { name, description, price, duration, category } = req.body;
+    const { name, description, basePrice, baseDuration, category } = req.body;
+    
+    // Validate required fields
+    if (!name || !description || !basePrice || !baseDuration || !category) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: name, description, basePrice, baseDuration, category' 
+      });
+    }
+    
+    // Validate category enum
+    const validCategories = ['CLEANING', 'DEEP_CLEANING', 'MAINTENANCE', 'SPECIAL_EVENT'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({ 
+        error: 'Invalid category. Must be one of: CLEANING, DEEP_CLEANING, MAINTENANCE, SPECIAL_EVENT' 
+      });
+    }
+    
     const service = await prisma.service.create({
       data: {
         name,
         description,
-        price,
-        duration,
+        basePrice: parseFloat(basePrice),
+        baseDuration: parseInt(baseDuration),
         category
       }
     });
@@ -37,7 +53,7 @@ const getServiceById = async (req, res) => {
   try {
     const { id } = req.params;
     const service = await prisma.service.findUnique({
-      where: { id: parseInt(id) }
+      where: { id: id }
     });
     if (!service) {
       return res.status(404).json({ error: 'Service not found' });
@@ -53,20 +69,37 @@ const getServiceById = async (req, res) => {
 const updateService = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, price, duration, category } = req.body;
-    const service = await prisma.service.update({
-      where: { id: parseInt(id) },
-      data: {
-        name,
-        description,
-        price,
-        duration,
-        category
+    const { name, description, basePrice, baseDuration, category, isActive } = req.body;
+    
+    // Validate category enum if provided
+    if (category) {
+      const validCategories = ['CLEANING', 'DEEP_CLEANING', 'MAINTENANCE', 'SPECIAL_EVENT'];
+      if (!validCategories.includes(category)) {
+        return res.status(400).json({ 
+          error: 'Invalid category. Must be one of: CLEANING, DEEP_CLEANING, MAINTENANCE, SPECIAL_EVENT' 
+        });
       }
+    }
+    
+    // Build update data object, only including provided fields
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (basePrice !== undefined) updateData.basePrice = parseFloat(basePrice);
+    if (baseDuration !== undefined) updateData.baseDuration = parseInt(baseDuration);
+    if (category !== undefined) updateData.category = category;
+    if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+    
+    const service = await prisma.service.update({
+      where: { id: id },
+      data: updateData
     });
     res.json(service);
   } catch (error) {
     console.error('Error updating service:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Service not found' });
+    }
     res.status(500).json({ error: 'Failed to update service' });
   }
 };
@@ -76,11 +109,14 @@ const deleteService = async (req, res) => {
   try {
     const { id } = req.params;
     await prisma.service.delete({
-      where: { id: parseInt(id) }
+      where: { id: id }
     });
     res.status(204).send();
   } catch (error) {
     console.error('Error deleting service:', error);
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Service not found' });
+    }
     res.status(500).json({ error: 'Failed to delete service' });
   }
 };

@@ -20,7 +20,7 @@ const createBooking = async (req, res) => {
       // Directly combine ISO date with time (assuming time is in HH:MM format)
       const timeString = scheduledTime.includes(':') 
         ? scheduledTime 
-        : `${scheduledTime.slice(0, 2)}:${scheduledTime.slice(2)}`;
+        : scheduledTime.slice(0, 2) + ':' + scheduledTime.slice(2);
       
       scheduledAt = new Date(`${scheduledDate}T${timeString}:00`);
       
@@ -34,10 +34,21 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Check subscription status
+    // Get customer profile first
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId: customerId }
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({
+        message: 'Customer profile not found. Please complete your profile first.'
+      });
+    }
+
+    // Check subscription status using customerProfile.id
     const subscription = await prisma.subscription.findFirst({
       where: {
-        customerId,
+        customerId: customerProfile.id,  // Use customerProfile.id, not user.id
         status: 'ACTIVE',
         endDate: { gte: new Date() },
       },
@@ -232,7 +243,7 @@ const getMaidBookings = async (req, res) => {
   }
 };
 
-const assignMaid = async (req, res) => {
+const   assignMaid = async (req, res) => {
   try {
     const { id } = req.params;
     const { maidId } = req.body;
@@ -354,4 +365,4 @@ module.exports = {
   assignMaid,
   updateBookingStatus,
   cancelBooking
-}; 
+};
