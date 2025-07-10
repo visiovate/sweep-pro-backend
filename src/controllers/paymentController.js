@@ -3,13 +3,20 @@ const prisma = new PrismaClient();
 
 const createPayment = async (req, res) => {
   try {
-    const { bookingId, amount, paymentMethod, discount = 0, tax = 0, gateway, transactionId } = req.body;
+    const { bookingId, subscriptionId, amount, paymentMethod, discount = 0, tax = 0, gateway, transactionId, paymentType = 'BOOKING' } = req.body;
     const userId = req.user.id;
 
-    // Validate required fields
-    if (!bookingId || !amount || !paymentMethod) {
+    // Validate required fields - either bookingId or subscriptionId must be present
+    if ((!bookingId && !subscriptionId) || !amount || !paymentMethod) {
       return res.status(400).json({ 
-        error: 'Missing required fields: bookingId, amount, paymentMethod' 
+        error: 'Missing required fields: (bookingId OR subscriptionId), amount, paymentMethod' 
+      });
+    }
+
+    // Ensure only one of bookingId or subscriptionId is provided
+    if (bookingId && subscriptionId) {
+      return res.status(400).json({ 
+        error: 'Provide either bookingId or subscriptionId, not both' 
       });
     }
 
@@ -33,38 +40,71 @@ const createPayment = async (req, res) => {
     // Calculate final amount
     const finalAmount = amountNum - discountNum + taxNum;
 
-    // Verify booking exists and belongs to user
-    const booking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-      select: { id: true, customerId: true, finalAmount: true }
-    });
+    let verificationData = null;
 
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
+    // Verify booking or subscription exists and belongs to user
+    if (bookingId) {
+      const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        select: { id: true, customerId: true, finalAmount: true }
+      });
+
+      if (!booking) {
+        return res.status(404).json({ error: 'Booking not found' });
+      }
+
+      if (booking.customerId !== userId) {
+        return res.status(403).json({ error: 'Unauthorized: You can only create payments for your own bookings' });
+      }
+
+      // Check if payment already exists for this booking
+      const existingPayment = await prisma.payment.findFirst({
+        where: { bookingId }
+      });
+
+      if (existingPayment) {
+        return res.status(409).json({ error: 'Payment already exists for this booking' });
+      }
+      
+      verificationData = { bookingId };
     }
 
-    if (booking.customerId !== userId) {
-      return res.status(403).json({ error: 'Unauthorized: You can only create payments for your own bookings' });
-    }
+    if (subscriptionId) {
+      // Get customer profile first
+      const customerProfile = await prisma.customerProfile.findUnique({
+        where: { userId }
+      });
 
-    // Check if payment already exists for this booking
-    const existingPayment = await prisma.payment.findUnique({
-      where: { bookingId }
-    });
+      if (!customerProfile) {
+        return res.status(404).json({ error: 'Customer profile not found' });
+      }
 
-    if (existingPayment) {
-      return res.status(409).json({ error: 'Payment already exists for this booking' });
+      const subscription = await prisma.subscription.findUnique({
+        where: { id: subscriptionId },
+        select: { id: true, customerId: true, amount: true }
+      });
+
+      if (!subscription) {
+        return res.status(404).json({ error: 'Subscription not found' });
+      }
+
+      if (subscription.customerId !== customerProfile.id) {
+        return res.status(403).json({ error: 'Unauthorized: You can only create payments for your own subscription' });
+      }
+      
+      verificationData = { subscriptionId };
     }
 
     const payment = await prisma.payment.create({
       data: {
-        bookingId,
+        ...verificationData, // Will include either bookingId or subscriptionId
         customerId: userId,
         amount: amountNum,
         discount: discountNum,
         tax: taxNum,
         finalAmount,
         paymentMethod,
+        paymentType,
         status: 'PENDING',
         gateway,
         transactionId

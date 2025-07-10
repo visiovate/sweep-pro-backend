@@ -104,7 +104,7 @@ const createBooking = async (req, res) => {
     res.status(201).json({
       success: true,
       data: booking,
-      message: 'Booking created successfully'
+      message: 'Booking created successfully. No additional payment required as you have an active subscription.'
     });
 
   } catch (error) {
