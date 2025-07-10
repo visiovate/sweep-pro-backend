@@ -3,8 +3,59 @@ const prisma = new PrismaClient();
 
 const createIssue = async (req, res) => {
   try {
-    const { bookingId, type, description, priority } = req.body;
+    const { bookingId, type, description, priority, title, category } = req.body;
     const reportedBy = req.user.id;
+
+    // Validate required fields
+    if (!bookingId || !type || !description || !priority || !title || !category) {
+      return res.status(400).json({
+        error: 'Missing required fields: bookingId, type, description, priority, title, category'
+      });
+    }
+
+    // Validate enums
+    const validTypes = [
+      'SERVICE_QUALITY', 'MAID_BEHAVIOR', 'TIMING_ISSUE', 'PAYMENT_ISSUE',
+      'TECHNICAL_ISSUE', 'SAFETY_CONCERN', 'DAMAGE_CLAIM', 'OTHER'
+    ];
+    const validCategories = [
+      'CUSTOMER_COMPLAINT', 'MAID_COMPLAINT', 'SYSTEM_ISSUE',
+      'BILLING_ISSUE', 'SAFETY_INCIDENT'
+    ];
+    const validPriorities = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({
+        error: 'Invalid issue type. Must be one of: ' + validTypes.join(', ')
+      });
+    }
+
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({
+        error: 'Invalid issue category. Must be one of: ' + validCategories.join(', ')
+      });
+    }
+
+    if (!validPriorities.includes(priority)) {
+      return res.status(400).json({
+        error: 'Invalid issue priority. Must be one of: ' + validPriorities.join(', ')
+      });
+    }
+
+    // Verify booking exists
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { id: true, customerId: true, maidId: true }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    // Check if user is either customer or maid for this booking
+    if (booking.customerId !== reportedBy && booking.maidId !== reportedBy) {
+      return res.status(403).json({ error: 'Unauthorized: You can only report issues for your own bookings' });
+    }
 
     const issue = await prisma.issue.create({
       data: {
@@ -13,6 +64,8 @@ const createIssue = async (req, res) => {
         type,
         description,
         priority,
+        category,
+        title,
         status: 'OPEN'
       },
       include: {
@@ -20,27 +73,15 @@ const createIssue = async (req, res) => {
           include: {
             service: true,
             customer: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
+              select: { id: true, name: true, email: true }
             },
             maid: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
+              select: { id: true, name: true, email: true }
             }
           }
         },
         reporter: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
+          select: { id: true, name: true, email: true }
         }
       }
     });
@@ -60,34 +101,18 @@ const getAllIssues = async (req, res) => {
           include: {
             service: true,
             customer: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
+              select: { id: true, name: true, email: true }
             },
             maid: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
+              select: { id: true, name: true, email: true }
             }
           }
         },
         reporter: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
+          select: { id: true, name: true, email: true }
         },
         resolver: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
+          select: { id: true, name: true, email: true }
         }
       }
     });
@@ -108,34 +133,18 @@ const getIssueById = async (req, res) => {
           include: {
             service: true,
             customer: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
+              select: { id: true, name: true, email: true }
             },
             maid: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
+              select: { id: true, name: true, email: true }
             }
           }
         },
         reporter: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
+          select: { id: true, name: true, email: true }
         },
         resolver: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
+          select: { id: true, name: true, email: true }
         }
       }
     });
@@ -157,7 +166,9 @@ const updateIssueStatus = async (req, res) => {
     const { status, resolution } = req.body;
     const resolvedBy = req.user.id;
 
-    if (!['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].includes(status)) {
+    const validStatuses = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
+
+    if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
@@ -174,34 +185,18 @@ const updateIssueStatus = async (req, res) => {
           include: {
             service: true,
             customer: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
+              select: { id: true, name: true, email: true }
             },
             maid: {
-              select: {
-                id: true,
-                name: true,
-                email: true
-              }
+              select: { id: true, name: true, email: true }
             }
           }
         },
         reporter: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
+          select: { id: true, name: true, email: true }
         },
         resolver: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
+          select: { id: true, name: true, email: true }
         }
       }
     });
@@ -241,4 +236,4 @@ module.exports = {
   getIssueById,
   updateIssueStatus,
   getUserIssues
-}; 
+};

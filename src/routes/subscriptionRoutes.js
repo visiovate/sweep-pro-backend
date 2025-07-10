@@ -12,6 +12,7 @@ const {
 // Public routes
 router.get('/plans', getSubscriptionPlans);
 
+
 // Protected routes
 router.post('/subscribe', authenticateToken, subscribeToPlan);
 router.get('/my-subscription', authenticateToken, getUserSubscription);

@@ -6,12 +6,14 @@ const {
   getAllPayments,
   getPaymentById,
   updatePaymentStatus,
-  getUserPayments
+  getUserPayments,
+  verifyPayment
 } = require('../controllers/paymentController');
 
 // Customer routes
 router.post('/', authenticateToken, createPayment);
 router.get('/my-payments', authenticateToken, getUserPayments);
+router.post('/verify', authenticateToken, verifyPayment);
 
 // Admin routes
 router.get('/', authenticateToken, authorizeAdmin, getAllPayments);
