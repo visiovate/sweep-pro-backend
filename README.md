@@ -18,10 +18,12 @@ This is the backend API for the Sweepro application, a platform for managing cle
 
 3. Create a `.env` file in the root directory with the following variables:
    ```
-   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/sweepro?schema=public"
-   JWT_SECRET="your-super-secret-jwt-key-change-this-in-production"
+   DATABASE_URL="postgresql://username:password@localhost:5432/sweepro?schema=public"
+   JWT_SECRET="your-super-secret-jwt-key-here"
    PORT=3000
    ```
+   
+   **Note:** Replace `username` and `password` with your actual PostgreSQL credentials. Make sure to use a strong, unique JWT secret for production environments.
 
 4. Initialize the database:
    ```bash
