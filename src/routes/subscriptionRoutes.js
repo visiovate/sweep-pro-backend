@@ -6,6 +6,7 @@ const {
   subscribeToPlan,
   getUserSubscription,
   confirmNextDayService,
+  completeSubscriptionPayment,
   cancelSubscription
 } = require('../controllers/subscriptionController');
 
@@ -17,6 +18,7 @@ router.get('/plans', getSubscriptionPlans);
 router.post('/subscribe', authenticateToken, subscribeToPlan);
 router.get('/my-subscription', authenticateToken, getUserSubscription);
 router.post('/confirm-service', authenticateToken, confirmNextDayService);
+router.post('/complete-payment', authenticateToken, completeSubscriptionPayment);
 router.post('/cancel', authenticateToken, cancelSubscription);
 
 module.exports = router;

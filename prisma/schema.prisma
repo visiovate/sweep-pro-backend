@@ -272,7 +272,7 @@ model Booking {
   
   // Relations
   feedback      Feedback?
-  payment       Payment?
+  payment       Payment?     // Only for non-subscription bookings
   taskCompletions TaskCompletion[]
   issues        Issue[]
   rescheduleHistory RescheduleHistory[]
@@ -400,8 +400,14 @@ model Feedback {
 
 model Payment {
   id            String    @id @default(uuid())
-  bookingId     String    @unique
-  booking       Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  // Payment can be for either booking or subscription
+  bookingId     String?   @unique // Optional - for one-time service payments
+  booking       Booking?  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  subscriptionId String?  // Optional - for subscription payments
+  subscription  Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  
   customerId    String
   customer      User      @relation("CustomerPayments", fields: [customerId], references: [id])
   
@@ -416,6 +422,9 @@ model Payment {
   transactionId String?
   gatewayResponse Json?
   
+  // Payment type
+  paymentType   PaymentType @default(BOOKING)
+  
   // Refund details
   refundAmount  Float?
   refundReason  String?
@@ -427,6 +436,7 @@ model Payment {
   @@index([customerId])
   @@index([status])
   @@index([transactionId])
+  @@index([subscriptionId])
 }
 
 enum PaymentStatus {
@@ -448,6 +458,12 @@ enum PaymentMethod {
   BANK_TRANSFER
 }
 
+enum PaymentType {
+  BOOKING      // One-time service payment
+  SUBSCRIPTION // Subscription payment
+  RENEWAL      // Subscription renewal payment
+}
+
 model Subscription {
   id            String    @id @default(uuid())
   customerId    String    @unique
@@ -456,7 +472,7 @@ model Subscription {
   planId        String
   plan          ServicePlan @relation(fields: [planId], references: [id])
   
-  status        SubscriptionStatus @default(ACTIVE)
+  status        SubscriptionStatus @default(PENDING_PAYMENT)
   startDate     DateTime
   endDate       DateTime
   
@@ -468,6 +484,9 @@ model Subscription {
   // Auto renewal
   autoRenew     Boolean      @default(true)
   nextBillDate  DateTime?
+  
+  // Relations
+  payments      Payment[]    // Track subscription payments
   
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt

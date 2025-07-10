@@ -70,12 +70,12 @@ const subscribeToPlan = async (req, res) => {
     const endDate = new Date();
     endDate.setMonth(startDate.getMonth() + plan.duration);
 
-    // Create subscription
+    // Create subscription (initially pending payment)
     const subscription = await prisma.subscription.create({
       data: {
         customerId,
         planId,
-        status: 'ACTIVE',
+        status: 'PENDING_PAYMENT',
         startDate,
         endDate,
         billingCycle: 'MONTHLY',
@@ -90,6 +90,21 @@ const subscribeToPlan = async (req, res) => {
             service: true
           }
         }
+      }
+    });
+
+    // Create payment for subscription
+    const payment = await prisma.payment.create({
+      data: {
+        subscriptionId: subscription.id,
+        customerId: userId,
+        amount: plan.finalPrice,
+        discount: plan.basePrice - plan.finalPrice,
+        tax: 0,
+        finalAmount: plan.finalPrice,
+        paymentMethod: 'CARD', // Default, should be updated when actual payment is made
+        status: 'PENDING',
+        paymentType: 'SUBSCRIPTION'
       }
     });
 
@@ -224,6 +239,85 @@ const confirmNextDayService = async (req, res) => {
   }
 };
 
+// Complete subscription payment and activate subscription
+const completeSubscriptionPayment = async (req, res) => {
+  try {
+    const { subscriptionId, paymentId, transactionId, gateway, gatewayResponse } = req.body;
+    const userId = req.user.id;
+
+    if (!subscriptionId || !paymentId || !transactionId) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: subscriptionId, paymentId, transactionId' 
+      });
+    }
+
+    // Get customer profile
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId }
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ error: 'Customer profile not found' });
+    }
+
+    // Verify payment belongs to user and subscription
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        subscription: true
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    if (payment.customerId !== userId || payment.subscriptionId !== subscriptionId) {
+      return res.status(403).json({ error: 'Unauthorized access to payment' });
+    }
+
+    if (payment.subscription.customerId !== customerProfile.id) {
+      return res.status(403).json({ error: 'Unauthorized access to subscription' });
+    }
+
+    // Update payment status
+    await prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: 'COMPLETED',
+        transactionId,
+        gateway,
+        gatewayResponse
+      }
+    });
+
+    // Activate subscription
+    const subscription = await prisma.subscription.update({
+      where: { id: subscriptionId },
+      data: {
+        status: 'ACTIVE'
+      },
+      include: {
+        plan: {
+          include: {
+            service: true
+          }
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Subscription activated successfully',
+      subscription
+    });
+
+  } catch (error) {
+    console.error('Error completing subscription payment:', error);
+    res.status(500).json({ error: 'Failed to complete subscription payment' });
+  }
+};
+
 // Cancel subscription
 const cancelSubscription = async (req, res) => {
   try {
@@ -265,5 +359,6 @@ module.exports = {
   subscribeToPlan,
   getUserSubscription,
   confirmNextDayService,
+  completeSubscriptionPayment,
   cancelSubscription
 };
