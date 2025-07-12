@@ -9,12 +9,14 @@ const {
   getMaidBookings,
   assignMaid,
   updateBookingStatus,
-  cancelBooking
+  cancelBooking,
+  completeBookingPayment
 } = require('../controllers/bookingController');
 
 // Customer routes
 router.post('/', authenticateToken, createBooking);
 router.get('/my-bookings', authenticateToken, getUserBookings);
+router.post('/complete-payment', authenticateToken, completeBookingPayment);
 
 // Maid routes
 router.get('/my-assignments', authenticateToken, getMaidBookings);

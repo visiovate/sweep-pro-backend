@@ -134,7 +134,8 @@ const getUserSubscription = async (req, res) => {
       return res.status(404).json({ message: 'Customer profile not found' });
     }
 
-    const subscription = await prisma.subscription.findFirst({
+    // First check for active subscription
+    let subscription = await prisma.subscription.findFirst({
       where: {
         customerId: customerProfile.id,
         status: 'ACTIVE',
@@ -145,12 +146,39 @@ const getUserSubscription = async (req, res) => {
           include: {
             service: true
           }
+        },
+        payments: {
+          orderBy: {
+            createdAt: 'desc'
+          }
         }
       }
     });
 
+    // If no active subscription, check for pending payment subscription
     if (!subscription) {
-      return res.status(404).json({ message: 'No active subscription found' });
+      subscription = await prisma.subscription.findFirst({
+        where: {
+          customerId: customerProfile.id,
+          status: 'PENDING_PAYMENT'
+        },
+        include: {
+          plan: {
+            include: {
+              service: true
+            }
+          },
+          payments: {
+            orderBy: {
+              createdAt: 'desc'
+            }
+          }
+        }
+      });
+    }
+
+    if (!subscription) {
+      return res.status(404).json({ message: 'No subscription found' });
     }
 
     res.json(subscription);
@@ -351,6 +379,56 @@ const cancelSubscription = async (req, res) => {
   } catch (error) {
     console.error('Error cancelling subscription:', error);
     res.status(500).json({ message: 'Failed to cancel subscription' });
+  }
+};
+
+// Check subscription status for booking
+const checkSubscriptionStatus = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get or create customer profile
+    let customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId }
+    });
+
+    if (!customerProfile) {
+      customerProfile = await prisma.customerProfile.create({
+        data: {
+          userId,
+          preferences: {},
+          emergencyContact: null
+        }
+      });
+    }
+
+    // Check for active subscription
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        customerId: customerProfile.id,
+        status: 'ACTIVE',
+        endDate: { gte: new Date() }
+      },
+      include: {
+        plan: {
+          include: {
+            service: true
+          }
+        }
+      }
+    });
+
+    res.json({
+      hasActiveSubscription: !!subscription,
+      subscription: subscription || null,
+      message: subscription 
+        ? 'Active subscription found' 
+        : 'No active subscription found. Payment will be required for bookings.'
+    });
+
+  } catch (error) {
+    console.error('Error checking subscription status:', error);
+    res.status(500).json({ message: 'Failed to check subscription status' });
   }
 };
 

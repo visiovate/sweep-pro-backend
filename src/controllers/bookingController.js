@@ -34,21 +34,26 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Get customer profile first
-    const customerProfile = await prisma.customerProfile.findUnique({
+    // Get or create customer profile
+    let customerProfile = await prisma.customerProfile.findUnique({
       where: { userId: customerId }
     });
 
     if (!customerProfile) {
-      return res.status(404).json({
-        message: 'Customer profile not found. Please complete your profile first.'
+      // Create customer profile if it doesn't exist
+      customerProfile = await prisma.customerProfile.create({
+        data: {
+          userId: customerId,
+          preferences: {},
+          emergencyContact: null
+        }
       });
     }
 
     // Check subscription status using customerProfile.id
     const subscription = await prisma.subscription.findFirst({
       where: {
-        customerId: customerProfile.id,  // Use customerProfile.id, not user.id
+        customerId: customerProfile.id,
         status: 'ACTIVE',
         endDate: { gte: new Date() },
       },
@@ -56,12 +61,6 @@ const createBooking = async (req, res) => {
         plan: true
       }
     });
-
-    if (!subscription) {
-      return res.status(403).json({
-        message: 'You need an active subscription to book a service'
-      });
-    }
 
     // Get service details for pricing
     const service = await prisma.service.findUnique({
@@ -72,20 +71,43 @@ const createBooking = async (req, res) => {
       return res.status(404).json({ message: 'Service not found' });
     }
 
-    // Create the booking
-    const booking = await prisma.booking.create({
-      data: {
+    let bookingData, responseMessage;
+
+    if (subscription) {
+      // Customer has active subscription - no payment required
+      bookingData = {
         customerId,
         serviceId,
         specialInstructions: notes,
         serviceAddress: address,
-        status: 'PENDING',
+        status: 'CONFIRMED', // Direct confirmation for subscription customers
         scheduledAt,
         estimatedDuration: service.baseDuration,
-        totalAmount: subscription.plan.finalPrice / (subscription.plan.sessionsPerMonth || 1),
-        finalAmount: subscription.plan.finalPrice / (subscription.plan.sessionsPerMonth || 1),
+        totalAmount: 0, // No amount for subscription customers
+        finalAmount: 0,
         discount: 0
-      },
+      };
+      responseMessage = 'Booking created successfully. No additional payment required as you have an active subscription.';
+    } else {
+      // Customer doesn't have active subscription - payment required
+      bookingData = {
+        customerId,
+        serviceId,
+        specialInstructions: notes,
+        serviceAddress: address,
+        status: 'PENDING', // Pending until payment is completed
+        scheduledAt,
+        estimatedDuration: service.baseDuration,
+        totalAmount: service.basePrice,
+        finalAmount: service.basePrice,
+        discount: 0
+      };
+      responseMessage = 'Booking created successfully. Please complete the payment to confirm your booking.';
+    }
+
+    // Create the booking
+    const booking = await prisma.booking.create({
+      data: bookingData,
       include: {
         service: true,
         customer: {
@@ -100,11 +122,33 @@ const createBooking = async (req, res) => {
       }
     });
 
+    // If no subscription, create a payment record
+    let paymentData = null;
+    if (!subscription) {
+      paymentData = await prisma.payment.create({
+        data: {
+          bookingId: booking.id,
+          customerId,
+          amount: service.basePrice,
+          discount: 0,
+          tax: 0,
+          finalAmount: service.basePrice,
+          paymentMethod: 'CARD', // Default, will be updated when payment is made
+          status: 'PENDING',
+          paymentType: 'BOOKING'
+        }
+      });
+    }
+
     // Return successful response
     res.status(201).json({
       success: true,
-      data: booking,
-      message: 'Booking created successfully. No additional payment required as you have an active subscription.'
+      data: {
+        booking,
+        payment: paymentData,
+        hasActiveSubscription: !!subscription
+      },
+      message: responseMessage
     });
 
   } catch (error) {
@@ -356,6 +400,93 @@ const cancelBooking = async (req, res) => {
   }
 };
 
+// Complete booking payment and confirm booking
+const completeBookingPayment = async (req, res) => {
+  try {
+    const { bookingId, paymentId, transactionId, gateway, gatewayResponse } = req.body;
+    const userId = req.user.id;
+
+    if (!bookingId || !paymentId || !transactionId) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: bookingId, paymentId, transactionId' 
+      });
+    }
+
+    // Verify payment belongs to user and booking
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        booking: {
+          include: {
+            service: true,
+            customer: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    if (payment.customerId !== userId || payment.bookingId !== bookingId) {
+      return res.status(403).json({ error: 'Unauthorized access to payment' });
+    }
+
+    if (payment.booking.customerId !== userId) {
+      return res.status(403).json({ error: 'Unauthorized access to booking' });
+    }
+
+    // Update payment status
+    await prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: 'COMPLETED',
+        transactionId,
+        gateway,
+        gatewayResponse
+      }
+    });
+
+    // Update booking status to CONFIRMED
+    const booking = await prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        status: 'CONFIRMED'
+      },
+      include: {
+        service: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true
+          }
+        },
+        payment: true
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Booking payment completed and booking confirmed successfully',
+      booking
+    });
+
+  } catch (error) {
+    console.error('Error completing booking payment:', error);
+    res.status(500).json({ error: 'Failed to complete booking payment' });
+  }
+};
+
 module.exports = {
   createBooking,
   getAllBookings,
@@ -364,5 +495,6 @@ module.exports = {
   getMaidBookings,
   assignMaid,
   updateBookingStatus,
-  cancelBooking
+  cancelBooking,
+  completeBookingPayment
 };
