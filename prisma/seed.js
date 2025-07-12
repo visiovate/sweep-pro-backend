@@ -213,15 +213,17 @@ async function main() {
     console.log('- 3 Subscription Plans: Basic, Premium, Standard');
 
     // Create subscriptions for all customers
-    console.log('\n📋 Creating subscriptions for customers...');
+    console.log('\n📋 Creating subscriptions and payments for customers...');
     
     // Subscribe customer1 to basic plan
     const customer1Profile = await prisma.customerProfile.findUnique({
       where: { userId: customer.id }
     });
     
-    await prisma.subscription.create({
-      data: {
+    const subscription1 = await prisma.subscription.upsert({
+      where: { customerId: customer1Profile.id },
+      update: {},
+      create: {
         customerId: customer1Profile.id,
         planId: basicPlan.id,
         status: 'ACTIVE',
@@ -235,7 +237,24 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription for customer@sweepro.com (Basic Plan)');
+    // Create subscription payment for customer1
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription1.id,
+        customerId: customer.id,
+        amount: basicPlan.finalPrice,
+        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        tax: 0,
+        finalAmount: basicPlan.finalPrice,
+        paymentMethod: 'UPI',
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'razorpay',
+        transactionId: 'txn_basic_' + Date.now()
+      }
+    });
+    
+    console.log('✅ Created subscription and payment for customer@sweepro.com (Basic Plan)');
 
     // Create 5 CONFIRMED bookings with maidId: null for admin pending bookings endpoint
     await prisma.booking.create({
@@ -304,8 +323,10 @@ async function main() {
       where: { userId: user2.id }
     });
     
-    await prisma.subscription.create({
-      data: {
+    const subscription2 = await prisma.subscription.upsert({
+      where: { customerId: customer2Profile.id },
+      update: {},
+      create: {
         customerId: customer2Profile.id,
         planId: premiumPlan.id,
         status: 'ACTIVE',
@@ -319,7 +340,24 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription for customer2@sweepro.com (Premium Plan)');
+    // Create subscription payment for customer2
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription2.id,
+        customerId: user2.id,
+        amount: premiumPlan.finalPrice,
+        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        tax: 0,
+        finalAmount: premiumPlan.finalPrice,
+        paymentMethod: 'CARD',
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'stripe',
+        transactionId: 'txn_premium_' + Date.now()
+      }
+    });
+    
+    console.log('✅ Created subscription and payment for customer2@sweepro.com (Premium Plan)');
 
     await prisma.booking.create({
       data: {
@@ -387,8 +425,10 @@ async function main() {
       where: { userId: user3.id }
     });
     
-    await prisma.subscription.create({
-      data: {
+    const subscription3 = await prisma.subscription.upsert({
+      where: { customerId: customer3Profile.id },
+      update: {},
+      create: {
         customerId: customer3Profile.id,
         planId: standardPlan.id,
         status: 'ACTIVE',
@@ -402,7 +442,24 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription for customer3@sweepro.com (Standard Plan)');
+    // Create subscription payment for customer3
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription3.id,
+        customerId: user3.id,
+        amount: standardPlan.finalPrice,
+        discount: standardPlan.basePrice - standardPlan.finalPrice,
+        tax: 0,
+        finalAmount: standardPlan.finalPrice,
+        paymentMethod: 'NET_BANKING',
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'razorpay',
+        transactionId: 'txn_standard_' + Date.now()
+      }
+    });
+    
+    console.log('✅ Created subscription and payment for customer3@sweepro.com (Standard Plan)');
 
     await prisma.booking.create({
       data: {
@@ -470,8 +527,10 @@ async function main() {
       where: { userId: user4.id }
     });
     
-    await prisma.subscription.create({
-      data: {
+    const subscription4 = await prisma.subscription.upsert({
+      where: { customerId: customer4Profile.id },
+      update: {},
+      create: {
         customerId: customer4Profile.id,
         planId: basicPlan.id,
         status: 'ACTIVE',
@@ -485,7 +544,24 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription for customer4@sweepro.com (Basic Plan)');
+    // Create subscription payment for customer4
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription4.id,
+        customerId: user4.id,
+        amount: basicPlan.finalPrice,
+        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        tax: 0,
+        finalAmount: basicPlan.finalPrice,
+        paymentMethod: 'WALLET',
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'paytm',
+        transactionId: 'txn_basic2_' + Date.now()
+      }
+    });
+    
+    console.log('✅ Created subscription and payment for customer4@sweepro.com (Basic Plan)');
 
     await prisma.booking.create({
       data: {
@@ -553,8 +629,10 @@ async function main() {
       where: { userId: user5.id }
     });
     
-    await prisma.subscription.create({
-      data: {
+    const subscription5 = await prisma.subscription.upsert({
+      where: { customerId: customer5Profile.id },
+      update: {},
+      create: {
         customerId: customer5Profile.id,
         planId: premiumPlan.id,
         status: 'ACTIVE',
@@ -568,7 +646,24 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription for customer5@sweepro.com (Premium Plan)');
+    // Create subscription payment for customer5
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription5.id,
+        customerId: user5.id,
+        amount: premiumPlan.finalPrice,
+        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        tax: 0,
+        finalAmount: premiumPlan.finalPrice,
+        paymentMethod: 'UPI',
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'razorpay',
+        transactionId: 'txn_premium2_' + Date.now()
+      }
+    });
+    
+    console.log('✅ Created subscription and payment for customer5@sweepro.com (Premium Plan)');
 
     await prisma.booking.create({
       data: {
@@ -594,7 +689,120 @@ async function main() {
     console.log('  • customer3@sweepro.com: Standard Plan (₹3,325/month)');
     console.log('  • customer4@sweepro.com: Basic Plan (₹5,400/month)');
     console.log('  • customer5@sweepro.com: Premium Plan (₹5,950/month)');
+    
+    // Create additional test users for comprehensive testing
+    console.log('\n🔄 Creating additional test data...');
+    
+    // Customer with pending subscription payment
+    const customerPending = await prisma.user.create({
+      data: {
+        email: 'pending@sweepro.com',
+        name: 'Pending Customer',
+        password: await bcrypt.hash('pending123', 10),
+        phone: '9123456999',
+        role: 'CUSTOMER',
+        address: '999 Pending Street',
+        latitude: 12.9725,
+        longitude: 77.5955,
+        customerProfile: {
+          create: {
+            preferences: { preferredTime: 'morning' },
+            emergencyContact: '9876543299'
+          }
+        }
+      }
+    });
+    
+    const pendingCustomerProfile = await prisma.customerProfile.findUnique({
+      where: { userId: customerPending.id }
+    });
+    
+    // Create pending subscription
+    const pendingSubscription = await prisma.subscription.upsert({
+      where: { customerId: pendingCustomerProfile.id },
+      update: {},
+      create: {
+        customerId: pendingCustomerProfile.id,
+        planId: premiumPlan.id,
+        status: 'PENDING_PAYMENT',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        billingCycle: 'MONTHLY',
+        amount: premiumPlan.finalPrice,
+        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        autoRenew: true,
+        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      }
+    });
+    
+    // Create pending payment for subscription
+    await prisma.payment.create({
+      data: {
+        subscriptionId: pendingSubscription.id,
+        customerId: customerPending.id,
+        amount: premiumPlan.finalPrice,
+        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        tax: 0,
+        finalAmount: premiumPlan.finalPrice,
+        paymentMethod: 'CARD',
+        status: 'PENDING',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'razorpay'
+      }
+    });
+    
+    // Create some failed and refunded payments for testing
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription1.id,
+        customerId: customer.id,
+        amount: basicPlan.finalPrice,
+        discount: 0,
+        tax: 0,
+        finalAmount: basicPlan.finalPrice,
+        paymentMethod: 'CARD',
+        status: 'FAILED',
+        paymentType: 'RENEWAL',
+        gateway: 'stripe',
+        transactionId: 'txn_failed_' + Date.now()
+      }
+    });
+    
+    await prisma.payment.create({
+      data: {
+        subscriptionId: subscription2.id,
+        customerId: user2.id,
+        amount: premiumPlan.finalPrice,
+        discount: 0,
+        tax: 18.0, // GST
+        finalAmount: premiumPlan.finalPrice + 18.0,
+        paymentMethod: 'UPI',
+        status: 'REFUNDED',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'razorpay',
+        transactionId: 'txn_refunded_' + Date.now(),
+        refundAmount: premiumPlan.finalPrice + 18.0,
+        refundReason: 'Customer request',
+        refundedAt: new Date()
+      }
+    });
+    
+    console.log('✅ Created pending subscription for pending@sweepro.com');
+    console.log('✅ Created test payments with different statuses (FAILED, REFUNDED)');
     console.log('\n💳 All customers now have active subscriptions and can create bookings!');
+    console.log('\n🧪 Test Users Created:');
+    console.log('- admin@sweepro.com (password: admin123) - Admin');
+    console.log('- customer@sweepro.com (password: customer123) - Customer with Basic Plan');
+    console.log('- customer2@sweepro.com (password: customer2123) - Customer with Premium Plan');
+    console.log('- customer3@sweepro.com (password: customer3123) - Customer with Standard Plan');
+    console.log('- customer4@sweepro.com (password: customer4123) - Customer with Basic Plan');
+    console.log('- customer5@sweepro.com (password: customer5123) - Customer with Premium Plan');
+    console.log('- pending@sweepro.com (password: pending123) - Customer with Pending Payment');
+    console.log('- maid@sweepro.com (password: maid123) - Maid');
+    console.log('- maid2@sweepro.com (password: maid2123) - Maid');
+    console.log('- maid3@sweepro.com (password: maid3123) - Maid');
+    console.log('- maid4@sweepro.com (password: maid4123) - Maid');
+    console.log('- maid5@sweepro.com (password: maid5123) - Maid');
 
   } catch (error) {
     console.error('❌ Error seeding database:', error);
