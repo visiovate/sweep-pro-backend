@@ -1,4 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
+const razorpayService = require('../services/razorpayService');
+const crypto = require('crypto');
 const prisma = new PrismaClient();
 
 const createPayment = async (req, res) => {
@@ -368,11 +370,356 @@ const verifyPayment = async (req, res) => {
   }
 };
 
+// Create Razorpay order for booking payment
+const createRazorpayBookingOrder = async (req, res) => {
+  try {
+    const { bookingId, amount, currency } = req.body;
+    const userId = req.user.id;
+
+    if (!bookingId || !amount) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: bookingId, amount' 
+      });
+    }
+
+    // Verify booking belongs to user
+    const booking = await prisma.booking.findFirst({
+      where: {
+        id: bookingId,
+        customerId: userId
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found or unauthorized' });
+    }
+
+    // Check if payment already exists
+    const existingPayment = await prisma.payment.findFirst({
+      where: { 
+        bookingId,
+        status: { in: ['PENDING', 'COMPLETED'] }
+      }
+    });
+
+    if (existingPayment) {
+      return res.status(409).json({ error: 'Payment already exists for this booking' });
+    }
+
+    // Create Razorpay order
+    const result = await razorpayService.createBookingOrder(bookingId, amount, currency);
+
+    res.status(201).json({
+      success: true,
+      order: result.order,
+      booking: result.booking,
+      key: process.env.RAZORPAY_TEST_KEY_ID
+    });
+
+  } catch (error) {
+    console.error('Error creating Razorpay booking order:', error);
+    res.status(500).json({ error: 'Failed to create payment order' });
+  }
+};
+
+// Create Razorpay order for subscription payment
+const createRazorpaySubscriptionOrder = async (req, res) => {
+  try {
+    const { subscriptionId, amount, currency } = req.body;
+    const userId = req.user.id;
+
+    if (!subscriptionId || !amount) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: subscriptionId, amount' 
+      });
+    }
+
+    // Get customer profile
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId }
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ error: 'Customer profile not found' });
+    }
+
+    // Verify subscription belongs to user
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        id: subscriptionId,
+        customerId: customerProfile.id
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ error: 'Subscription not found or unauthorized' });
+    }
+
+    // Create Razorpay order
+    const result = await razorpayService.createSubscriptionOrder(subscriptionId, amount, currency);
+
+    res.status(201).json({
+      success: true,
+      order: result.order,
+      subscription: result.subscription,
+      key: process.env.RAZORPAY_TEST_KEY_ID
+    });
+
+  } catch (error) {
+    console.error('Error creating Razorpay subscription order:', error);
+    res.status(500).json({ error: 'Failed to create subscription payment order' });
+  }
+};
+
+// Verify and process Razorpay payment
+const verifyRazorpayPayment = async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      payment_method
+    } = req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: razorpay_order_id, razorpay_payment_id, razorpay_signature' 
+      });
+    }
+
+    // Process successful payment
+    const result = await razorpayService.processSuccessfulPayment({
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      payment_method
+    });
+
+    res.json({
+      success: true,
+      message: 'Payment verified successfully',
+      payment: result.payment
+    });
+
+  } catch (error) {
+    console.error('Error verifying Razorpay payment:', error);
+    res.status(500).json({ error: 'Failed to verify payment' });
+  }
+};
+
+// Handle Razorpay payment failure
+const handleRazorpayPaymentFailure = async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      error_code,
+      error_description
+    } = req.body;
+
+    if (!razorpay_order_id) {
+      return res.status(400).json({ 
+        error: 'Missing required field: razorpay_order_id' 
+      });
+    }
+
+    // Process failed payment
+    const result = await razorpayService.processFailedPayment({
+      razorpay_order_id,
+      error_code,
+      error_description
+    });
+
+    res.json({
+      success: false,
+      message: 'Payment failure processed',
+      payment: result.payment,
+      error: result.error
+    });
+
+  } catch (error) {
+    console.error('Error handling payment failure:', error);
+    res.status(500).json({ error: 'Failed to process payment failure' });
+  }
+};
+
+// Process refund
+const processRefund = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const { refundAmount, refundReason } = req.body;
+
+    if (!refundAmount || !refundReason) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: refundAmount, refundReason' 
+      });
+    }
+
+    // Process refund
+    const result = await razorpayService.processRefund(paymentId, refundAmount, refundReason);
+
+    res.json({
+      success: true,
+      message: 'Refund processed successfully',
+      refund: result.refund,
+      payment: result.payment
+    });
+
+  } catch (error) {
+    console.error('Error processing refund:', error);
+    res.status(500).json({ error: 'Failed to process refund' });
+  }
+};
+
+// Get payment status from Razorpay
+const getPaymentStatus = async (req, res) => {
+  try {
+    const { razorpayPaymentId } = req.params;
+
+    const paymentStatus = await razorpayService.getPaymentStatus(razorpayPaymentId);
+
+    res.json({
+      success: true,
+      payment: paymentStatus
+    });
+
+  } catch (error) {
+    console.error('Error fetching payment status:', error);
+    res.status(500).json({ error: 'Failed to fetch payment status' });
+  }
+};
+
+// Razorpay webhook handler
+const handleRazorpayWebhook = async (req, res) => {
+  try {
+    const webhookSignature = req.headers['x-razorpay-signature'];
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    
+    if (!webhookSecret) {
+      console.error('Razorpay webhook secret not configured');
+      return res.status(400).json({ error: 'Webhook secret not configured' });
+    }
+
+    // Verify webhook signature
+    const body = JSON.stringify(req.body);
+    const expectedSignature = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(body)
+      .digest('hex');
+
+    if (expectedSignature !== webhookSignature) {
+      return res.status(400).json({ error: 'Invalid webhook signature' });
+    }
+
+    const { event, payload } = req.body;
+    
+    // Handle different webhook events
+    switch (event) {
+      case 'payment.captured':
+        await handlePaymentCaptured(payload.payment.entity);
+        break;
+      case 'payment.failed':
+        await handlePaymentFailed(payload.payment.entity);
+        break;
+      case 'refund.created':
+        await handleRefundCreated(payload.refund.entity);
+        break;
+      default:
+        console.log(`Unhandled webhook event: ${event}`);
+    }
+
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error('Error handling Razorpay webhook:', error);
+    res.status(500).json({ error: 'Failed to process webhook' });
+  }
+};
+
+// Webhook event handlers
+const handlePaymentCaptured = async (paymentEntity) => {
+  try {
+    // Update payment status in database
+    await prisma.payment.updateMany({
+      where: { transactionId: paymentEntity.order_id },
+      data: {
+        status: 'COMPLETED',
+        gatewayResponse: paymentEntity,
+        updatedAt: new Date()
+      }
+    });
+
+    console.log(`Payment captured: ${paymentEntity.id}`);
+  } catch (error) {
+    console.error('Error handling payment captured:', error);
+  }
+};
+
+const handlePaymentFailed = async (paymentEntity) => {
+  try {
+    // Update payment status in database
+    await prisma.payment.updateMany({
+      where: { transactionId: paymentEntity.order_id },
+      data: {
+        status: 'FAILED',
+        gatewayResponse: paymentEntity,
+        updatedAt: new Date()
+      }
+    });
+
+    console.log(`Payment failed: ${paymentEntity.id}`);
+  } catch (error) {
+    console.error('Error handling payment failed:', error);
+  }
+};
+
+const handleRefundCreated = async (refundEntity) => {
+  try {
+    // Update payment with refund information
+    const payment = await prisma.payment.findFirst({
+      where: {
+        gatewayResponse: {
+          path: ['id'],
+          equals: refundEntity.payment_id
+        }
+      }
+    });
+
+    if (payment) {
+      const refundAmount = refundEntity.amount / 100; // Convert from paise
+      const refundStatus = refundAmount >= payment.finalAmount ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+      
+      await prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: refundStatus,
+          refundAmount: refundAmount,
+          refundedAt: new Date(),
+          gatewayResponse: {
+            ...payment.gatewayResponse,
+            refund: refundEntity
+          }
+        }
+      });
+    }
+
+    console.log(`Refund created: ${refundEntity.id}`);
+  } catch (error) {
+    console.error('Error handling refund created:', error);
+  }
+};
+
 module.exports = {
   createPayment,
   getAllPayments,
   getPaymentById,
   updatePaymentStatus,
   getUserPayments,
-  verifyPayment
+  verifyPayment,
+  createRazorpayBookingOrder,
+  createRazorpaySubscriptionOrder,
+  verifyRazorpayPayment,
+  handleRazorpayPaymentFailure,
+  processRefund,
+  getPaymentStatus,
+  handleRazorpayWebhook
 };
