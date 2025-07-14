@@ -19,6 +19,7 @@ const issueRoutes = require('./routes/issueRoutes');
 const maidRoutes = require('./routes/maidRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const testRoutes = require('./routes/testRoutes');
 
 // Create Express app
 const app = express();
@@ -37,6 +38,7 @@ app.use('/api/issues', issueRoutes);
 app.use('/api/maids', maidRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/test', testRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {
