@@ -28,7 +28,10 @@
     "node-cron": "^4.2.0",
     "prisma": "^6.8.2",
     "razorpay": "^2.9.6",
-    "short-uuid": "^5.2.0"
+    "short-uuid": "^5.2.0",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
