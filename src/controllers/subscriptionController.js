@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
+const notificationService = require('../services/notificationService');
 const prisma = new PrismaClient();
 
 // Get all subscription plans
@@ -246,8 +247,23 @@ const confirmNextDayService = async (req, res) => {
           finalAmount: subscription.plan.finalPrice / subscription.plan.sessionsPerMonth,
           discount: 0,
           specialInstructions: 'Subscription-based daily service'
+        },
+        include: {
+          service: true,
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              address: true
+            }
+          }
         }
       });
+
+      // Send notification for booking creation
+      await notificationService.notifyBookingCreated(booking);
 
       res.json({
         success: true,
@@ -330,9 +346,17 @@ const completeSubscriptionPayment = async (req, res) => {
           include: {
             service: true
           }
+        },
+        customer: {
+          include: {
+            user: true
+          }
         }
       }
     });
+
+    // Send notification for subscription activation
+    await notificationService.notifySubscriptionCreated(subscription);
 
     res.json({
       success: true,
@@ -360,6 +384,26 @@ const cancelSubscription = async (req, res) => {
       return res.status(404).json({ message: 'Customer profile not found' });
     }
 
+    // Get the subscription details before cancelling
+    const existingSubscription = await prisma.subscription.findFirst({
+      where: {
+        customerId: customerProfile.id,
+        status: 'ACTIVE'
+      },
+      include: {
+        plan: {
+          include: {
+            service: true
+          }
+        },
+        customer: {
+          include: {
+            user: true
+          }
+        }
+      }
+    });
+
     const subscription = await prisma.subscription.updateMany({
       where: {
         customerId: customerProfile.id,
@@ -370,6 +414,11 @@ const cancelSubscription = async (req, res) => {
         autoRenew: false
       }
     });
+
+    // Send notification for subscription cancellation
+    if (existingSubscription) {
+      await notificationService.notifySubscriptionCancelled(existingSubscription, 'Cancelled by user');
+    }
 
     res.json({
       success: true,
