@@ -112,6 +112,9 @@ const createBooking = async (req, res) => {
       }
     });
 
+    // Send notification for booking creation
+    await notificationService.notifyBookingCreated(booking);
+
     // Return successful response
     res.status(201).json({
       success: true,
