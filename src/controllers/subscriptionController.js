@@ -438,5 +438,6 @@ module.exports = {
   getUserSubscription,
   confirmNextDayService,
   completeSubscriptionPayment,
-  cancelSubscription
+  cancelSubscription,
+  checkSubscriptionStatus
 };
