@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const razorpayService = require('../services/razorpayService');
+const notificationService = require('../services/notificationService');
 const crypto = require('crypto');
 const prisma = new PrismaClient();
 
@@ -269,6 +270,15 @@ const updatePaymentStatus = async (req, res) => {
       }
     });
 
+    // Send notifications based on payment status
+    if (status === 'COMPLETED') {
+      await notificationService.notifyPaymentReceived(payment);
+    } else if (status === 'FAILED') {
+      await notificationService.notifyPaymentFailed(payment);
+    } else if (status === 'REFUNDED' || status === 'PARTIALLY_REFUNDED') {
+      await notificationService.notifyRefundProcessed(payment, payment.refundAmount);
+    }
+
     res.json(payment);
   } catch (error) {
     console.error('Error updating payment status:', error);
@@ -359,6 +369,9 @@ const verifyPayment = async (req, res) => {
         }
       }
     });
+
+    // Send payment success notification
+    await notificationService.notifyPaymentReceived(updatedPayment);
 
     res.json(updatedPayment);
   } catch (error) {
