@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const notificationService = require('../services/notificationService');
 
 const prisma = new PrismaClient();
 
@@ -46,6 +47,9 @@ const register = async (req, res) => {
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
     );
+
+    // Notify clients
+    await notificationService.notifyUserRegistration(user);
 
     res.status(201).json({
       message: 'User registered successfully',
@@ -149,6 +153,9 @@ const updateProfile = async (req, res) => {
 
     // Remove password from response
     const { password, ...userWithoutPassword } = user;
+
+    // Send notification
+    await notificationService.notifyUserProfileUpdate(user);
 
     res.json({ user: userWithoutPassword });
   } catch (error) {

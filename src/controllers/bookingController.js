@@ -1,4 +1,5 @@
 const { PrismaClient } = require('@prisma/client');
+const notificationService = require('../services/notificationService');
 const prisma = new PrismaClient();
 
 const createBooking = async (req, res) => {
@@ -289,6 +290,9 @@ const   assignMaid = async (req, res) => {
       }
     });
 
+    // Send notification
+    await notificationService.notifyMaidAssigned(booking);
+
     res.json(booking);
   } catch (error) {
     console.error('Error assigning maid:', error);
@@ -307,7 +311,11 @@ const updateBookingStatus = async (req, res) => {
 
     const booking = await prisma.booking.update({
       where: { id },
-      data: { status },
+      data: { 
+        status,
+        ...(status === 'COMPLETED' && { completedAt: new Date() }),
+        ...(status === 'IN_PROGRESS' && { actualStartTime: new Date() })
+      },
       include: {
         service: true,
         customer: {
@@ -329,6 +337,15 @@ const updateBookingStatus = async (req, res) => {
       }
     });
 
+    // Send notifications based on status
+    if (status === 'COMPLETED') {
+      await notificationService.notifyServiceCompleted(booking);
+    } else if (status === 'IN_PROGRESS') {
+      await notificationService.notifyServiceStarted(booking);
+    } else {
+      await notificationService.notifyBookingStatusChange(booking, status);
+    }
+
     res.json(booking);
   } catch (error) {
     console.error('Error updating booking status:', error);
@@ -339,6 +356,8 @@ const updateBookingStatus = async (req, res) => {
 const cancelBooking = async (req, res) => {
   try {
     const { id } = req.params;
+    const { reason = 'Cancelled by user' } = req.body;
+    
     const booking = await prisma.booking.update({
       where: { id },
       data: { status: 'CANCELLED' },
@@ -362,6 +381,9 @@ const cancelBooking = async (req, res) => {
         }
       }
     });
+
+    // Send notification
+    await notificationService.notifyBookingCancellation(booking, reason);
 
     res.json(booking);
   } catch (error) {

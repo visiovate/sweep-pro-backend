@@ -1,0 +1,263 @@
+{
+  "info": {
+    "_postman_id": "12345678-1234-1234-1234-123456789012",
+    "name": "Sweep Pro - Razorpay Integration Tests",
+    "description": "Complete test suite for Razorpay payment integration",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "12345678"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "auth_token",
+      "value": ""
+    },
+    {
+      "key": "razorpay_key_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer@sweepro.com\",\n  \"password\": \"customer123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('auth_token', response.token);",
+                  "    pm.environment.set('customer_id', response.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Create Test Booking",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"serviceId\": \"{{service_id}}\",\n  \"scheduledDate\": \"2025-07-15\",\n  \"scheduledTime\": \"10:00\",\n  \"address\": \"123 Test Street, Test City\",\n  \"notes\": \"Test booking for payment\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/bookings",
+          "host": ["{{base_url}}"],
+          "path": ["api", "bookings"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "    const response = pm.response.json();",
+              "    pm.environment.set('booking_id', response.data.booking.id);",
+              "    pm.environment.set('booking_amount', response.data.booking.finalAmount);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Razorpay Payment Flow",
+      "item": [
+        {
+          "name": "1. Create Razorpay Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{booking_id}}\",\n  \"amount\": {{booking_amount}},\n  \"currency\": \"INR\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/payments/razorpay/booking/create-order",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "razorpay", "booking", "create-order"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('razorpay_order_id', response.order.id);",
+                  "    pm.environment.set('razorpay_amount', response.order.amount);",
+                  "    console.log('Razorpay Order Created:', response.order.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Simulate Payment Success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"razorpay_order_id\": \"{{razorpay_order_id}}\",\n  \"razorpay_payment_id\": \"pay_test_{{$randomAlphaNumeric}}\",\n  \"razorpay_signature\": \"{{test_signature}}\",\n  \"payment_method\": \"card\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/payments/razorpay/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "razorpay", "verify"]
+            }
+          }
+        },
+        {
+          "name": "3. Simulate Payment Failure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"razorpay_order_id\": \"{{razorpay_order_id}}\",\n  \"error_code\": \"PAYMENT_FAILED\",\n  \"error_description\": \"Payment was declined by bank\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/payments/razorpay/failure",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "razorpay", "failure"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin Operations",
+      "item": [
+        {
+          "name": "Login Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@sweepro.com\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('admin_token', response.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Process Refund",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refundAmount\": 100,\n  \"refundReason\": \"Customer requested refund\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/payments/{{payment_id}}/refund",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "{{payment_id}}", "refund"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
