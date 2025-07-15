@@ -62,6 +62,15 @@ const createBooking = async (req, res) => {
       }
     });
 
+    // Only allow customers with active subscriptions to book
+    if (!subscription) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Booking not allowed. Only customers with active subscriptions can book maid services. Please subscribe to a plan first.',
+        requiresSubscription: true
+      });
+    }
+
     // Get service details for pricing
     const service = await prisma.service.findUnique({
       where: { id: serviceId }
@@ -71,39 +80,19 @@ const createBooking = async (req, res) => {
       return res.status(404).json({ message: 'Service not found' });
     }
 
-    let bookingData, responseMessage;
-
-    if (subscription) {
-      // Customer has active subscription - no payment required
-      bookingData = {
-        customerId,
-        serviceId,
-        specialInstructions: notes,
-        serviceAddress: address,
-        status: 'CONFIRMED', // Direct confirmation for subscription customers
-        scheduledAt,
-        estimatedDuration: service.baseDuration,
-        totalAmount: 0, // No amount for subscription customers
-        finalAmount: 0,
-        discount: 0
-      };
-      responseMessage = 'Booking created successfully. No additional payment required as you have an active subscription.';
-    } else {
-      // Customer doesn't have active subscription - payment required
-      bookingData = {
-        customerId,
-        serviceId,
-        specialInstructions: notes,
-        serviceAddress: address,
-        status: 'PENDING', // Pending until payment is completed
-        scheduledAt,
-        estimatedDuration: service.baseDuration,
-        totalAmount: service.basePrice,
-        finalAmount: service.basePrice,
-        discount: 0
-      };
-      responseMessage = 'Booking created successfully. Please complete the payment to confirm your booking.';
-    }
+    // Customer has active subscription - create booking with no payment required
+    const bookingData = {
+      customerId,
+      serviceId,
+      specialInstructions: notes,
+      serviceAddress: address,
+      status: 'CONFIRMED', // Direct confirmation for subscription customers
+      scheduledAt,
+      estimatedDuration: service.baseDuration,
+      totalAmount: 0, // No amount for subscription customers
+      finalAmount: 0,
+      discount: 0
+    };
 
     // Create the booking
     const booking = await prisma.booking.create({
@@ -122,33 +111,14 @@ const createBooking = async (req, res) => {
       }
     });
 
-    // If no subscription, create a payment record
-    let paymentData = null;
-    if (!subscription) {
-      paymentData = await prisma.payment.create({
-        data: {
-          bookingId: booking.id,
-          customerId,
-          amount: service.basePrice,
-          discount: 0,
-          tax: 0,
-          finalAmount: service.basePrice,
-          paymentMethod: 'CARD', // Default, will be updated when payment is made
-          status: 'PENDING',
-          paymentType: 'BOOKING'
-        }
-      });
-    }
-
     // Return successful response
     res.status(201).json({
       success: true,
       data: {
         booking,
-        payment: paymentData,
-        hasActiveSubscription: !!subscription
+        hasActiveSubscription: true
       },
-      message: responseMessage
+      message: 'Booking created successfully. No additional payment required as you have an active subscription.'
     });
 
   } catch (error) {
