@@ -144,7 +144,41 @@ const createBooking = async (req, res) => {
 
 const getAllBookings = async (req, res) => {
   try {
+    const { status, page = 1, limit = 20 } = req.query;
+    
+    // Build where clause based on status filter
+    let whereClause = {};
+    
+    // Apply status filtering based on frontend requirements
+    if (status) {
+      switch (status.toLowerCase()) {
+        case 'scheduled':
+          // Include bookings that are confirmed, assigned, or in progress
+          whereClause.status = { in: ['CONFIRMED', 'ASSIGNED', 'IN_PROGRESS'] };
+          break;
+        case 'completed':
+          whereClause.status = 'COMPLETED';
+          break;
+        case 'cancelled':
+          whereClause.status = 'CANCELLED';
+          break;
+        case 'all':
+        default:
+          // No additional filter - return all bookings
+          break;
+      }
+    }
+    
+    // Calculate pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+    
+    // Get total count for pagination
+    const totalBookings = await prisma.booking.count({ where: whereClause });
+    
     const bookings = await prisma.booking.findMany({
+      where: whereClause,
       include: {
         service: true,
         customer: {
@@ -163,12 +197,35 @@ const getAllBookings = async (req, res) => {
             phone: true
           }
         }
+      },
+      orderBy: {
+        scheduledAt: 'desc' // Most recent first
+      },
+      skip,
+      take: limitNum
+    });
+    
+    res.json({
+      success: true,
+      data: bookings,
+      pagination: {
+        currentPage: pageNum,
+        totalPages: Math.ceil(totalBookings / limitNum),
+        totalBookings,
+        hasNext: pageNum * limitNum < totalBookings,
+        hasPrev: pageNum > 1
+      },
+      filters: {
+        applied: status || 'all',
+        available: ['all', 'scheduled', 'completed', 'cancelled']
       }
     });
-    res.json(bookings);
   } catch (error) {
     console.error('Error fetching bookings:', error);
-    res.status(500).json({ message: 'Failed to fetch bookings' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch bookings' 
+    });
   }
 };
 
@@ -212,10 +269,35 @@ const getBookingById = async (req, res) => {
 const getUserBookings = async (req, res) => {
   try {
     const userId = req.user.id;
+    const { status } = req.query;
+    
+    // Build where clause based on status filter
+    let whereClause = {
+      customerId: userId
+    };
+    
+    // Apply status filtering based on frontend requirements
+    if (status) {
+      switch (status.toLowerCase()) {
+        case 'scheduled':
+          // Include bookings that are confirmed, assigned, or in progress
+          whereClause.status = { in: ['CONFIRMED', 'ASSIGNED', 'IN_PROGRESS'] };
+          break;
+        case 'completed':
+          whereClause.status = 'COMPLETED';
+          break;
+        case 'cancelled':
+          whereClause.status = 'CANCELLED';
+          break;
+        case 'all':
+        default:
+          // No additional filter - return all bookings
+          break;
+      }
+    }
+    
     const bookings = await prisma.booking.findMany({
-      where: {
-        customerId: userId
-      },
+      where: whereClause,
       include: {
         service: true,
         maid: {
@@ -226,22 +308,61 @@ const getUserBookings = async (req, res) => {
             phone: true
           }
         }
+      },
+      orderBy: {
+        scheduledAt: 'desc' // Most recent first
       }
     });
-    res.json(bookings);
+    
+    res.json({
+      success: true,
+      data: bookings,
+      filters: {
+        applied: status || 'all',
+        available: ['all', 'scheduled', 'completed', 'cancelled']
+      }
+    });
   } catch (error) {
     console.error('Error fetching user bookings:', error);
-    res.status(500).json({ message: 'Failed to fetch user bookings' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch user bookings' 
+    });
   }
 };
 
 const getMaidBookings = async (req, res) => {
   try {
     const maidId = req.user.id;
+    const { status } = req.query;
+    
+    // Build where clause based on status filter
+    let whereClause = {
+      maidId: maidId
+    };
+    
+    // Apply status filtering based on frontend requirements
+    if (status) {
+      switch (status.toLowerCase()) {
+        case 'scheduled':
+          // Include bookings that are confirmed, assigned, or in progress
+          whereClause.status = { in: ['CONFIRMED', 'ASSIGNED', 'IN_PROGRESS'] };
+          break;
+        case 'completed':
+          whereClause.status = 'COMPLETED';
+          break;
+        case 'cancelled':
+          whereClause.status = 'CANCELLED';
+          break;
+        case 'all':
+        default:
+          // No additional filter - return all bookings
+          break;
+      }
+    }
+    
     const bookings = await prisma.booking.findMany({
-      where: {
-        maidId: maidId
-      },
+      where: whereClause,
       include: {
         service: true,
         customer: {
@@ -252,12 +373,26 @@ const getMaidBookings = async (req, res) => {
             phone: true
           }
         }
+      },
+      orderBy: {
+        scheduledAt: 'desc' // Most recent first
       }
     });
-    res.json(bookings);
+    
+    res.json({
+      success: true,
+      data: bookings,
+      filters: {
+        applied: status || 'all',
+        available: ['all', 'scheduled', 'completed', 'cancelled']
+      }
+    });
   } catch (error) {
     console.error('Error fetching maid bookings:', error);
-    res.status(500).json({ message: 'Failed to fetch maid bookings' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch maid bookings' 
+    });
   }
 };
 
@@ -482,6 +617,62 @@ const completeBookingPayment = async (req, res) => {
   }
 };
 
+const getBookingStats = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { role } = req.user;
+    
+    // Build where clause based on user role
+    let whereClause = {};
+    if (role === 'CUSTOMER') {
+      whereClause.customerId = userId;
+    } else if (role === 'MAID') {
+      whereClause.maidId = userId;
+    }
+    // For admin, no where clause needed (gets all bookings)
+    
+    // Get counts for each status category
+    const [total, scheduled, completed, cancelled] = await Promise.all([
+      prisma.booking.count({ where: whereClause }),
+      prisma.booking.count({ 
+        where: { 
+          ...whereClause,
+          status: { in: ['CONFIRMED', 'ASSIGNED', 'IN_PROGRESS'] }
+        }
+      }),
+      prisma.booking.count({ 
+        where: { 
+          ...whereClause,
+          status: 'COMPLETED'
+        }
+      }),
+      prisma.booking.count({ 
+        where: { 
+          ...whereClause,
+          status: 'CANCELLED'
+        }
+      })
+    ]);
+    
+    res.json({
+      success: true,
+      data: {
+        total,
+        scheduled,
+        completed,
+        cancelled
+      },
+      filters: ['all', 'scheduled', 'completed', 'cancelled']
+    });
+  } catch (error) {
+    console.error('Error fetching booking stats:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch booking statistics' 
+    });
+  }
+};
+
 module.exports = {
   createBooking,
   getAllBookings,
@@ -491,5 +682,6 @@ module.exports = {
   assignMaid,
   updateBookingStatus,
   cancelBooking,
-  completeBookingPayment
+  completeBookingPayment,
+  getBookingStats
 };

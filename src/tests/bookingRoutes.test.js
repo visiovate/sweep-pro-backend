@@ -91,6 +91,7 @@ describe('Booking Routes - Subscription Only', () => {
           basePrice: 1000,
           finalPrice: 800,
           duration: 1,
+          sessionsPerWeek: 1,
           sessionsPerMonth: 4,
           isActive: true
         }
@@ -343,6 +344,152 @@ describe('Booking Routes - Subscription Only', () => {
       expect(res.body.hasActiveSubscription).toBe(false);
       expect(res.body.subscription).toBe(null);
       expect(res.body.message).toContain('No active subscription found');
+    });
+  });
+
+  describe('GET /api/bookings/my-bookings with filtering', () => {
+    let testBookings = [];
+
+    beforeAll(async () => {
+      // Create test bookings with different statuses
+      const customerId = testData.customerWithSubscription.id;
+      const serviceId = testData.service.id;
+
+      testBookings = await Promise.all([
+        // Create a confirmed booking
+        prisma.booking.create({
+          data: {
+            customerId,
+            serviceId,
+            status: 'CONFIRMED',
+            scheduledAt: new Date('2024-12-26T10:00:00Z'),
+            serviceAddress: '123 Test Street',
+            totalAmount: 0,
+            finalAmount: 0,
+            estimatedDuration: 120
+          }
+        }),
+        // Create a completed booking
+        prisma.booking.create({
+          data: {
+            customerId,
+            serviceId,
+            status: 'COMPLETED',
+            scheduledAt: new Date('2024-12-24T10:00:00Z'),
+            serviceAddress: '123 Test Street',
+            totalAmount: 0,
+            finalAmount: 0,
+            estimatedDuration: 120,
+            completedAt: new Date('2024-12-24T12:00:00Z')
+          }
+        }),
+        // Create a cancelled booking
+        prisma.booking.create({
+          data: {
+            customerId,
+            serviceId,
+            status: 'CANCELLED',
+            scheduledAt: new Date('2024-12-23T10:00:00Z'),
+            serviceAddress: '123 Test Street',
+            totalAmount: 0,
+            finalAmount: 0,
+            estimatedDuration: 120
+          }
+        })
+      ]);
+    });
+
+    afterAll(async () => {
+      // Clean up test bookings
+      await prisma.booking.deleteMany({
+        where: {
+          id: {
+            in: testBookings.map(b => b.id)
+          }
+        }
+      });
+    });
+
+    it('should return all bookings when no filter is applied', async () => {
+      const res = await request(app)
+        .get('/api/bookings/my-bookings')
+        .set('Authorization', `Bearer ${testData.tokenWithSubscription}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(3);
+      expect(res.body.filters.applied).toBe('all');
+      expect(res.body.filters.available).toEqual(['all', 'scheduled', 'completed', 'cancelled']);
+    });
+
+    it('should filter bookings by scheduled status', async () => {
+      const res = await request(app)
+        .get('/api/bookings/my-bookings?status=scheduled')
+        .set('Authorization', `Bearer ${testData.tokenWithSubscription}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].status).toBe('CONFIRMED');
+      expect(res.body.filters.applied).toBe('scheduled');
+    });
+
+    it('should filter bookings by completed status', async () => {
+      const res = await request(app)
+        .get('/api/bookings/my-bookings?status=completed')
+        .set('Authorization', `Bearer ${testData.tokenWithSubscription}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].status).toBe('COMPLETED');
+      expect(res.body.filters.applied).toBe('completed');
+    });
+
+    it('should filter bookings by cancelled status', async () => {
+      const res = await request(app)
+        .get('/api/bookings/my-bookings?status=cancelled')
+        .set('Authorization', `Bearer ${testData.tokenWithSubscription}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].status).toBe('CANCELLED');
+      expect(res.body.filters.applied).toBe('cancelled');
+    });
+
+    it('should return bookings ordered by scheduledAt desc', async () => {
+      const res = await request(app)
+        .get('/api/bookings/my-bookings')
+        .set('Authorization', `Bearer ${testData.tokenWithSubscription}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(3);
+      
+      // Check if bookings are ordered by scheduledAt desc (most recent first)
+      const dates = res.body.data.map(b => new Date(b.scheduledAt));
+      expect(dates[0] >= dates[1]).toBe(true);
+      expect(dates[1] >= dates[2]).toBe(true);
+    });
+  });
+
+  describe('GET /api/bookings/stats', () => {
+    it('should return booking statistics for customer', async () => {
+      const res = await request(app)
+        .get('/api/bookings/stats')
+        .set('Authorization', `Bearer ${testData.tokenWithSubscription}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveProperty('total');
+      expect(res.body.data).toHaveProperty('scheduled');
+      expect(res.body.data).toHaveProperty('completed');
+      expect(res.body.data).toHaveProperty('cancelled');
+      expect(res.body.filters).toEqual(['all', 'scheduled', 'completed', 'cancelled']);
+      
+      // Should have at least 3 bookings from previous test
+      expect(res.body.data.total).toBeGreaterThanOrEqual(3);
     });
   });
 });
