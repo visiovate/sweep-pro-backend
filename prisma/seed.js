@@ -789,6 +789,193 @@ async function main() {
     
     console.log('✅ Created pending subscription for pending@sweepro.com');
     console.log('✅ Created test payments with different statuses (FAILED, REFUNDED)');
+    
+    // Create diverse booking statuses for testing filtering functionality
+    console.log('\n🔄 Creating diverse booking statuses for testing filters...');
+    
+    // Create COMPLETED bookings (past dates)
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { email: 'customer@sweepro.com' } },
+        maid: { connect: { email: 'maid@sweepro.com' } },
+        service: { connect: { id: dailyCleaningService.id } },
+        status: 'COMPLETED',
+        priority: 'NORMAL',
+        scheduledAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+        completedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000), // 2 hours after scheduled
+        estimatedDuration: 120,
+        actualEndTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
+        serviceAddress: '123 Main Street, City Center',
+        serviceLatitude: 12.9716,
+        serviceLongitude: 77.5946,
+        totalAmount: 0, // Subscription customer
+        discount: 0,
+        finalAmount: 0
+      }
+    });
+
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { email: 'customer2@sweepro.com' } },
+        maid: { connect: { email: 'maid2@sweepro.com' } },
+        service: { connect: { id: deepCleaningService.id } },
+        status: 'COMPLETED',
+        priority: 'HIGH',
+        scheduledAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+        completedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000), // 4 hours after scheduled
+        estimatedDuration: 240,
+        actualEndTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000),
+        serviceAddress: '456 Main Street, City Center',
+        serviceLatitude: 12.9717,
+        serviceLongitude: 77.5947,
+        totalAmount: 0, // Subscription customer
+        discount: 0,
+        finalAmount: 0
+      }
+    });
+
+    // Create ASSIGNED bookings (maid assigned but not started)
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { email: 'customer3@sweepro.com' } },
+        maid: { connect: { email: 'maid3@sweepro.com' } },
+        service: { connect: { id: maintenanceService.id } },
+        status: 'ASSIGNED',
+        priority: 'NORMAL',
+        scheduledAt: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), // Tomorrow
+        estimatedDuration: 180,
+        serviceAddress: '789 Main Street, City Center',
+        serviceLatitude: 12.9719,
+        serviceLongitude: 77.5949,
+        totalAmount: 0, // Subscription customer
+        discount: 0,
+        finalAmount: 0
+      }
+    });
+
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { email: 'customer4@sweepro.com' } },
+        maid: { connect: { email: 'maid4@sweepro.com' } },
+        service: { connect: { id: dailyCleaningService.id } },
+        status: 'ASSIGNED',
+        priority: 'HIGH',
+        scheduledAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // Day after tomorrow
+        estimatedDuration: 120,
+        serviceAddress: '102 Main Street, City Center',
+        serviceLatitude: 12.9721,
+        serviceLongitude: 77.5951,
+        totalAmount: 0, // Subscription customer
+        discount: 0,
+        finalAmount: 0
+      }
+    });
+
+    // Create IN_PROGRESS bookings (currently being serviced)
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { email: 'customer5@sweepro.com' } },
+        maid: { connect: { email: 'maid5@sweepro.com' } },
+        service: { connect: { id: deepCleaningService.id } },
+        status: 'IN_PROGRESS',
+        priority: 'NORMAL',
+        scheduledAt: new Date(Date.now() - 1 * 60 * 60 * 1000), // 1 hour ago
+        actualStartTime: new Date(Date.now() - 1 * 60 * 60 * 1000), // Started 1 hour ago
+        estimatedDuration: 240,
+        serviceAddress: '103 Main Street, City Center',
+        serviceLatitude: 12.9723,
+        serviceLongitude: 77.5953,
+        totalAmount: 0, // Subscription customer
+        discount: 0,
+        finalAmount: 0
+      }
+    });
+
+    // Create CANCELLED bookings
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { email: 'customer@sweepro.com' } },
+        maid: undefined,
+        service: { connect: { id: dailyCleaningService.id } },
+        status: 'CANCELLED',
+        priority: 'NORMAL',
+        scheduledAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
+        estimatedDuration: 120,
+        serviceAddress: '123 Main Street, City Center',
+        serviceLatitude: 12.9716,
+        serviceLongitude: 77.5946,
+        totalAmount: 0, // Subscription customer
+        discount: 0,
+        finalAmount: 0
+      }
+    });
+
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { email: 'customer2@sweepro.com' } },
+        maid: undefined,
+        service: { connect: { id: deepCleaningService.id } },
+        status: 'CANCELLED',
+        priority: 'LOW',
+        scheduledAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+        estimatedDuration: 240,
+        serviceAddress: '456 Main Street, City Center',
+        serviceLatitude: 12.9717,
+        serviceLongitude: 77.5947,
+        totalAmount: 0, // Subscription customer
+        discount: 0,
+        finalAmount: 0
+      }
+    });
+
+    // Create RESCHEDULED bookings
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { email: 'customer3@sweepro.com' } },
+        maid: undefined,
+        service: { connect: { id: maintenanceService.id } },
+        status: 'RESCHEDULED',
+        priority: 'NORMAL',
+        scheduledAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // Next week
+        estimatedDuration: 180,
+        serviceAddress: '789 Main Street, City Center',
+        serviceLatitude: 12.9719,
+        serviceLongitude: 77.5949,
+        totalAmount: 0, // Subscription customer
+        discount: 0,
+        finalAmount: 0
+      }
+    });
+
+    // Create NO_SHOW bookings
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { email: 'customer4@sweepro.com' } },
+        maid: { connect: { email: 'maid4@sweepro.com' } },
+        service: { connect: { id: dailyCleaningService.id } },
+        status: 'NO_SHOW',
+        priority: 'NORMAL',
+        scheduledAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // Yesterday
+        estimatedDuration: 120,
+        serviceAddress: '102 Main Street, City Center',
+        serviceLatitude: 12.9721,
+        serviceLongitude: 77.5951,
+        totalAmount: 0, // Subscription customer
+        discount: 0,
+        finalAmount: 0
+      }
+    });
+
+    console.log('✅ Created diverse booking statuses for testing filters:');
+    console.log('  • 2 COMPLETED bookings (past dates)');
+    console.log('  • 2 ASSIGNED bookings (maid assigned, not started)');
+    console.log('  • 1 IN_PROGRESS booking (currently being serviced)');
+    console.log('  • 2 CANCELLED bookings');
+    console.log('  • 1 RESCHEDULED booking');
+    console.log('  • 1 NO_SHOW booking');
+    console.log('  • 5 CONFIRMED bookings (from previous section)');
+    console.log('\n📊 Total: 14 bookings with different statuses for comprehensive testing');
+    
     console.log('\n💳 All customers now have active subscriptions and can create bookings!');
     console.log('\n🧪 Test Users Created:');
     console.log('- admin@sweepro.com (password: admin123) - Admin');
