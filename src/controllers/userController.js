@@ -5,68 +5,14 @@ const notificationService = require('../services/notificationService');
 
 const prisma = new PrismaClient();
 
+// Note: Registration is now handled in authRoutes.js
+// This method is kept for backward compatibility if needed
 const register = async (req, res) => {
-  try {
-    const { email, password, name, phone, address, role } = req.body;
-
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    });
-
-    if (existingUser) {
-      return res.status(400).json({ error: 'User already exists' });
-    }
-
-    // Check if phone already exists
-    const existingPhone = await prisma.user.findUnique({
-      where: { phone }
-    });
-    if (existingPhone) {
-      return res.status(400).json({ error: 'Phone number already registered' });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        name,
-        phone,
-        address,
-        role // This will default to CUSTOMER if not provided
-      }
-    });
-
-    // Generate JWT
-    const token = jwt.sign(
-      { userId: user.id },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
-    );
-
-    // Notify clients
-    await notificationService.notifyUserRegistration(user);
-
-    res.status(201).json({
-      message: 'User registered successfully',
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        phone: user.phone,
-        address: user.address,
-        role: user.role
-      }
-    });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Error registering user' });
-  }
+  return res.status(410).json({ 
+    success: false,
+    message: 'This registration endpoint is deprecated. Please use /api/auth/register instead.',
+    redirectTo: '/api/auth/register'
+  });
 };
 
 const login = async (req, res) => {

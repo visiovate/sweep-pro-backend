@@ -11,27 +11,42 @@ const validate = (req, res, next) => {
 
 // User registration validation rules
 const registerValidation = [
+  body('name')
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Name must be between 2 and 100 characters long')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Name can only contain letters and spaces'),
   body('email')
     .isEmail()
     .withMessage('Please provide a valid email address')
-    .normalizeEmail(),
-  body('password')
-    .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters long')
-    .matches(/\d/)
-    .withMessage('Password must contain at least one number')
-    .matches(/[A-Z]/)
-    .withMessage('Password must contain at least one uppercase letter'),
-  body('name')
-    .trim()
-    .isLength({ min: 2 })
-    .withMessage('Name must be at least 2 characters long'),
+    .normalizeEmail()
+    .isLength({ max: 255 })
+    .withMessage('Email address is too long'),
   body('phone')
-    .matches(/^\+?[1-9]\d{1,14}$/)
-    .withMessage('Please provide a valid phone number'),
+    .matches(/^[6-9]\d{9}$/)
+    .withMessage('Please provide a valid 10-digit Indian phone number starting with 6-9'),
   body('role')
-    .isIn(['CUSTOMER', 'MAID', 'ADMIN'])
-    .withMessage('Invalid role specified'),
+    .isIn(['CUSTOMER', 'MAID'])
+    .withMessage('Role must be either CUSTOMER or MAID'),
+  body('password')
+    .isLength({ min: 8, max: 128 })
+    .withMessage('Password must be between 8 and 128 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&].*$/)
+    .withMessage('Password must contain at least one lowercase letter, one uppercase letter, one digit, and one special character'),
+  body('confirmPassword')
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error('Password confirmation does not match password');
+      }
+      return true;
+    }),
+  body('address')
+    .trim()
+    .isLength({ min: 10, max: 500 })
+    .withMessage('Address must be between 10 and 500 characters long')
+    .matches(/^[a-zA-Z0-9\s,.-]+$/)
+    .withMessage('Address contains invalid characters'),
   validate
 ];
 
