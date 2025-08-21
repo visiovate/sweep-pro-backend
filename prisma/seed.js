@@ -48,6 +48,7 @@ async function main() {
         address: '123 Main Street, City Center',
         latitude: 12.9716,
         longitude: 77.5946,
+        timeSlot: '09:00-12:00',
         customerProfile: {
           create: {
             preferences: {
@@ -286,6 +287,7 @@ async function main() {
         address: '456 Main Street, City Center',
         latitude: 12.9717,
         longitude: 77.5947,
+        timeSlot: '14:00-17:00',
         customerProfile: {
           create: {
             preferences: { preferredTime: 'evening', cleaningIntensity: 'deep' },
@@ -388,6 +390,7 @@ async function main() {
         address: '789 Main Street, City Center',
         latitude: 12.9719,
         longitude: 77.5949,
+        timeSlot: '11:00-14:00',
         customerProfile: {
           create: {
             preferences: { preferredTime: 'afternoon', cleaningIntensity: 'regular' },
@@ -490,6 +493,7 @@ async function main() {
         address: '102 Main Street, City Center',
         latitude: 12.9721,
         longitude: 77.5951,
+        timeSlot: '08:00-11:00',
         customerProfile: {
           create: {
             preferences: { preferredTime: 'morning', cleaningIntensity: 'deep' },
@@ -592,6 +596,7 @@ async function main() {
         address: '103 Main Street, City Center',
         latitude: 12.9723,
         longitude: 77.5953,
+        timeSlot: '16:00-19:00',
         customerProfile: {
           create: {
             preferences: { preferredTime: 'evening', cleaningIntensity: 'regular' },
@@ -704,6 +709,7 @@ async function main() {
         address: '999 Pending Street',
         latitude: 12.9725,
         longitude: 77.5955,
+        timeSlot: '13:00-16:00',
         customerProfile: {
           create: {
             preferences: { preferredTime: 'morning' },

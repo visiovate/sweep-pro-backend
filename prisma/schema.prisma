@@ -8,42 +8,538 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
-  password      String
-  role          UserRole  @default(CUSTOMER)
-  name          String
-  phone         String    @unique
-  address       String?
-  latitude      Float?
-  longitude     Float?
-  status        UserStatus @default(ACTIVE)
-  profileImage  String?
-  languagePreferences String[] @default([])
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                  String           @id @default(uuid())
+  email               String           @unique
+  password            String
+  role                UserRole         @default(CUSTOMER)
+  name                String
+  phone               String           @unique
+  address             String?
+  latitude            Float?
+  longitude           Float?
+  status              UserStatus       @default(ACTIVE)
+  timeSlot            String?
+  profileImage        String?
+  languagePreferences String[]         @default([])
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  adminProfile        AdminProfile?
+  customerBookings    Booking[]        @relation("CustomerBookings")
+  maidBookings        Booking[]        @relation("MaidBookings")
+  customerProfile     CustomerProfile?
+  feedbacks           Feedback[]
+  reportedIssues      Issue[]          @relation("ReportedIssues")
+  resolvedIssues      Issue[]          @relation("ResolvedIssues")
+  maidProfile         MaidProfile?
+  notifications       Notification[]
+  payments            Payment[]        @relation("CustomerPayments")
 
-  // Profile relations
-  customerProfile CustomerProfile?
-  maidProfile    MaidProfile?
-  adminProfile   AdminProfile?
-
-  // Booking relations
-  customerBookings Booking[] @relation("CustomerBookings")
-  maidBookings    Booking[] @relation("MaidBookings")
-  
-  // Communication relations
-  feedbacks     Feedback[]
-  notifications Notification[]
-  reportedIssues Issue[] @relation("ReportedIssues")
-  resolvedIssues Issue[] @relation("ResolvedIssues")
-  
-  // Payment relations
-  payments      Payment[] @relation("CustomerPayments")
-  
   @@index([email])
   @@index([phone])
   @@index([role])
+}
+
+model CustomerProfile {
+  id                  String              @id @default(uuid())
+  userId              String              @unique
+  preferences         Json?
+  emergencyContact    String?
+  specialInstructions String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription        Subscription?
+  taskCustomizations  TaskCustomization[]
+}
+
+model MaidProfile {
+  id                 String              @id @default(uuid())
+  userId             String              @unique
+  skills             String[]
+  languages          String[]
+  availability       Json
+  rating             Float               @default(0)
+  totalRatings       Int                 @default(0)
+  status             MaidStatus          @default(PENDING_VERIFICATION)
+  isFloatingMaid     Boolean             @default(false)
+  maxDailyBookings   Int                 @default(3)
+  serviceRadius      Float               @default(2.0)
+  currentLatitude    Float?
+  currentLongitude   Float?
+  lastLocationUpdate DateTime?
+  completedBookings  Int                 @default(0)
+  cancelledBookings  Int                 @default(0)
+  attendanceStreak   Int                 @default(0)
+  performanceScore   Float               @default(0)
+  hourlyRate         Float?
+  commissionRate     Float               @default(0.15)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  attendance         Attendance[]
+  locationHistory    LocationHistory[]
+  documents          MaidDocument[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  zones              MaidZone[]
+  performanceMetrics PerformanceMetric[]
+
+  @@index([status])
+  @@index([isFloatingMaid])
+  @@index([rating])
+}
+
+model Zone {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  boundaries  Json
+  isActive    Boolean    @default(true)
+  maxMaids    Int        @default(10)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  bookings    Booking[]
+  maidZones   MaidZone[]
+
+  @@index([name])
+}
+
+model MaidZone {
+  id        String      @id @default(uuid())
+  maidId    String
+  zoneId    String
+  isPrimary Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  maid      MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
+  zone      Zone        @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@unique([maidId, zoneId])
+  @@index([maidId])
+  @@index([zoneId])
+}
+
+model Service {
+  id                    String          @id @default(uuid())
+  name                  String
+  description           String
+  category              ServiceCategory
+  baseDuration          Int
+  basePrice             Float
+  isActive              Boolean         @default(true)
+  bufferTime            Int             @default(30)
+  maxDailyBookings      Int             @default(50)
+  isSubscriptionService Boolean         @default(false)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  bookings              Booking[]
+  servicePlans          ServicePlan[]
+  tasks                 Task[]
+
+  @@index([category])
+  @@index([isActive])
+  @@index([isSubscriptionService])
+}
+
+model Task {
+  id                    String              @id @default(uuid())
+  serviceId             String
+  name                  String
+  description           String
+  estimatedDuration     Int
+  isRequired            Boolean             @default(true)
+  order                 Int                 @default(0)
+  checklist             Json
+  instructionsMultiLang Json?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  service               Service             @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  taskCompletions       TaskCompletion[]
+  taskCustomizations    TaskCustomization[]
+
+  @@index([serviceId])
+  @@index([order])
+}
+
+model TaskCustomization {
+  id            String          @id @default(uuid())
+  customerId    String
+  taskId        String
+  modifications Json
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  customer      CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  task          Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, taskId])
+  @@index([customerId])
+}
+
+model Booking {
+  id                  String              @id @default(uuid())
+  customerId          String
+  maidId              String?
+  serviceId           String
+  zoneId              String?
+  status              BookingStatus       @default(PENDING)
+  priority            BookingPriority     @default(NORMAL)
+  scheduledAt         DateTime
+  timeSlot            String?             // Customer's preferred time slot (e.g., "09:00-12:00")
+  estimatedDuration   Int
+  actualStartTime     DateTime?
+  actualEndTime       DateTime?
+  completedAt         DateTime?
+  serviceAddress      String
+  serviceLatitude     Float?
+  serviceLongitude    Float?
+  totalAmount         Float
+  discount            Float               @default(0)
+  finalAmount         Float
+  specialInstructions String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  customer            User                @relation("CustomerBookings", fields: [customerId], references: [id])
+  maid                User?               @relation("MaidBookings", fields: [maidId], references: [id])
+  service             Service             @relation(fields: [serviceId], references: [id])
+  zone                Zone?               @relation(fields: [zoneId], references: [id])
+  feedback            Feedback?
+  issues              Issue[]
+  payment             Payment?
+  rescheduleHistory   RescheduleHistory[]
+  serviceOTP          ServiceOTP?
+  taskCompletions     TaskCompletion[]
+
+  @@index([customerId])
+  @@index([maidId])
+  @@index([serviceId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([zoneId])
+}
+
+model RescheduleHistory {
+  id          String   @id @default(uuid())
+  bookingId   String
+  oldDateTime DateTime
+  newDateTime DateTime
+  reason      String
+  requestedBy String
+  createdAt   DateTime @default(now())
+  booking     Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+model TaskCompletion {
+  id                 String             @id @default(uuid())
+  bookingId          String
+  taskId             String
+  status             TaskStatus         @default(PENDING)
+  completedAt        DateTime?
+  notes              String?
+  proofImages        String[]           @default([])
+  timeSpent          Int?
+  customerOtp        String?
+  otpSentAt          DateTime?
+  otpVerifiedAt      DateTime?
+  customerVerified   Boolean            @default(false)
+  verificationMethod VerificationMethod @default(PHOTO)
+  customerSignature  String?
+  proximityVerified  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  booking            Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  task               Task               @relation(fields: [taskId], references: [id])
+
+  @@unique([bookingId, taskId])
+  @@index([bookingId])
+  @@index([taskId])
+}
+
+model Feedback {
+  id                String    @id @default(uuid())
+  bookingId         String    @unique
+  customerId        String
+  overallRating     Int
+  qualityRating     Int?
+  punctualityRating Int?
+  behaviorRating    Int?
+  comment           String?
+  improvements      String?
+  wouldRecommend    Boolean?
+  adminResponse     String?
+  adminResponseAt   DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer          User      @relation(fields: [customerId], references: [id])
+
+  @@index([customerId])
+  @@index([overallRating])
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  bookingId       String?       @unique
+  subscriptionId  String?
+  customerId      String
+  amount          Float
+  discount        Float         @default(0)
+  tax             Float         @default(0)
+  finalAmount     Float
+  status          PaymentStatus @default(PENDING)
+  paymentMethod   PaymentMethod
+  gateway         String?
+  transactionId   String?
+  gatewayResponse Json?
+  paymentType     PaymentType   @default(BOOKING)
+  refundAmount    Float?
+  refundReason    String?
+  refundedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  booking         Booking?      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer        User          @relation("CustomerPayments", fields: [customerId], references: [id])
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([status])
+  @@index([transactionId])
+  @@index([subscriptionId])
+}
+
+model Subscription {
+  id           String             @id @default(uuid())
+  customerId   String             @unique
+  planId       String
+  status       SubscriptionStatus @default(PENDING_PAYMENT)
+  startDate    DateTime
+  endDate      DateTime
+  billingCycle BillingCycle       @default(MONTHLY)
+  amount       Float
+  discount     Float              @default(0)
+  autoRenew    Boolean            @default(true)
+  nextBillDate DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  payments     Payment[]
+  customer     CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  plan         ServicePlan        @relation(fields: [planId], references: [id])
+
+  @@index([status])
+  @@index([endDate])
+}
+
+model ServicePlan {
+  id               String         @id @default(uuid())
+  name             String         @unique
+  description      String
+  serviceId        String
+  sessionsPerWeek  Int
+  sessionsPerMonth Int
+  duration         Int
+  basePrice        Float
+  discountPercent  Float          @default(0)
+  finalPrice       Float
+  isActive         Boolean        @default(true)
+  isPopular        Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  service          Service        @relation(fields: [serviceId], references: [id])
+  subscriptions    Subscription[]
+
+  @@index([serviceId])
+  @@index([isActive])
+}
+
+model MaidDocument {
+  id             String       @id @default(uuid())
+  maidId         String
+  type           DocumentType
+  documentNumber String?
+  url            String
+  verified       Boolean      @default(false)
+  verifiedBy     String?
+  verifiedAt     DateTime?
+  expiryDate     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  maid           MaidProfile  @relation(fields: [maidId], references: [id], onDelete: Cascade)
+
+  @@index([maidId])
+  @@index([type])
+  @@index([verified])
+}
+
+model Attendance {
+  id               String           @id @default(uuid())
+  maidId           String
+  date             DateTime         @db.Date
+  checkIn          DateTime?
+  checkOut         DateTime?
+  checkInLocation  Json?
+  checkOutLocation Json?
+  status           AttendanceStatus @default(PRESENT)
+  hoursWorked      Float?
+  overtime         Float?           @default(0)
+  adminAdjusted    Boolean          @default(false)
+  adminNotes       String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  maid             MaidProfile      @relation(fields: [maidId], references: [id], onDelete: Cascade)
+
+  @@unique([maidId, date])
+  @@index([maidId])
+  @@index([date])
+  @@index([status])
+}
+
+model PerformanceMetric {
+  id                String      @id @default(uuid())
+  maidId            String
+  month             Int
+  year              Int
+  totalBookings     Int         @default(0)
+  completedBookings Int         @default(0)
+  cancelledBookings Int         @default(0)
+  averageRating     Float       @default(0)
+  onTimePercentage  Float       @default(0)
+  customerRetention Float       @default(0)
+  qualityScore      Float       @default(0)
+  reliabilityScore  Float       @default(0)
+  overallScore      Float       @default(0)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  maid              MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
+
+  @@unique([maidId, month, year])
+  @@index([maidId])
+  @@index([year, month])
+}
+
+model LocationHistory {
+  id        String           @id @default(uuid())
+  maidId    String
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+  timestamp DateTime         @default(now())
+  bookingId String?
+  activity  LocationActivity @default(GENERAL)
+  maid      MaidProfile      @relation(fields: [maidId], references: [id], onDelete: Cascade)
+
+  @@index([maidId])
+  @@index([timestamp])
+  @@index([bookingId])
+}
+
+model Notification {
+  id           String           @id @default(uuid())
+  userId       String
+  type         NotificationType
+  title        String
+  message      String
+  data         Json?
+  read         Boolean          @default(false)
+  readAt       DateTime?
+  delivered    Boolean          @default(false)
+  deliveredAt  DateTime?
+  scheduledFor DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([read])
+  @@index([scheduledFor])
+}
+
+model AdminProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  permissions Json
+  department  String?
+  designation String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Issue {
+  id          String        @id @default(uuid())
+  bookingId   String
+  reportedBy  String
+  type        IssueType
+  category    IssueCategory
+  priority    IssuePriority @default(MEDIUM)
+  status      IssueStatus   @default(OPEN)
+  title       String
+  description String
+  resolution  String?
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  escalatedAt DateTime?
+  escalatedTo String?
+  attachments String[]      @default([])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  booking     Booking       @relation(fields: [bookingId], references: [id])
+  reporter    User          @relation("ReportedIssues", fields: [reportedBy], references: [id])
+  resolver    User?         @relation("ResolvedIssues", fields: [resolvedBy], references: [id])
+
+  @@index([bookingId])
+  @@index([reportedBy])
+  @@index([resolvedBy])
+  @@index([status])
+  @@index([priority])
+}
+
+model SystemConfig {
+  id          String     @id @default(uuid())
+  key         String     @unique
+  value       String
+  type        ConfigType @default(STRING)
+  description String?
+  updatedBy   String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([key])
+}
+
+model ServiceOTP {
+  id                  String    @id @default(uuid())
+  bookingId           String    @unique
+  startOTP            String?
+  endOTP              String?
+  startOTPGeneratedAt DateTime?
+  endOTPGeneratedAt   DateTime?
+  startOTPVerifiedAt  DateTime?
+  endOTPVerifiedAt    DateTime?
+  startVerified       Boolean   @default(false)
+  endVerified         Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  booking             Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  resource   String
+  resourceId String?
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
 }
 
 enum UserRole {
@@ -62,61 +558,6 @@ enum UserStatus {
   PENDING_VERIFICATION
 }
 
-model CustomerProfile {
-  id            String    @id @default(uuid())
-  userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  preferences   Json?
-  emergencyContact String?
-  specialInstructions String?
-  subscription  Subscription?
-  taskCustomizations TaskCustomization[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-}
-
-model MaidProfile {
-  id            String    @id @default(uuid())
-  userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  skills        String[]
-  languages     String[]
-  availability  Json
-  rating        Float     @default(0)
-  totalRatings  Int       @default(0)
-  status        MaidStatus @default(PENDING_VERIFICATION)
-  isFloatingMaid Boolean   @default(false)
-  maxDailyBookings Int     @default(3)
-  serviceRadius Float     @default(2.0) // in km
-  currentLatitude Float?
-  currentLongitude Float?
-  lastLocationUpdate DateTime?
-  
-  // Performance tracking
-  completedBookings Int     @default(0)
-  cancelledBookings Int     @default(0)
-  attendanceStreak  Int     @default(0)
-  performanceScore  Float   @default(0)
-  
-  // Financial
-  hourlyRate       Float?
-  commissionRate   Float   @default(0.15)
-  
-  // Relations
-  zones         MaidZone[]
-  documents     MaidDocument[]
-  attendance    Attendance[]
-  performanceMetrics PerformanceMetric[]
-  locationHistory LocationHistory[]
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([status])
-  @@index([isFloatingMaid])
-  @@index([rating])
-}
-
 enum MaidStatus {
   PENDING_VERIFICATION
   ACTIVE
@@ -126,167 +567,11 @@ enum MaidStatus {
   ON_LEAVE
 }
 
-model Zone {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  description String?
-  boundaries  Json      // GeoJSON polygon
-  isActive    Boolean   @default(true)
-  maxMaids    Int       @default(10)
-  
-  // Relations
-  maidZones   MaidZone[]
-  bookings    Booking[]
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
-  @@index([name])
-}
-
-model MaidZone {
-  id        String  @id @default(uuid())
-  maidId    String
-  zoneId    String
-  isPrimary Boolean @default(false)
-  
-  maid      MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
-  zone      Zone        @relation(fields: [zoneId], references: [id], onDelete: Cascade)
-  
-  createdAt DateTime @default(now())
-  
-  @@unique([maidId, zoneId])
-  @@index([maidId])
-  @@index([zoneId])
-}
-
-model Service {
-  id            String    @id @default(uuid())
-  name          String
-  description   String
-  category      ServiceCategory
-  baseDuration  Int       // Duration in minutes
-  basePrice     Float
-  isActive      Boolean   @default(true)
-  
-  // Service configuration
-  bufferTime    Int       @default(30) // minutes between services
-  maxDailyBookings Int    @default(50)
-  
-  // Subscription service flag
-  isSubscriptionService Boolean @default(false)
-  
-  tasks         Task[]
-  bookings      Booking[]
-  servicePlans  ServicePlan[]
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([category])
-  @@index([isActive])
-  @@index([isSubscriptionService])
-}
-
 enum ServiceCategory {
   CLEANING
   DEEP_CLEANING
   MAINTENANCE
   SPECIAL_EVENT
-}
-
-model Task {
-  id            String    @id @default(uuid())
-  serviceId     String
-  service       Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  name          String
-  description   String
-  estimatedDuration Int   // Duration in minutes
-  isRequired    Boolean   @default(true)
-  order         Int       @default(0)
-  checklist     Json      // Array of checklist items
-  
-  // Multi-language support for instructions
-  instructionsMultiLang Json? // {"en": "Clean the floor", "hi": "फर्श साफ करें", "te": "నేలను శుభ్రం చేయండి"}
-  
-  taskCustomizations TaskCustomization[]
-  taskCompletions   TaskCompletion[]
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([serviceId])
-  @@index([order])
-}
-
-model TaskCustomization {
-  id           String  @id @default(uuid())
-  customerId   String
-  taskId       String
-  modifications Json   // Custom instructions or checklist modifications
-  isActive     Boolean @default(true)
-  
-  customer     CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  task         Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  
-  @@unique([customerId, taskId])
-  @@index([customerId])
-}
-
-model Booking {
-  id            String    @id @default(uuid())
-  customerId    String
-  customer      User      @relation("CustomerBookings", fields: [customerId], references: [id])
-  maidId        String?
-  maid          User?     @relation("MaidBookings", fields: [maidId], references: [id])
-  serviceId     String
-  service       Service   @relation(fields: [serviceId], references: [id])
-  zoneId        String?
-  zone          Zone?     @relation(fields: [zoneId], references: [id])
-  
-  status        BookingStatus @default(PENDING)
-  priority      BookingPriority @default(NORMAL)
-  
-  // Scheduling
-  scheduledAt   DateTime
-  estimatedDuration Int   // in minutes
-  actualStartTime DateTime?
-  actualEndTime   DateTime?
-  completedAt   DateTime?
-  
-  // Location
-  serviceAddress String
-  serviceLatitude Float?
-  serviceLongitude Float?
-  
-  // Financial
-  totalAmount   Float
-  discount      Float     @default(0)
-  finalAmount   Float
-  
-  // Special instructions
-  specialInstructions String?
-  
-  // Relations
-  feedback      Feedback?
-  payment       Payment?     // Only for non-subscription bookings
-  taskCompletions TaskCompletion[]
-  issues        Issue[]
-  rescheduleHistory RescheduleHistory[]
-  serviceOTP    ServiceOTP?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([customerId])
-  @@index([maidId])
-  @@index([serviceId])
-  @@index([status])
-  @@index([scheduledAt])
-  @@index([zoneId])
 }
 
 enum BookingStatus {
@@ -307,55 +592,9 @@ enum BookingPriority {
   URGENT
 }
 
-model RescheduleHistory {
-  id            String   @id @default(uuid())
-  bookingId     String
-  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  oldDateTime   DateTime
-  newDateTime   DateTime
-  reason        String
-  requestedBy   String   // USER_ID who requested
-  
-  createdAt     DateTime @default(now())
-  
-  @@index([bookingId])
-}
-
-model TaskCompletion {
-  id            String   @id @default(uuid())
-  bookingId     String
-  taskId        String
-  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  task          Task     @relation(fields: [taskId], references: [id])
-  
-  status        TaskStatus @default(PENDING)
-  completedAt   DateTime?
-  notes         String?
-  proofImages   String[] @default([])
-  timeSpent     Int?     // minutes
-  
-  // Customer verification without media
-  customerOtp   String?   // OTP sent to customer for verification
-  otpSentAt     DateTime?
-  otpVerifiedAt DateTime?
-  customerVerified Boolean @default(false)
-  verificationMethod VerificationMethod @default(PHOTO)
-  
-  // Alternative verification methods
-  customerSignature String? // Digital signature or pin
-  proximityVerified Boolean @default(false) // GPS-based verification
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  @@unique([bookingId, taskId])
-  @@index([bookingId])
-  @@index([taskId])
-}
-
 enum VerificationMethod {
   PHOTO
-  VIDEO  
+  VIDEO
   OTP
   SIGNATURE
   PROXIMITY
@@ -368,75 +607,6 @@ enum TaskStatus {
   COMPLETED
   SKIPPED
   ISSUE_REPORTED
-}
-
-model Feedback {
-  id            String    @id @default(uuid())
-  bookingId     String    @unique
-  booking       Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customerId    String
-  customer      User      @relation(fields: [customerId], references: [id])
-  
-  // Detailed ratings
-  overallRating    Int    // 1-5 rating
-  qualityRating    Int?   // 1-5 rating
-  punctualityRating Int?  // 1-5 rating
-  behaviorRating   Int?   // 1-5 rating
-  
-  comment       String?
-  improvements  String?
-  wouldRecommend Boolean?
-  
-  // Admin response
-  adminResponse String?
-  adminResponseAt DateTime?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([customerId])
-  @@index([overallRating])
-}
-
-model Payment {
-  id            String    @id @default(uuid())
-  
-  // Payment can be for either booking or subscription
-  bookingId     String?   @unique // Optional - for one-time service payments
-  booking       Booking?  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  
-  subscriptionId String?  // Optional - for subscription payments
-  subscription  Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  
-  customerId    String
-  customer      User      @relation("CustomerPayments", fields: [customerId], references: [id])
-  
-  amount        Float
-  discount      Float     @default(0)
-  tax           Float     @default(0)
-  finalAmount   Float
-  
-  status        PaymentStatus @default(PENDING)
-  paymentMethod PaymentMethod
-  gateway       String?   // razorpay, stripe, etc.
-  transactionId String?
-  gatewayResponse Json?
-  
-  // Payment type
-  paymentType   PaymentType @default(BOOKING)
-  
-  // Refund details
-  refundAmount  Float?
-  refundReason  String?
-  refundedAt    DateTime?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([customerId])
-  @@index([status])
-  @@index([transactionId])
-  @@index([subscriptionId])
 }
 
 enum PaymentStatus {
@@ -459,40 +629,9 @@ enum PaymentMethod {
 }
 
 enum PaymentType {
-  BOOKING      // One-time service payment
-  SUBSCRIPTION // Subscription payment
-  RENEWAL      // Subscription renewal payment
-}
-
-model Subscription {
-  id            String    @id @default(uuid())
-  customerId    String    @unique
-  customer      CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  
-  planId        String
-  plan          ServicePlan @relation(fields: [planId], references: [id])
-  
-  status        SubscriptionStatus @default(PENDING_PAYMENT)
-  startDate     DateTime
-  endDate       DateTime
-  
-  // Billing
-  billingCycle  BillingCycle @default(MONTHLY)
-  amount        Float
-  discount      Float        @default(0)
-  
-  // Auto renewal
-  autoRenew     Boolean      @default(true)
-  nextBillDate  DateTime?
-  
-  // Relations
-  payments      Payment[]    // Track subscription payments
-  
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  
-  @@index([status])
-  @@index([endDate])
+  BOOKING
+  SUBSCRIPTION
+  RENEWAL
 }
 
 enum SubscriptionStatus {
@@ -510,56 +649,6 @@ enum BillingCycle {
   YEARLY
 }
 
-model ServicePlan {
-  id            String    @id @default(uuid())
-  name          String    @unique
-  description   String
-  serviceId     String
-  service       Service   @relation(fields: [serviceId], references: [id])
-  
-  // Plan details
-  sessionsPerWeek Int
-  sessionsPerMonth Int
-  duration      Int       // in months
-  
-  // Pricing
-  basePrice     Float
-  discountPercent Float   @default(0)
-  finalPrice    Float
-  
-  isActive      Boolean   @default(true)
-  isPopular     Boolean   @default(false)
-  
-  subscriptions Subscription[]
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([serviceId])
-  @@index([isActive])
-}
-
-model MaidDocument {
-  id            String    @id @default(uuid())
-  maidId        String
-  maid          MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
-  
-  type          DocumentType
-  documentNumber String?
-  url           String
-  verified      Boolean   @default(false)
-  verifiedBy    String?
-  verifiedAt    DateTime?
-  expiryDate    DateTime?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([maidId])
-  @@index([type])
-  @@index([verified])
-}
-
 enum DocumentType {
   AADHAR_CARD
   PAN_CARD
@@ -573,34 +662,6 @@ enum DocumentType {
   PHOTO
 }
 
-model Attendance {
-  id            String    @id @default(uuid())
-  maidId        String
-  maid          MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
-  
-  date          DateTime  @db.Date
-  checkIn       DateTime?
-  checkOut      DateTime?
-  checkInLocation Json?   // lat, lng
-  checkOutLocation Json?  // lat, lng
-  
-  status        AttendanceStatus @default(PRESENT)
-  hoursWorked   Float?
-  overtime      Float?    @default(0)
-  
-  // Admin adjustments
-  adminAdjusted Boolean   @default(false)
-  adminNotes    String?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@unique([maidId, date])
-  @@index([maidId])
-  @@index([date])
-  @@index([status])
-}
-
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -610,54 +671,6 @@ enum AttendanceStatus {
   SICK_LEAVE
 }
 
-model PerformanceMetric {
-  id            String    @id @default(uuid())
-  maidId        String
-  maid          MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
-  
-  month         Int
-  year          Int
-  
-  // Performance indicators
-  totalBookings      Int     @default(0)
-  completedBookings  Int     @default(0)
-  cancelledBookings  Int     @default(0)
-  averageRating      Float   @default(0)
-  onTimePercentage   Float   @default(0)
-  customerRetention  Float   @default(0)
-  
-  // Calculated scores
-  qualityScore       Float   @default(0)
-  reliabilityScore   Float   @default(0)
-  overallScore       Float   @default(0)
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@unique([maidId, month, year])
-  @@index([maidId])
-  @@index([year, month])
-}
-
-model LocationHistory {
-  id            String    @id @default(uuid())
-  maidId        String
-  maid          MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
-  
-  latitude      Float
-  longitude     Float
-  accuracy      Float?
-  timestamp     DateTime  @default(now())
-  
-  // Context
-  bookingId     String?
-  activity      LocationActivity @default(GENERAL)
-  
-  @@index([maidId])
-  @@index([timestamp])
-  @@index([bookingId])
-}
-
 enum LocationActivity {
   GENERAL
   TRAVELING_TO_CUSTOMER
@@ -665,34 +678,6 @@ enum LocationActivity {
   TRAVELING_BETWEEN_CUSTOMERS
   BREAK
   END_OF_DAY
-}
-
-model Notification {
-  id            String    @id @default(uuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  type          NotificationType
-  title         String
-  message       String
-  data          Json?     // Additional data for the notification
-  
-  // Delivery tracking
-  read          Boolean   @default(false)
-  readAt        DateTime?
-  delivered     Boolean   @default(false)
-  deliveredAt   DateTime?
-  
-  // Scheduling
-  scheduledFor  DateTime?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
-  @@index([userId])
-  @@index([type])
-  @@index([read])
-  @@index([scheduledFor])
 }
 
 enum NotificationType {
@@ -711,58 +696,6 @@ enum NotificationType {
   SYSTEM_ALERT
   ATTENDANCE_ALERT
   PERFORMANCE_ALERT
-}
-
-model AdminProfile {
-  id            String    @id @default(uuid())
-  userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  permissions   Json      // Store admin permissions
-  department    String?
-  designation   String?
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-}
-
-model Issue {
-  id          String      @id @default(uuid())
-  bookingId   String
-  reportedBy  String
-  
-  type        IssueType
-  category    IssueCategory
-  priority    IssuePriority @default(MEDIUM)
-  status      IssueStatus   @default(OPEN)
-  
-  title       String
-  description String
-  
-  // Resolution
-  resolution  String?
-  resolvedBy  String?
-  resolvedAt  DateTime?
-  
-  // Escalation
-  escalatedAt DateTime?
-  escalatedTo String?
-  
-  // Media
-  attachments String[]      @default([])
-  
-  booking     Booking       @relation(fields: [bookingId], references: [id])
-  reporter    User          @relation("ReportedIssues", fields: [reportedBy], references: [id])
-  resolver    User?         @relation("ResolvedIssues", fields: [resolvedBy], references: [id])
-  
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-
-  @@index([bookingId])
-  @@index([reportedBy])
-  @@index([resolvedBy])
-  @@index([status])
-  @@index([priority])
 }
 
 enum IssueType {
@@ -799,66 +732,9 @@ enum IssueStatus {
   ESCALATED
 }
 
-// System Configuration Tables
-
-model SystemConfig {
-  id        String   @id @default(uuid())
-  key       String   @unique
-  value     String
-  type      ConfigType @default(STRING)
-  description String?
-  updatedBy String?
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  @@index([key])
-}
-
 enum ConfigType {
   STRING
   NUMBER
   BOOLEAN
   JSON
-}
-
-model ServiceOTP {
-  id        String   @id @default(uuid())
-  bookingId String   @unique
-  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  
-  startOTP  String?  // OTP for service start verification
-  endOTP    String?  // OTP for service completion verification
-  
-  startOTPGeneratedAt DateTime?
-  endOTPGeneratedAt   DateTime?
-  startOTPVerifiedAt  DateTime?
-  endOTPVerifiedAt    DateTime?
-  
-  startVerified Boolean @default(false)
-  endVerified   Boolean @default(false)
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  @@index([bookingId])
-}
-
-model AuditLog {
-  id        String   @id @default(uuid())
-  userId    String?
-  action    String
-  resource  String
-  resourceId String?
-  oldValues Json?
-  newValues Json?
-  ipAddress String?
-  userAgent String?
-  
-  createdAt DateTime @default(now())
-  
-  @@index([userId])
-  @@index([action])
-  @@index([resource])
-  @@index([createdAt])
 }

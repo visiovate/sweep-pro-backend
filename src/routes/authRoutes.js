@@ -10,7 +10,7 @@ const prisma = new PrismaClient();
 
 router.post('/register', registerValidation, async (req, res) => {
   try {
-    const { name, email, phone, role, password, confirmPassword, address } = req.body;
+    const { name, email, phone, role, password,timeSlot, confirmPassword, address } = req.body;
     
     // Check if user already exists by email
     const existingUserByEmail = await prisma.user.findUnique({
@@ -50,6 +50,7 @@ router.post('/register', registerValidation, async (req, res) => {
           email,
           phone,
           role,
+          timeSlot,
           password: hashedPassword,
           address,
           status: 'ACTIVE'
@@ -124,6 +125,7 @@ router.post('/register', registerValidation, async (req, res) => {
       name: result.name,
       email: result.email,
       phone: result.phone,
+      timeSlot: result.timeSlot,
       address: result.address,
       role: result.role,
       status: result.status,
@@ -229,6 +231,7 @@ router.post('/login', loginValidation, async (req, res) => {
       phone: user.phone,
       address: user.address,
       role: user.role,
+      timeSlot: user.timeSlot,
       status: user.status,
       createdAt: user.createdAt,
       profiles: {

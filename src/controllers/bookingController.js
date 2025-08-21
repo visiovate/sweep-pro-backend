@@ -5,66 +5,134 @@ const prisma = new PrismaClient();
 const createBooking = async (req, res) => {
   try {
     // Extract data from request
-    const { serviceId, scheduledDate, scheduledTime, notes, address } = req.body;
+    const { scheduledDate, timeSlot, serviceAddress } = req.body;
     const customerId = req.user.id;
 
-    // Validate required fields
-    if (!serviceId || !scheduledDate || !scheduledTime) {
+    // Validate required field
+    if (!scheduledDate) {
       return res.status(400).json({ 
-        message: 'serviceId, scheduledDate, and scheduledTime are required' 
+        success: false,
+        message: 'scheduledDate is required' 
       });
     }
 
+    // Get user data including timeSlot and address
+    const user = await prisma.user.findUnique({
+      where: { id: customerId },
+      select: {
+        id: true,
+        timeSlot: true,
+        address: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.'
+      });
+    }
+
+    // Use data from frontend request or fallback to user profile
+    const finalTimeSlot = timeSlot || user.timeSlot;
+    const finalAddress = serviceAddress || user.address;
+
+    // Default fallbacks if neither frontend nor user profile has the data
+    if (!finalTimeSlot) {
+      // Set a default timeslot if none provided
+      console.warn('No timeslot provided, using default 09:00-12:00');
+    }
+
+    if (!finalAddress) {
+      return res.status(400).json({
+        success: false,
+        message: 'Service address is required. Please provide an address or set one in your profile.'
+      });
+    }
+
+    // Parse timeSlot (format: "14:00-17:00") - use final timeslot with fallback
+    const effectiveTimeSlot = finalTimeSlot || '09:00-12:00'; // Default fallback
+    
+    let startTime, endTime;
+    try {
+      [startTime, endTime] = effectiveTimeSlot.split('-');
+      
+      if (!startTime || !endTime) {
+        throw new Error('Invalid timeslot format');
+      }
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid timeslot format. Expected format: "HH:MM-HH:MM"'
+      });
+    }
+    
+    // Calculate service duration from time slot
+    const startMinutes = parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1]);
+    const endMinutes = parseInt(endTime.split(':')[0]) * 60 + parseInt(endTime.split(':')[1]);
+    const durationMinutes = endMinutes - startMinutes;
+    
+    if (durationMinutes <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid timeslot: end time must be after start time'
+      });
+    }
+    
     // Combine date and time into a single DateTime object
     let scheduledAt;
     try {
-      // Directly combine ISO date with time (assuming time is in HH:MM format)
-      const timeString = scheduledTime.includes(':') 
-        ? scheduledTime 
-        : scheduledTime.slice(0, 2) + ':' + scheduledTime.slice(2);
-      
-      scheduledAt = new Date(`${scheduledDate}T${timeString}:00`);
+      scheduledAt = new Date(`${scheduledDate}T${startTime}:00`);
       
       // Validate the date
       if (isNaN(scheduledAt.getTime())) {
         throw new Error('Invalid date/time');
       }
+
+      // Check if the requested date is in the past
+      const now = new Date();
+      if (scheduledAt < now) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot create bookings for past dates'
+        });
+      }
     } catch (error) {
       return res.status(400).json({ 
-        message: 'Invalid scheduledDate or scheduledTime format. Please use YYYY-MM-DD and HH:MM format.' 
+        success: false,
+        message: 'Invalid scheduledDate format. Please use YYYY-MM-DD format.' 
       });
     }
 
-    // Get or create customer profile
+    // Get customer profile with active subscription
     let customerProfile = await prisma.customerProfile.findUnique({
-      where: { userId: customerId }
-    });
-
-    if (!customerProfile) {
-      // Create customer profile if it doesn't exist
-      customerProfile = await prisma.customerProfile.create({
-        data: {
-          userId: customerId,
-          preferences: {},
-          emergencyContact: null
-        }
-      });
-    }
-
-    // Check subscription status using customerProfile.id
-    const subscription = await prisma.subscription.findFirst({
-      where: {
-        customerId: customerProfile.id,
-        status: 'ACTIVE',
-        endDate: { gte: new Date() },
-      },
+      where: { userId: customerId },
       include: {
-        plan: true
+        subscription: {
+          where: {
+            status: 'ACTIVE',
+            endDate: { gte: new Date() }
+          },
+          include: {
+            plan: {
+              include: {
+                service: true
+              }
+            }
+          }
+        }
       }
     });
 
-    // Only allow customers with active subscriptions to book
-    if (!subscription) {
+    if (!customerProfile) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'Customer profile not found. Please complete your profile setup first.'
+      });
+    }
+
+    // Check subscription and get service from it
+    if (!customerProfile.subscription) {
       return res.status(403).json({ 
         success: false,
         message: 'Booking not allowed. Only customers with active subscriptions can book maid services. Please subscribe to a plan first.',
@@ -72,27 +140,32 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Get service details for pricing
-    const service = await prisma.service.findUnique({
-      where: { id: serviceId }
-    });
-
+    // Get service from subscription plan
+    const service = customerProfile.subscription.plan.service;
     if (!service) {
-      return res.status(404).json({ message: 'Service not found' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'No service found in your subscription plan. Please contact support.' 
+      });
     }
+
+    // Calculate estimated end time based on time slot
+    const estimatedEndTime = new Date(scheduledAt);
+    estimatedEndTime.setMinutes(estimatedEndTime.getMinutes() + durationMinutes);
 
     // Customer has active subscription - create booking with no payment required
     const bookingData = {
       customerId,
-      serviceId,
-      specialInstructions: notes,
-      serviceAddress: address,
+      serviceId: service.id,
+      serviceAddress: finalAddress, // Use finalAddress (from request or user profile)
       status: 'CONFIRMED', // Direct confirmation for subscription customers
       scheduledAt,
-      estimatedDuration: service.baseDuration,
-      totalAmount: 0, // No amount for subscription customers
-      finalAmount: 0,
-      discount: 0
+      timeSlot: effectiveTimeSlot, // Store the timeslot in dedicated field
+      estimatedDuration: durationMinutes, // Use duration from time slot
+      totalAmount: service.basePrice || 0, // Use service price if available
+      finalAmount: 0, // No charge for subscription customers
+      discount: service.basePrice || 0, // Discount the full amount for subscription customers
+      specialInstructions: `Preferred Time: ${effectiveTimeSlot}` // Add timeslot info for reference
     };
 
     // Create the booking
@@ -119,10 +192,10 @@ const createBooking = async (req, res) => {
     res.status(201).json({
       success: true,
       data: {
-        booking,
-        hasActiveSubscription: true
+        booking
       },
-      message: 'Booking created successfully. No additional payment required as you have an active subscription.'
+      message: 'Booking created successfully. No additional payment required as you have an active subscription.',
+      hasActiveSubscription: true
     });
 
   } catch (error) {

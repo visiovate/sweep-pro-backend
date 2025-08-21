@@ -249,10 +249,260 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return distance;
 }
 
+// Get comprehensive admin statistics
+const getAdminStats = async (req, res) => {
+  try {
+    // Get all statistics in parallel
+    const [users, bookings, subscriptions, payments] = await Promise.all([
+      prisma.user.findMany({
+        select: {
+          id: true,
+          role: true,
+          status: true,
+          createdAt: true
+        }
+      }),
+      prisma.booking.findMany({
+        select: {
+          id: true,
+          status: true,
+          finalAmount: true,
+          createdAt: true
+        }
+      }),
+      prisma.subscription.findMany({
+        select: {
+          id: true,
+          status: true,
+          amount: true,
+          createdAt: true
+        }
+      }),
+      prisma.payment.findMany({
+        select: {
+          id: true,
+          status: true,
+          finalAmount: true,
+          createdAt: true
+        }
+      })
+    ]);
+
+    // Calculate statistics
+    const totalUsers = users.length;
+    const totalCustomers = users.filter(u => u.role === 'CUSTOMER').length;
+    const totalMaids = users.filter(u => u.role === 'MAID').length;
+    const activeUsers = users.filter(u => u.status === 'ACTIVE').length;
+
+    const totalBookings = bookings.length;
+    const pendingBookings = bookings.filter(b => b.status === 'CONFIRMED' || b.status === 'PENDING').length;
+    const completedBookings = bookings.filter(b => b.status === 'COMPLETED').length;
+    const assignedBookings = bookings.filter(b => b.status === 'ASSIGNED').length;
+
+    const totalSubscriptions = subscriptions.length;
+    const activeSubscriptions = subscriptions.filter(s => s.status === 'ACTIVE').length;
+    const subscriptionRevenue = subscriptions
+      .filter(s => s.status === 'ACTIVE')
+      .reduce((sum, s) => sum + s.amount, 0);
+
+    const totalPayments = payments.length;
+    const completedPayments = payments.filter(p => p.status === 'COMPLETED').length;
+    const pendingPayments = payments.filter(p => p.status === 'PENDING').length;
+    const totalRevenue = payments
+      .filter(p => p.status === 'COMPLETED')
+      .reduce((sum, p) => sum + p.finalAmount, 0);
+
+    // Monthly growth calculations
+    const currentMonth = new Date();
+    currentMonth.setDate(1);
+    const currentMonthUsers = users.filter(u => new Date(u.createdAt) >= currentMonth).length;
+    const currentMonthBookings = bookings.filter(b => new Date(b.createdAt) >= currentMonth).length;
+
+    const stats = {
+      users: {
+        total: totalUsers,
+        customers: totalCustomers,
+        maids: totalMaids,
+        active: activeUsers,
+        newThisMonth: currentMonthUsers
+      },
+      bookings: {
+        total: totalBookings,
+        pending: pendingBookings,
+        assigned: assignedBookings,
+        completed: completedBookings,
+        newThisMonth: currentMonthBookings
+      },
+      subscriptions: {
+        total: totalSubscriptions,
+        active: activeSubscriptions,
+        revenue: subscriptionRevenue
+      },
+      payments: {
+        total: totalPayments,
+        completed: completedPayments,
+        pending: pendingPayments,
+        totalRevenue
+      },
+      overview: {
+        totalUsers,
+        totalCustomers,
+        totalMaids,
+        totalBookings,
+        pendingBookings,
+        activeSubscriptions,
+        totalRevenue,
+        completedPayments
+      }
+    };
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Error fetching admin stats:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch admin statistics' 
+    });
+  }
+};
+
+// Get all subscriptions for admin
+const getAllSubscriptions = async (req, res) => {
+  try {
+    const { status, plan } = req.query;
+    
+    let whereClause = {};
+    
+    if (status) {
+      whereClause.status = status.toUpperCase();
+    }
+    
+    if (plan) {
+      whereClause.plan = {
+        name: {
+          contains: plan,
+          mode: 'insensitive'
+        }
+      };
+    }
+
+    const subscriptions = await prisma.subscription.findMany({
+      where: whereClause,
+      include: {
+        customer: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true,
+                timeSlot: true
+              }
+            }
+          }
+        },
+        plan: {
+          include: {
+            service: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    res.json({
+      success: true,
+      data: subscriptions
+    });
+  } catch (error) {
+    console.error('Error fetching subscriptions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subscriptions'
+    });
+  }
+};
+
+// Get all payments for admin
+const getAllPayments = async (req, res) => {
+  try {
+    const { status, type } = req.query;
+    
+    let whereClause = {};
+    
+    if (status) {
+      whereClause.status = status.toUpperCase();
+    }
+    
+    if (type) {
+      whereClause.paymentType = type.toUpperCase();
+    }
+
+    const payments = await prisma.payment.findMany({
+      where: whereClause,
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true
+          }
+        },
+        booking: {
+          select: {
+            id: true,
+            scheduledAt: true,
+            service: {
+              select: {
+                name: true
+              }
+            }
+          }
+        },
+        subscription: {
+          select: {
+            id: true,
+            plan: {
+              select: {
+                name: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    res.json({
+      success: true,
+      data: payments
+    });
+  } catch (error) {
+    console.error('Error fetching payments:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payments'
+    });
+  }
+};
+
 module.exports = {
   getActiveCustomers,
   getPendingBookings,
   getAvailableMaids,
   assignMaidToBooking,
-  generateServiceOTP
+  generateServiceOTP,
+  getAdminStats,
+  getAllSubscriptions,
+  getAllPayments
 };
