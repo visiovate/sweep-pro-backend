@@ -210,6 +210,64 @@ const updateUserStatus = async (req, res) => {
   }
 };
 
+const updateUserAddress = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { 
+      address,
+      pincode,
+      locality,
+      addressLine,
+      city,
+      state,
+      landmark,
+      latitude,
+      longitude
+    } = req.body;
+
+    // Build update object with only provided fields
+    const updateData = {};
+    if (address !== undefined) updateData.address = address;
+    if (pincode !== undefined) updateData.pincode = pincode;
+    if (locality !== undefined) updateData.locality = locality;
+    if (addressLine !== undefined) updateData.addressLine = addressLine;
+    if (city !== undefined) updateData.city = city;
+    if (state !== undefined) updateData.state = state;
+    if (landmark !== undefined) updateData.landmark = landmark;
+    if (latitude !== undefined) updateData.latitude = parseFloat(latitude);
+    if (longitude !== undefined) updateData.longitude = parseFloat(longitude);
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      include: {
+        customerProfile: true,
+        maidProfile: true,
+        adminProfile: true
+      }
+    });
+
+    // Remove password from response
+    const { password, ...userWithoutPassword } = user;
+
+    // Send notification
+    await notificationService.notifyUserProfileUpdate(user);
+
+    res.json({ 
+      success: true,
+      message: 'Address updated successfully',
+      data: { user: userWithoutPassword }
+    });
+  } catch (error) {
+    console.error('Error updating address:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error updating address',
+      error: error.message
+    });
+  }
+};
+
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -228,9 +286,10 @@ module.exports = {
   login,
   getProfile,
   updateProfile,
+  updateUserAddress,
   getAllUsers,
   getUserById,
   updateUserRole,
   updateUserStatus,
   deleteUser
-}; 
+};
