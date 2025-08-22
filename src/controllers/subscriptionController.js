@@ -481,6 +481,188 @@ const checkSubscriptionStatus = async (req, res) => {
   }
 };
 
+// Admin: Update subscription plan
+const updateSubscriptionPlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      description,
+      basePrice,
+      finalPrice,
+      discountPercent,
+      duration,
+      sessionsPerWeek,
+      sessionsPerMonth,
+      isActive,
+      isPopular,
+      serviceId
+    } = req.body;
+
+    // Check if user is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    // Validate required fields
+    if (!name || !basePrice || !finalPrice || !duration || !serviceId) {
+      return res.status(400).json({
+        message: 'Missing required fields: name, basePrice, finalPrice, duration, serviceId'
+      });
+    }
+
+    // Check if plan exists
+    const existingPlan = await prisma.servicePlan.findUnique({
+      where: { id }
+    });
+
+    if (!existingPlan) {
+      return res.status(404).json({ message: 'Subscription plan not found' });
+    }
+
+    // Update the plan
+    const updatedPlan = await prisma.servicePlan.update({
+      where: { id },
+      data: {
+        name,
+        description,
+        basePrice: parseFloat(basePrice),
+        finalPrice: parseFloat(finalPrice),
+        discountPercent: discountPercent || 0,
+        duration: parseInt(duration),
+        sessionsPerWeek: sessionsPerWeek || 1,
+        sessionsPerMonth: sessionsPerMonth || 4,
+        isActive: isActive !== undefined ? isActive : true,
+        isPopular: isPopular || false,
+        serviceId
+      },
+      include: {
+        service: true
+      }
+    });
+
+    res.json({
+      success: true,
+      data: updatedPlan,
+      message: 'Subscription plan updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Error updating subscription plan:', error);
+    res.status(500).json({ message: 'Failed to update subscription plan' });
+  }
+};
+
+// Admin: Create subscription plan
+const createSubscriptionPlan = async (req, res) => {
+  try {
+    const {
+      name,
+      description,
+      basePrice,
+      finalPrice,
+      discountPercent,
+      duration,
+      sessionsPerWeek,
+      sessionsPerMonth,
+      isActive,
+      isPopular,
+      serviceId
+    } = req.body;
+
+    // Check if user is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    // Validate required fields
+    if (!name || !basePrice || !finalPrice || !duration || !serviceId) {
+      return res.status(400).json({
+        message: 'Missing required fields: name, basePrice, finalPrice, duration, serviceId'
+      });
+    }
+
+    // Create the plan
+    const newPlan = await prisma.servicePlan.create({
+      data: {
+        name,
+        description,
+        basePrice: parseFloat(basePrice),
+        finalPrice: parseFloat(finalPrice),
+        discountPercent: discountPercent || 0,
+        duration: parseInt(duration),
+        sessionsPerWeek: sessionsPerWeek || 1,
+        sessionsPerMonth: sessionsPerMonth || 4,
+        isActive: isActive !== undefined ? isActive : true,
+        isPopular: isPopular || false,
+        serviceId
+      },
+      include: {
+        service: true
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      data: newPlan,
+      message: 'Subscription plan created successfully'
+    });
+
+  } catch (error) {
+    console.error('Error creating subscription plan:', error);
+    res.status(500).json({ message: 'Failed to create subscription plan' });
+  }
+};
+
+// Admin: Delete subscription plan
+const deleteSubscriptionPlan = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if user is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    // Check if plan exists
+    const existingPlan = await prisma.servicePlan.findUnique({
+      where: { id },
+      include: {
+        subscriptions: {
+          where: {
+            status: 'ACTIVE'
+          }
+        }
+      }
+    });
+
+    if (!existingPlan) {
+      return res.status(404).json({ message: 'Subscription plan not found' });
+    }
+
+    // Check if plan has active subscriptions
+    if (existingPlan.subscriptions.length > 0) {
+      return res.status(400).json({
+        message: 'Cannot delete plan with active subscriptions. Deactivate instead.'
+      });
+    }
+
+    // Delete the plan
+    await prisma.servicePlan.delete({
+      where: { id }
+    });
+
+    res.json({
+      success: true,
+      message: 'Subscription plan deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error deleting subscription plan:', error);
+    res.status(500).json({ message: 'Failed to delete subscription plan' });
+  }
+};
+
 module.exports = {
   getSubscriptionPlans,
   subscribeToPlan,
@@ -488,5 +670,8 @@ module.exports = {
   confirmNextDayService,
   completeSubscriptionPayment,
   cancelSubscription,
-  checkSubscriptionStatus
+  checkSubscriptionStatus,
+  updateSubscriptionPlan,
+  createSubscriptionPlan,
+  deleteSubscriptionPlan
 };

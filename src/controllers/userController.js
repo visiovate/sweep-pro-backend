@@ -116,12 +116,18 @@ const getAllUsers = async (req, res) => {
         id: true,
         name: true,
         email: true,
+        phone: true,
+        address: true,
+        timeSlot: true,
         role: true,
         status: true,
         createdAt: true,
       },
     });
-    res.json(users);
+    res.json({
+      success: true,
+      data: users
+    });
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ message: 'Failed to fetch users' });
@@ -210,6 +216,53 @@ const updateUserStatus = async (req, res) => {
   }
 };
 
+const updateUserDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, phone, address, timeSlot } = req.body;
+
+    // Validate input
+    if (!name && !phone && !address && !timeSlot) {
+      return res.status(400).json({ message: 'At least one field must be provided for update' });
+    }
+
+    // Build update data object
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (phone) updateData.phone = phone;
+    if (address) updateData.address = address;
+    if (timeSlot) updateData.timeSlot = timeSlot;
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        address: true,
+        timeSlot: true,
+        role: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+
+    res.json({
+      success: true,
+      data: updatedUser,
+      message: 'User details updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating user details:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({ message: 'Phone number already exists' });
+    }
+    res.status(500).json({ message: 'Failed to update user details' });
+  }
+};
+
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -232,5 +285,6 @@ module.exports = {
   getUserById,
   updateUserRole,
   updateUserStatus,
+  updateUserDetails,
   deleteUser
-}; 
+};
