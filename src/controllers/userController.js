@@ -216,6 +216,7 @@ const updateUserStatus = async (req, res) => {
   }
 };
 
+
 const updateUserDetails = async (req, res) => {
   try {
     const { id } = req.params;
@@ -260,6 +261,8 @@ const updateUserDetails = async (req, res) => {
       return res.status(400).json({ message: 'Phone number already exists' });
     }
     res.status(500).json({ message: 'Failed to update user details' });
+
+
   }
 };
 
@@ -281,6 +284,7 @@ module.exports = {
   login,
   getProfile,
   updateProfile,
+  updateUserAddress,
   getAllUsers,
   getUserById,
   updateUserRole,
