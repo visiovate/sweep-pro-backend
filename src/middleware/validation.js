@@ -111,59 +111,11 @@ const userIdValidation = [
   validate
 ];
 
-// Address update validation rules
-const updateAddressValidation = [
-  body('address')
-    .optional()
-    .trim()
-    .isLength({ max: 500 })
-    .withMessage('Address must not exceed 500 characters'),
-  body('pincode')
-    .optional()
-    .matches(/^\d{6}$/)
-    .withMessage('Pincode must be a 6-digit number'),
-  body('locality')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Locality must not exceed 100 characters'),
-  body('addressLine')
-    .optional()
-    .trim()
-    .isLength({ max: 200 })
-    .withMessage('Address line must not exceed 200 characters'),
-  body('city')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('City must not exceed 50 characters'),
-  body('state')
-    .optional()
-    .trim()
-    .isLength({ max: 50 })
-    .withMessage('State must not exceed 50 characters'),
-  body('landmark')
-    .optional()
-    .trim()
-    .isLength({ max: 100 })
-    .withMessage('Landmark must not exceed 100 characters'),
-  body('latitude')
-    .optional()
-    .isFloat({ min: -90, max: 90 })
-    .withMessage('Latitude must be a valid number between -90 and 90'),
-  body('longitude')
-    .optional()
-    .isFloat({ min: -180, max: 180 })
-    .withMessage('Longitude must be a valid number between -180 and 180'),
-  validate
-];
-
 module.exports = {
   registerValidation,
   loginValidation,
   updateProfileValidation,
   updateRoleValidation,
   updateStatusValidation,
-  userIdValidation,
-  updateAddressValidation
-};
+  userIdValidation
+}; 

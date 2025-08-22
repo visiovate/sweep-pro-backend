@@ -7,15 +7,13 @@ const {
   updateProfileValidation,
   updateRoleValidation,
   updateStatusValidation,
-  userIdValidation,
-  updateAddressValidation
+  userIdValidation
 } = require('../middleware/validation');
 const {
   register,
   login,
   getProfile,
   updateProfile,
-  updateUserAddress,
   getAllUsers,
   getUserById,
   updateUserRole,
@@ -31,7 +29,6 @@ router.post('/login', loginValidation, login);
 // Protected routes
 router.get('/profile', authenticateToken, getProfile);
 router.put('/profile', authenticateToken, updateProfileValidation, updateProfile);
-router.put('/update-address', authenticateToken, updateAddressValidation, updateUserAddress);
 
 // Admin only routes
 router.get('/', authenticateToken, authorizeAdmin, getAllUsers);

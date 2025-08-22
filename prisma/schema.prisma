@@ -15,13 +15,6 @@ model User {
   name                String
   phone               String           @unique
   address             String?
-  // Detailed address fields
-  pincode             String?
-  locality            String?
-  addressLine         String?
-  city                String?
-  state               String?
-  landmark            String?
   latitude            Float?
   longitude           Float?
   status              UserStatus       @default(ACTIVE)
