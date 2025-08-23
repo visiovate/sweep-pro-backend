@@ -81,15 +81,19 @@ const getProfile = async (req, res) => {
 const updateProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, phone, address } = req.body;
+    const { name, phone, address, latitude, longitude, pincode, locality, addressLine, city, state, landmark } = req.body;
+
+    // Build user update payload dynamically to avoid overwriting with undefined
+    const userUpdateData = {};
+    if (typeof name !== 'undefined') userUpdateData.name = name;
+    if (typeof phone !== 'undefined') userUpdateData.phone = phone;
+    if (typeof address !== 'undefined') userUpdateData.address = address;
+    if (typeof latitude !== 'undefined') userUpdateData.latitude = Number(latitude);
+    if (typeof longitude !== 'undefined') userUpdateData.longitude = Number(longitude);
 
     const user = await prisma.user.update({
       where: { id: userId },
-      data: {
-        name,
-        phone,
-        address
-      },
+      data: userUpdateData,
       include: {
         customerProfile: true,
         maidProfile: true,
@@ -97,14 +101,49 @@ const updateProfile = async (req, res) => {
       }
     });
 
+    // Also persist extended address details into CustomerProfile.preferences.serviceAddress
+    const hasExtendedAddress = [pincode, locality, addressLine, city, state, landmark, address, latitude, longitude]
+      .some((v) => typeof v !== 'undefined' && v !== null && v !== '');
+
+    if (hasExtendedAddress) {
+      // Obtain existing preferences
+      const existingProfile = await prisma.customerProfile.findUnique({ where: { userId } });
+      const existingPrefs = existingProfile?.preferences || {};
+      const newServiceAddress = {
+        address: address ?? existingPrefs?.serviceAddress?.address ?? null,
+        pincode: pincode ?? existingPrefs?.serviceAddress?.pincode ?? null,
+        locality: locality ?? existingPrefs?.serviceAddress?.locality ?? null,
+        addressLine: addressLine ?? existingPrefs?.serviceAddress?.addressLine ?? null,
+        city: city ?? existingPrefs?.serviceAddress?.city ?? null,
+        state: state ?? existingPrefs?.serviceAddress?.state ?? null,
+        landmark: landmark ?? existingPrefs?.serviceAddress?.landmark ?? null,
+        latitude: typeof latitude !== 'undefined' ? Number(latitude) : (existingPrefs?.serviceAddress?.latitude ?? null),
+        longitude: typeof longitude !== 'undefined' ? Number(longitude) : (existingPrefs?.serviceAddress?.longitude ?? null),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const newPrefs = { ...existingPrefs, serviceAddress: newServiceAddress };
+
+      await prisma.customerProfile.upsert({
+        where: { userId },
+        update: { preferences: newPrefs },
+        create: { userId, preferences: newPrefs },
+      });
+    }
+
     // Remove password from response
     const { password, ...userWithoutPassword } = user;
 
-    // Send notification
-    await notificationService.notifyUserProfileUpdate(user);
+    // Send notification (non-blocking)
+    try {
+      await notificationService.notifyUserProfileUpdate(user);
+    } catch (e) {
+      console.warn('Notification failed:', e?.message || e);
+    }
 
     res.json({ user: userWithoutPassword });
   } catch (error) {
+    console.error('Error updating profile:', error);
     res.status(500).json({ error: 'Error updating profile' });
   }
 };

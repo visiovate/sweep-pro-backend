@@ -38,4 +38,7 @@ router.put('/:id/status', authenticateToken, authorizeAdmin, updateStatusValidat
 router.put('/:id/details', authenticateToken, authorizeAdmin, updateUserDetails);
 router.delete('/:id', authenticateToken, authorizeAdmin, userIdValidation, deleteUser);
 
+// Additional route for authenticated user updates (matches frontend API_ENDPOINTS.USER.UPDATE)
+router.put('/update', authenticateToken, updateProfileValidation, updateProfile);
+
 module.exports = router; 

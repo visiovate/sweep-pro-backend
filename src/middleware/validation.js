@@ -78,6 +78,20 @@ const updateProfileValidation = [
     .trim()
     .isLength({ min: 5 })
     .withMessage('Address must be at least 5 characters long'),
+  body('latitude')
+    .optional()
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Latitude must be between -90 and 90'),
+  body('longitude')
+    .optional()
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Longitude must be between -180 and 180'),
+  body('pincode').optional().isLength({ min: 3, max: 20 }),
+  body('locality').optional().isLength({ min: 2, max: 100 }),
+  body('addressLine').optional().isLength({ min: 3, max: 200 }),
+  body('city').optional().isLength({ min: 2, max: 100 }),
+  body('state').optional().isLength({ min: 2, max: 100 }),
+  body('landmark').optional().isLength({ min: 2, max: 200 }),
   validate
 ];
 
