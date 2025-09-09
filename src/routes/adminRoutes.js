@@ -9,7 +9,8 @@ const {
   generateServiceOTP,
   getAdminStats,
   getAllSubscriptions,
-  getAllPayments
+  getAllPayments,
+  getAllMaidsWithDocuments
 } = require('../controllers/adminController');
 
 // Protected Admin Routes
@@ -19,6 +20,7 @@ router.get('/pending-bookings', authenticateToken, authorizeAdmin, getPendingBoo
 router.get('/available-maids', authenticateToken, authorizeAdmin, getAvailableMaids);
 router.get('/subscriptions', authenticateToken, authorizeAdmin, getAllSubscriptions);
 router.get('/payments', authenticateToken, authorizeAdmin, getAllPayments);
+router.get('/maids-documents', authenticateToken, authorizeAdmin, getAllMaidsWithDocuments);
 router.post('/assign-maid', authenticateToken, authorizeAdmin, assignMaidToBooking);
 router.post('/generate-otp', authenticateToken, authorizeAdmin, generateServiceOTP);
 

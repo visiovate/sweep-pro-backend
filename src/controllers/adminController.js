@@ -496,6 +496,69 @@ const getAllPayments = async (req, res) => {
   }
 };
 
+// Get all maids with their document verification status
+const getAllMaidsWithDocuments = async (req, res) => {
+  try {
+    const maids = await prisma.user.findMany({
+      where: { role: 'MAID' },
+      include: {
+        maidProfile: {
+          include: {
+            documents: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Calculate document verification status for each maid
+    const requiredDocTypes = ['AADHAR_CARD', 'PAN_CARD', 'ADDRESS_PROOF', 'POLICE_VERIFICATION', 'MEDICAL_CERTIFICATE', 'PHOTO'];
+    
+    const maidsWithDocumentStatus = maids.map(maid => {
+      const documents = maid.maidProfile?.documents || [];
+      const totalRequired = requiredDocTypes.length;
+      const uploaded = requiredDocTypes.filter(type => 
+        documents.some(doc => doc.type === type)
+      ).length;
+      const verified = requiredDocTypes.filter(type => 
+        documents.some(doc => doc.type === type && doc.verificationStatus === 'APPROVED')
+      ).length;
+      const pending = requiredDocTypes.filter(type => 
+        documents.some(doc => doc.type === type && doc.verificationStatus === 'PENDING')
+      ).length;
+      const rejected = requiredDocTypes.filter(type => 
+        documents.some(doc => doc.type === type && doc.verificationStatus === 'REJECTED')
+      ).length;
+
+      return {
+        ...maid,
+        documentVerification: {
+          totalRequired,
+          uploaded,
+          verified,
+          pending,
+          rejected,
+          verificationProgress: totalRequired > 0 ? Math.round((verified / totalRequired) * 100) : 0,
+          allRequiredUploaded: uploaded === totalRequired,
+          allRequiredVerified: verified === totalRequired
+        }
+      };
+    });
+
+    res.json({
+      success: true,
+      data: maidsWithDocumentStatus
+    });
+
+  } catch (error) {
+    console.error('Error fetching maids with documents:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch maids with document status'
+    });
+  }
+};
+
 module.exports = {
   getActiveCustomers,
   getPendingBookings,
@@ -504,5 +567,6 @@ module.exports = {
   generateServiceOTP,
   getAdminStats,
   getAllSubscriptions,
-  getAllPayments
+  getAllPayments,
+  getAllMaidsWithDocuments
 };
