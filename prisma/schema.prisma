@@ -23,6 +23,12 @@ model User {
   languagePreferences String[]         @default([])
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
+  addressLine         String?
+  city                String?
+  landmark            String?
+  locality            String?
+  pincode             String?
+  state               String?
   adminProfile        AdminProfile?
   customerBookings    Booking[]        @relation("CustomerBookings")
   maidBookings        Booking[]        @relation("MaidBookings")
@@ -182,7 +188,6 @@ model Booking {
   status              BookingStatus       @default(PENDING)
   priority            BookingPriority     @default(NORMAL)
   scheduledAt         DateTime
-  timeSlot            String?             // Customer's preferred time slot (e.g., "09:00-12:00")
   estimatedDuration   Int
   actualStartTime     DateTime?
   actualEndTime       DateTime?
@@ -196,6 +201,7 @@ model Booking {
   specialInstructions String?
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
+  timeSlot            String?
   customer            User                @relation("CustomerBookings", fields: [customerId], references: [id])
   maid                User?               @relation("MaidBookings", fields: [maidId], references: [id])
   service             Service             @relation(fields: [serviceId], references: [id])
@@ -351,23 +357,38 @@ model ServicePlan {
 }
 
 model MaidDocument {
-  id             String       @id @default(uuid())
-  maidId         String
-  type           DocumentType
-  documentNumber String?
-  url            String
-  verified       Boolean      @default(false)
-  verifiedBy     String?
-  verifiedAt     DateTime?
-  expiryDate     DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  maid           MaidProfile  @relation(fields: [maidId], references: [id], onDelete: Cascade)
+  id                String                     @id @default(uuid())
+  maidId            String
+  type              DocumentType
+  documentNumber    String?
+  fileName          String
+  fileSize          Int?
+  mimeType          String?
+  cloudinaryUrl     String?                    // Cloudinary URL for the document
+  cloudinaryPublicId String?                   // Cloudinary public ID for management
+  verificationStatus DocumentVerificationStatus @default(PENDING)
+  verified          Boolean                    @default(false)
+  verifiedBy        String?
+  verifiedAt        DateTime?
+  rejectionReason   String?
+  adminNotes        String?
+  expiryDate        DateTime?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  maid              MaidProfile                @relation(fields: [maidId], references: [id], onDelete: Cascade)
 
   @@index([maidId])
   @@index([type])
   @@index([verified])
+  @@index([verificationStatus])
 }
+
+enum DocumentVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 
 model Attendance {
   id               String           @id @default(uuid())

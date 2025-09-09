@@ -4,6 +4,7 @@ const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { registerValidation, loginValidation } = require('../middleware/validation');
+const { authenticateToken } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 
 const prisma = new PrismaClient();
@@ -260,4 +261,142 @@ router.post('/login', loginValidation, async (req, res) => {
   }
 });
 
-module.exports = router; 
+// Get current user information
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        customerProfile: true,
+        maidProfile: true,
+        adminProfile: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Prepare user response without password
+    const userResponse = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      address: user.address,
+      role: user.role,
+      timeSlot: user.timeSlot,
+      status: user.status,
+      createdAt: user.createdAt,
+      profiles: {
+        customer: user.customerProfile,
+        maid: user.maidProfile,
+        admin: user.adminProfile
+      }
+    };
+
+    res.json({
+      success: true,
+      message: 'User information retrieved successfully',
+      data: {
+        user: userResponse
+      }
+    });
+
+  } catch (error) {
+    console.error('Get user info error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve user information',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Logout endpoint (optional - mainly for clearing client-side token)
+router.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    // In a stateless JWT system, logout is handled client-side by removing the token
+    // This endpoint can be used for logging or additional cleanup if needed
+    
+    res.json({
+      success: true,
+      message: 'Logout successful'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Logout failed'
+    });
+  }
+});
+
+// Create test admin user (for development only)
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/create-test-admin', async (req, res) => {
+    try {
+      // Check if test admin already exists
+      const existingAdmin = await prisma.user.findUnique({
+        where: { email: 'admin@test.com' }
+      });
+
+      if (existingAdmin) {
+        return res.json({
+          success: true,
+          message: 'Test admin already exists',
+          data: {
+            email: 'admin@test.com',
+            password: 'Admin123!',
+            role: 'ADMIN'
+          }
+        });
+      }
+
+      // Create test admin user
+      const hashedPassword = await bcrypt.hash('Admin123!', 12);
+      const admin = await prisma.user.create({
+        data: {
+          name: 'Test Admin',
+          email: 'admin@test.com',
+          phone: '9999999999',
+          role: 'ADMIN',
+          password: hashedPassword,
+          address: 'Admin Office, Test City',
+          status: 'ACTIVE'
+        }
+      });
+
+      // Create admin profile
+      await prisma.adminProfile.create({
+        data: {
+          userId: admin.id,
+          department: 'IT',
+          permissions: ['all'],
+          accessLevel: 'SUPER_ADMIN'
+        }
+      });
+
+      res.json({
+        success: true,
+        message: 'Test admin created successfully',
+        data: {
+          email: 'admin@test.com',
+          password: 'Admin123!',
+          role: 'ADMIN'
+        }
+      });
+    } catch (error) {
+      console.error('Create test admin error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to create test admin'
+      });
+    }
+  });
+}
+
+module.exports = router;
