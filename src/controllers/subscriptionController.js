@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
+const subscriptionBufferService = require('../services/subscriptionBufferService');
 const prisma = new PrismaClient();
 
 // Get all subscription plans
@@ -83,7 +84,10 @@ const subscribeToPlan = async (req, res) => {
         amount: plan.finalPrice,
         discount: plan.basePrice - plan.finalPrice,
         autoRenew: true,
-        nextBillDate: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000) // 30 days from now
+        nextBillDate: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+        bufferDaysCount: plan.bufferDaysAllowed || 3,
+        currentCycleStart: startDate,
+        currentCycleEnd: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000)
       },
       include: {
         plan: {
@@ -189,11 +193,10 @@ const getUserSubscription = async (req, res) => {
   }
 };
 
-// Confirm next day service
-const confirmNextDayService = async (req, res) => {
+// Get monthly subscription status with buffer information
+const getMonthlySubscriptionStatus = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { confirm } = req.body; // true or false
 
     // Get customer profile
     const customerProfile = await prisma.customerProfile.findUnique({
@@ -204,19 +207,58 @@ const confirmNextDayService = async (req, res) => {
       return res.status(404).json({ message: 'Customer profile not found' });
     }
 
-    // Check if user has active subscription
+    // Get active subscription
     const subscription = await prisma.subscription.findFirst({
       where: {
         customerId: customerProfile.id,
         status: 'ACTIVE',
         endDate: { gte: new Date() }
-      },
-      include: {
-        plan: {
-          include: {
-            service: true
-          }
-        }
+      }
+    });
+
+    if (!subscription) {
+      return res.json({
+        hasActiveSubscription: false,
+        message: 'No active subscription found'
+      });
+    }
+
+    // Get detailed subscription status with buffer information
+    const status = await subscriptionBufferService.getSubscriptionStatus(subscription.id);
+
+    res.json({
+      success: true,
+      hasActiveSubscription: true,
+      ...status
+    });
+
+  } catch (error) {
+    console.error('Error getting monthly subscription status:', error);
+    res.status(500).json({ message: 'Failed to get subscription status' });
+  }
+};
+
+// Manually start buffer period
+const startBufferPeriod = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { reason = 'CUSTOMER_REQUEST' } = req.body;
+
+    // Get customer profile
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId }
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ message: 'Customer profile not found' });
+    }
+
+    // Get active subscription
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        customerId: customerProfile.id,
+        status: 'ACTIVE',
+        endDate: { gte: new Date() }
       }
     });
 
@@ -224,62 +266,66 @@ const confirmNextDayService = async (req, res) => {
       return res.status(404).json({ message: 'No active subscription found' });
     }
 
-    if (confirm) {
-      // Create booking for tomorrow
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(9, 0, 0, 0); // Default to 9 AM
-
-      // Get user's address
-      const user = await prisma.user.findUnique({
-        where: { id: userId }
-      });
-
-      const booking = await prisma.booking.create({
-        data: {
-          customerId: userId,
-          serviceId: subscription.plan.serviceId,
-          scheduledAt: tomorrow,
-          serviceAddress: user.address || 'Address not provided',
-          status: 'CONFIRMED',
-          estimatedDuration: subscription.plan.service.baseDuration,
-          totalAmount: subscription.plan.finalPrice / subscription.plan.sessionsPerMonth,
-          finalAmount: subscription.plan.finalPrice / subscription.plan.sessionsPerMonth,
-          discount: 0,
-          specialInstructions: 'Subscription-based daily service'
-        },
-        include: {
-          service: true,
-          customer: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              phone: true,
-              address: true
-            }
-          }
-        }
-      });
-
-      // Send notification for booking creation
-      await notificationService.notifyBookingCreated(booking);
-
-      res.json({
-        success: true,
-        message: 'Service confirmed for tomorrow',
-        booking
-      });
-    } else {
-      res.json({
-        success: true,
-        message: 'Service skipped for tomorrow'
-      });
+    if (subscription.isInBufferPeriod) {
+      return res.status(400).json({ message: 'Subscription is already in buffer period' });
     }
 
+    const bufferPeriod = await subscriptionBufferService.startBufferPeriod(subscription.id, reason);
+
+    res.json({
+      success: true,
+      message: 'Buffer period started successfully',
+      bufferPeriod
+    });
+
   } catch (error) {
-    console.error('Error confirming next day service:', error);
-    res.status(500).json({ message: 'Failed to confirm service' });
+    console.error('Error starting buffer period:', error);
+    res.status(500).json({ message: 'Failed to start buffer period' });
+  }
+};
+
+// End buffer period and resume services
+const endBufferPeriod = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get customer profile
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId }
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ message: 'Customer profile not found' });
+    }
+
+    // Get active subscription
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        customerId: customerProfile.id,
+        status: 'ACTIVE',
+        endDate: { gte: new Date() }
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ message: 'No active subscription found' });
+    }
+
+    if (!subscription.isInBufferPeriod) {
+      return res.status(400).json({ message: 'Subscription is not in buffer period' });
+    }
+
+    const updatedSubscription = await subscriptionBufferService.endBufferPeriod(subscription.id);
+
+    res.json({
+      success: true,
+      message: 'Buffer period ended successfully. Services will resume.',
+      subscription: updatedSubscription
+    });
+
+  } catch (error) {
+    console.error('Error ending buffer period:', error);
+    res.status(500).json({ message: 'Failed to end buffer period' });
   }
 };
 
@@ -354,6 +400,12 @@ const completeSubscriptionPayment = async (req, res) => {
         }
       }
     });
+
+    // Initialize first subscription cycle
+    await subscriptionBufferService.initializeSubscriptionCycle(subscriptionId, 1);
+
+    // Schedule monthly services
+    await subscriptionBufferService.scheduleMonthlyServices(subscriptionId);
 
     // Send notification for subscription activation
     await notificationService.notifySubscriptionCreated(subscription);
@@ -663,15 +715,353 @@ const deleteSubscriptionPlan = async (req, res) => {
   }
 };
 
+// Admin: Get all subscription cycles
+const getSubscriptionCycles = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const { page = 1, limit = 20, status, subscriptionId } = req.query;
+    const skip = (page - 1) * limit;
+
+    const where = {};
+    if (status) where.status = status;
+    if (subscriptionId) where.subscriptionId = subscriptionId;
+
+    const cycles = await prisma.subscriptionCycle.findMany({
+      where,
+      skip: parseInt(skip),
+      take: parseInt(limit),
+      include: {
+        subscription: {
+          include: {
+            customer: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true
+                  }
+                }
+              }
+            },
+            plan: {
+              include: {
+                service: true
+              }
+            }
+          }
+        },
+        bufferPeriods: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    const total = await prisma.subscriptionCycle.count({ where });
+
+    res.json({
+      success: true,
+      data: cycles,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching subscription cycles:', error);
+    res.status(500).json({ message: 'Failed to fetch subscription cycles' });
+  }
+};
+
+// Admin: Get all buffer periods
+const getBufferPeriods = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const { page = 1, limit = 20, status, subscriptionId } = req.query;
+    const skip = (page - 1) * limit;
+
+    const where = {};
+    if (status) where.status = status;
+    if (subscriptionId) where.subscriptionId = subscriptionId;
+
+    const bufferPeriods = await prisma.bufferPeriod.findMany({
+      where,
+      skip: parseInt(skip),
+      take: parseInt(limit),
+      include: {
+        subscription: {
+          include: {
+            customer: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true
+                  }
+                }
+              }
+            },
+            plan: {
+              include: {
+                service: true
+              }
+            }
+          }
+        },
+        cycle: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    const total = await prisma.bufferPeriod.count({ where });
+
+    res.json({
+      success: true,
+      data: bufferPeriods,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching buffer periods:', error);
+    res.status(500).json({ message: 'Failed to fetch buffer periods' });
+  }
+};
+
+// Admin: Manually start buffer period for a subscription
+const adminStartBufferPeriod = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const { subscriptionId } = req.params;
+    const { reason = 'ADMIN_PAUSE', notes } = req.body;
+
+    const subscription = await prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: {
+        customer: { include: { user: true } },
+        plan: true
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ message: 'Subscription not found' });
+    }
+
+    if (subscription.isInBufferPeriod) {
+      return res.status(400).json({ message: 'Subscription is already in buffer period' });
+    }
+
+    const bufferPeriod = await subscriptionBufferService.startBufferPeriod(subscription.id, reason);
+
+    // Add admin notes if provided
+    if (notes) {
+      await prisma.bufferPeriod.update({
+        where: { id: bufferPeriod.id },
+        data: { notes }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Buffer period started by admin',
+      bufferPeriod
+    });
+
+  } catch (error) {
+    console.error('Error starting buffer period (admin):', error);
+    res.status(500).json({ message: 'Failed to start buffer period' });
+  }
+};
+
+// Admin: Manually end buffer period for a subscription
+const adminEndBufferPeriod = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const { subscriptionId } = req.params;
+
+    const subscription = await prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: {
+        customer: { include: { user: true } },
+        plan: true
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ message: 'Subscription not found' });
+    }
+
+    if (!subscription.isInBufferPeriod) {
+      return res.status(400).json({ message: 'Subscription is not in buffer period' });
+    }
+
+    const updatedSubscription = await subscriptionBufferService.endBufferPeriod(subscription.id);
+
+    res.json({
+      success: true,
+      message: 'Buffer period ended by admin',
+      subscription: updatedSubscription
+    });
+
+  } catch (error) {
+    console.error('Error ending buffer period (admin):', error);
+    res.status(500).json({ message: 'Failed to end buffer period' });
+  }
+};
+
+// Admin: Get subscription analytics
+const getSubscriptionAnalytics = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    // Get subscription counts
+    const totalSubscriptions = await prisma.subscription.count();
+    const activeSubscriptions = await prisma.subscription.count({
+      where: { status: 'ACTIVE' }
+    });
+    const subscriptionsInBuffer = await prisma.subscription.count({
+      where: { isInBufferPeriod: true }
+    });
+
+    // Get monthly statistics
+    const thisMonthSubscriptions = await prisma.subscription.count({
+      where: {
+        createdAt: { gte: monthStart }
+      }
+    });
+
+    const lastMonthSubscriptions = await prisma.subscription.count({
+      where: {
+        createdAt: { gte: lastMonthStart, lte: lastMonthEnd }
+      }
+    });
+
+    // Get buffer period statistics
+    const activeBufferPeriods = await prisma.bufferPeriod.count({
+      where: { status: 'ACTIVE' }
+    });
+
+    const thisMonthBufferPeriods = await prisma.bufferPeriod.count({
+      where: {
+        createdAt: { gte: monthStart }
+      }
+    });
+
+    // Get cycle statistics
+    const activeCycles = await prisma.subscriptionCycle.count({
+      where: { status: 'ACTIVE' }
+    });
+
+    const completedCycles = await prisma.subscriptionCycle.count({
+      where: { status: 'COMPLETED' }
+    });
+
+    // Get revenue statistics
+    const thisMonthRevenue = await prisma.payment.aggregate({
+      where: {
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        createdAt: { gte: monthStart }
+      },
+      _sum: {
+        finalAmount: true
+      }
+    });
+
+    const lastMonthRevenue = await prisma.payment.aggregate({
+      where: {
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        createdAt: { gte: lastMonthStart, lte: lastMonthEnd }
+      },
+      _sum: {
+        finalAmount: true
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        subscriptions: {
+          total: totalSubscriptions,
+          active: activeSubscriptions,
+          inBuffer: subscriptionsInBuffer,
+          thisMonth: thisMonthSubscriptions,
+          lastMonth: lastMonthSubscriptions,
+          growth: lastMonthSubscriptions > 0 ? 
+            ((thisMonthSubscriptions - lastMonthSubscriptions) / lastMonthSubscriptions * 100).toFixed(2) : '0'
+        },
+        bufferPeriods: {
+          active: activeBufferPeriods,
+          thisMonth: thisMonthBufferPeriods
+        },
+        cycles: {
+          active: activeCycles,
+          completed: completedCycles
+        },
+        revenue: {
+          thisMonth: thisMonthRevenue._sum.finalAmount || 0,
+          lastMonth: lastMonthRevenue._sum.finalAmount || 0,
+          growth: lastMonthRevenue._sum.finalAmount > 0 ?
+            (((thisMonthRevenue._sum.finalAmount || 0) - (lastMonthRevenue._sum.finalAmount || 0)) / (lastMonthRevenue._sum.finalAmount || 0) * 100).toFixed(2) : '0'
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting subscription analytics:', error);
+    res.status(500).json({ message: 'Failed to get subscription analytics' });
+  }
+};
+
 module.exports = {
   getSubscriptionPlans,
   subscribeToPlan,
   getUserSubscription,
-  confirmNextDayService,
+  getMonthlySubscriptionStatus,
+  startBufferPeriod,
+  endBufferPeriod,
   completeSubscriptionPayment,
   cancelSubscription,
   checkSubscriptionStatus,
   updateSubscriptionPlan,
   createSubscriptionPlan,
-  deleteSubscriptionPlan
+  deleteSubscriptionPlan,
+  getSubscriptionCycles,
+  getBufferPeriods,
+  adminStartBufferPeriod,
+  adminEndBufferPeriod,
+  getSubscriptionAnalytics
 };

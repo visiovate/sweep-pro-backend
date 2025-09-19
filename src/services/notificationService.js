@@ -1024,6 +1024,171 @@ class NotificationService {
     });
   }
 
+  // Buffer Period Notifications
+  async notifyBufferPeriodStarted(subscription, bufferPeriod) {
+    const notification = {
+      type: 'BUFFER_PERIOD_STARTED',
+      title: 'Service Buffer Period Started',
+      message: `Your ${subscription.plan.name} subscription has entered a ${subscription.bufferDaysCount}-day buffer period`,
+      data: {
+        subscriptionId: subscription.id,
+        planName: subscription.plan.name,
+        bufferPeriodId: bufferPeriod.id,
+        bufferDays: subscription.bufferDaysCount,
+        reason: bufferPeriod.reason,
+        startDate: bufferPeriod.startDate,
+        endDate: bufferPeriod.endDate,
+        autoResumeDate: bufferPeriod.autoResumeDate
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    await this.sendToUser(subscription.customer.userId, notification);
+    await this.sendToAdmins({
+      ...notification,
+      title: 'Buffer Period Started',
+      message: `Buffer period started for subscription: ${subscription.plan.name}`
+    });
+  }
+
+  async notifyBufferPeriodEnded(subscription) {
+    const notification = {
+      type: 'BUFFER_PERIOD_ENDED',
+      title: 'Service Buffer Period Ended',
+      message: `Your ${subscription.plan.name} subscription services have resumed`,
+      data: {
+        subscriptionId: subscription.id,
+        planName: subscription.plan.name,
+        resumedAt: new Date().toISOString()
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    await this.sendToUser(subscription.customer.userId, notification);
+    await this.sendToAdmins({
+      ...notification,
+      title: 'Buffer Period Ended',
+      message: `Services resumed for subscription: ${subscription.plan.name}`
+    });
+  }
+
+  async notifyBufferPeriodApproaching(subscription, daysLeft) {
+    const notification = {
+      type: 'BUFFER_PERIOD_APPROACHING',
+      title: 'Buffer Period Approaching',
+      message: `Your ${subscription.plan.name} subscription will enter buffer period in ${daysLeft} day${daysLeft > 1 ? 's' : ''}`,
+      data: {
+        subscriptionId: subscription.id,
+        planName: subscription.plan.name,
+        daysLeft,
+        bufferDuration: subscription.bufferDaysCount
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    await this.sendToUser(subscription.customer.userId, notification);
+  }
+
+  async notifyBufferPeriodEnding(subscription, daysLeft) {
+    const notification = {
+      type: 'BUFFER_PERIOD_ENDING',
+      title: 'Buffer Period Ending Soon',
+      message: `Your buffer period ends in ${daysLeft} day${daysLeft > 1 ? 's' : ''}. Services will resume automatically`,
+      data: {
+        subscriptionId: subscription.id,
+        planName: subscription.plan.name,
+        daysLeft
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    await this.sendToUser(subscription.customer.userId, notification);
+  }
+
+  async notifyMonthlyCycleStarted(subscription, cycle) {
+    const notification = {
+      type: 'MONTHLY_CYCLE_STARTED',
+      title: 'New Monthly Cycle Started',
+      message: `Your ${subscription.plan.name} subscription cycle #${cycle.cycleNumber} has started`,
+      data: {
+        subscriptionId: subscription.id,
+        cycleId: cycle.id,
+        cycleNumber: cycle.cycleNumber,
+        planName: subscription.plan.name,
+        startDate: cycle.startDate,
+        endDate: cycle.endDate,
+        totalServices: cycle.totalServices
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    await this.sendToUser(subscription.customer.userId, notification);
+    await this.sendToAdmins({
+      ...notification,
+      title: 'Monthly Cycle Started',
+      message: `New cycle started for subscription: ${subscription.plan.name}`
+    });
+  }
+
+  async notifyMonthlyCycleCompleted(subscription, cycle) {
+    const notification = {
+      type: 'MONTHLY_CYCLE_COMPLETED',
+      title: 'Monthly Cycle Completed',
+      message: `Your ${subscription.plan.name} subscription cycle #${cycle.cycleNumber} has been completed`,
+      data: {
+        subscriptionId: subscription.id,
+        cycleId: cycle.id,
+        cycleNumber: cycle.cycleNumber,
+        planName: subscription.plan.name,
+        completedServices: cycle.completedServices,
+        totalServices: cycle.totalServices,
+        completionRate: Math.round((cycle.completedServices / cycle.totalServices) * 100)
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    await this.sendToUser(subscription.customer.userId, notification);
+  }
+
+  async notifySubscriptionExpired(subscription) {
+    const notification = {
+      type: 'SUBSCRIPTION_EXPIRED',
+      title: 'Subscription Expired',
+      message: `Your ${subscription.plan.name} subscription has expired`,
+      data: {
+        subscriptionId: subscription.id,
+        planName: subscription.plan.name,
+        expiredAt: new Date().toISOString(),
+        completedCycles: subscription.completedCycles
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    await this.sendToUser(subscription.customer.userId, notification);
+    await this.sendToAdmins({
+      ...notification,
+      title: 'Subscription Expired',
+      message: `Subscription expired: ${subscription.plan.name}`
+    });
+  }
+
+  async notifyMonthlyServicesScheduled(subscription, bookings) {
+    const notification = {
+      type: 'MONTHLY_SERVICES_SCHEDULED',
+      title: 'Monthly Services Scheduled',
+      message: `${bookings.length} services have been scheduled for your ${subscription.plan.name} subscription`,
+      data: {
+        subscriptionId: subscription.id,
+        planName: subscription.plan.name,
+        servicesCount: bookings.length,
+        nextServiceDate: bookings.length > 0 ? bookings[0].scheduledAt : null
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    await this.sendToUser(subscription.customer.userId, notification);
+  }
+
   // Scheduled job initialization
   initializeScheduledJobs() {
     // Daily booking reminders at 6 PM

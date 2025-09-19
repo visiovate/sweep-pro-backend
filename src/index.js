@@ -25,6 +25,8 @@ const adminRoutes = require('./routes/adminRoutes');
 const testRoutes = require('./routes/testRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const documentRoutes = require('./routes/documentRoutes');
+const userDashboardRoutes = require('./routes/userDashboardRoutes');
+const bufferRoutes = require('./routes/bufferRoutes');
 
 // Create Express app
 const app = express();
@@ -40,6 +42,14 @@ const notificationService = require('./services/notificationService');
 
 // Initialize notification service with WebSocket server
 notificationService.init(wss);
+
+// Initialize monthly subscription scheduler
+require('./scheduler/monthlySubscriptionScheduler');
+
+// Initialize automatic service scheduler
+const AutomaticServiceScheduler = require('./services/AutomaticServiceScheduler');
+const automaticScheduler = new AutomaticServiceScheduler();
+automaticScheduler.init();
 
 // Middleware
 app.use(cors({
@@ -104,6 +114,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/test', testRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/dashboard', userDashboardRoutes);
+app.use('/api/buffer', bufferRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {
