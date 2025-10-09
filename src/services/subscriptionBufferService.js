@@ -465,15 +465,20 @@ class SubscriptionBufferService {
           plan: { include: { service: true } },
           customer: { include: { user: true } },
           cycles: {
-            where: { status: { in: ['ACTIVE', 'IN_BUFFER'] } },
+            where: { 
+              status: { in: ['ACTIVE', 'IN_BUFFER'] }
+            },
             orderBy: { createdAt: 'desc' },
             take: 1
           },
           bufferPeriods: {
-            where: { status: 'ACTIVE' },
+            where: { 
+              status: 'ACTIVE'
+            },
             orderBy: { createdAt: 'desc' },
             take: 1
-          }
+          },
+          payments: true
         }
       });
 

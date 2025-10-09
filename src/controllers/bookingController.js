@@ -140,6 +140,61 @@ const createBooking = async (req, res) => {
       });
     }
 
+    // Check if customer is in buffer period
+    if (customerProfile.subscription.isInBufferPeriod) {
+      // Get active buffer period details
+      const activeBufferPeriod = await prisma.bufferPeriod.findFirst({
+        where: {
+          subscriptionId: customerProfile.subscription.id,
+          status: 'ACTIVE',
+          startDate: { lte: new Date() },
+          endDate: { gte: new Date() }
+        }
+      });
+
+      if (activeBufferPeriod) {
+        return res.status(403).json({
+          success: false,
+          message: `Booking not allowed. Your services are currently paused due to an active buffer period until ${new Date(activeBufferPeriod.endDate).toLocaleDateString()}. Please wait until your buffer period ends to book new services.`,
+          isInBufferPeriod: true,
+          bufferEndDate: activeBufferPeriod.endDate,
+          bufferDaysRemaining: Math.ceil((new Date(activeBufferPeriod.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+        });
+      }
+    }
+
+    // Check if the requested booking date falls within any active buffer period
+    // Extract just the date part for comparison (ignore time)
+    const bookingDate = new Date(scheduledDate); // Use scheduledDate string directly
+    const bookingDateOnly = new Date(bookingDate.getFullYear(), bookingDate.getMonth(), bookingDate.getDate());
+    
+    console.log(`🔍 Checking buffer conflict for booking date: ${scheduledDate} (${bookingDateOnly.toISOString()})`);
+    
+    const bufferConflict = await prisma.bufferPeriod.findFirst({
+      where: {
+        subscriptionId: customerProfile.subscription.id,
+        status: 'ACTIVE',
+        startDate: { lte: bookingDateOnly },
+        endDate: { gte: bookingDateOnly }
+      }
+    });
+    
+    if (bufferConflict) {
+      console.log(`❌ Buffer conflict found: ${bufferConflict.startDate} to ${bufferConflict.endDate}`);
+    } else {
+      console.log(`✅ No buffer conflict for date: ${scheduledDate}`);
+    }
+
+    if (bufferConflict) {
+      return res.status(403).json({
+        success: false,
+        message: `Cannot book service for ${scheduledAt.toLocaleDateString()}. This date falls within your buffer period (${new Date(bufferConflict.startDate).toLocaleDateString()} - ${new Date(bufferConflict.endDate).toLocaleDateString()}). Please choose a date outside your buffer period.`,
+        isInBufferPeriod: true,
+        bufferStartDate: bufferConflict.startDate,
+        bufferEndDate: bufferConflict.endDate
+      });
+    }
+
     // Get service from subscription plan
     const service = customerProfile.subscription.plan.service;
     if (!service) {
@@ -153,12 +208,13 @@ const createBooking = async (req, res) => {
     const estimatedEndTime = new Date(scheduledAt);
     estimatedEndTime.setMinutes(estimatedEndTime.getMinutes() + durationMinutes);
 
-    // Customer has active subscription - create booking with no payment required
+    // Customer has active subscription - create booking as PENDING for admin assignment
     const bookingData = {
       customerId,
       serviceId: service.id,
       serviceAddress: finalAddress, // Use finalAddress (from request or user profile)
-      status: 'CONFIRMED', // Direct confirmation for subscription customers
+      status: 'PENDING', // Changed to PENDING so admin can assign maid
+      assignmentStatus: 'PENDING_ASSIGNMENT', // Set initial assignment status
       scheduledAt,
       timeSlot: effectiveTimeSlot, // Store the timeslot in dedicated field
       estimatedDuration: durationMinutes, // Use duration from time slot
@@ -194,8 +250,9 @@ const createBooking = async (req, res) => {
       data: {
         booking
       },
-      message: 'Booking created successfully. No additional payment required as you have an active subscription.',
-      hasActiveSubscription: true
+      message: 'Booking request submitted successfully. Your booking is pending admin assignment of a maid. You will be notified once a maid is assigned.',
+      hasActiveSubscription: true,
+      status: 'PENDING_ASSIGNMENT'
     });
 
   } catch (error) {
@@ -567,11 +624,47 @@ const updateBookingStatus = async (req, res) => {
 const cancelBooking = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason = 'Cancelled by user' } = req.body;
+    const { reason = 'Cancelled by admin' } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Get booking first to check permissions
+    const existingBooking = await prisma.booking.findUnique({
+      where: { id },
+      include: {
+        customer: true
+      }
+    });
+
+    if (!existingBooking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    // Check permissions - only admin or booking owner can cancel
+    if (userRole !== 'ADMIN' && existingBooking.customerId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only cancel your own bookings'
+      });
+    }
+
+    // Check if booking can be cancelled (not already completed/cancelled)
+    if (['COMPLETED', 'CANCELLED'].includes(existingBooking.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot cancel booking that is already ${existingBooking.status.toLowerCase()}`
+      });
+    }
     
     const booking = await prisma.booking.update({
       where: { id },
-      data: { status: 'CANCELLED' },
+      data: { 
+        status: 'CANCELLED',
+        notes: `${existingBooking.notes || ''}\nCancelled: ${reason}`
+      },
       include: {
         service: true,
         customer: {
@@ -596,10 +689,17 @@ const cancelBooking = async (req, res) => {
     // Send notification
     await notificationService.notifyBookingCancellation(booking, reason);
 
-    res.json(booking);
+    res.json({
+      success: true,
+      data: { booking },
+      message: 'Booking cancelled successfully'
+    });
   } catch (error) {
     console.error('Error cancelling booking:', error);
-    res.status(500).json({ message: 'Failed to cancel booking' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to cancel booking' 
+    });
   }
 };
 
@@ -690,6 +790,126 @@ const completeBookingPayment = async (req, res) => {
   }
 };
 
+const getAvailableSlots = async (req, res) => {
+  try {
+    const { date } = req.query;
+    const customerId = req.user.id;
+
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date parameter is required'
+      });
+    }
+
+    // Get customer profile with subscription
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId: customerId },
+      include: {
+        subscription: {
+          where: {
+            status: 'ACTIVE',
+            endDate: { gte: new Date() }
+          }
+        }
+      }
+    });
+
+    if (!customerProfile || !customerProfile.subscription) {
+      return res.status(403).json({
+        success: false,
+        message: 'Active subscription required to check available slots'
+      });
+    }
+
+    // Check if the requested date falls within any active buffer period
+    // Extract just the date part for comparison (ignore time)
+    const requestDate = new Date(date);
+    const requestDateOnly = new Date(requestDate.getFullYear(), requestDate.getMonth(), requestDate.getDate());
+    
+    console.log(`🔍 Checking available slots for date: ${date} (${requestDateOnly.toISOString()})`);
+    
+    const bufferConflict = await prisma.bufferPeriod.findFirst({
+      where: {
+        subscriptionId: customerProfile.subscription.id,
+        status: 'ACTIVE',
+        startDate: { lte: requestDateOnly },
+        endDate: { gte: requestDateOnly }
+      }
+    });
+    
+    if (bufferConflict) {
+      console.log(`❌ Available slots blocked - Buffer conflict: ${bufferConflict.startDate} to ${bufferConflict.endDate}`);
+    } else {
+      console.log(`✅ Available slots allowed for date: ${date}`);
+    }
+
+    // If date is in buffer period, return empty slots with explanation
+    if (bufferConflict) {
+      return res.json({
+        success: true,
+        data: {
+          slots: [],
+          isBufferPeriod: true,
+          message: `No slots available on ${requestDate.toLocaleDateString()}. This date falls within your buffer period (${new Date(bufferConflict.startDate).toLocaleDateString()} - ${new Date(bufferConflict.endDate).toLocaleDateString()}).`,
+          bufferPeriod: {
+            startDate: bufferConflict.startDate,
+            endDate: bufferConflict.endDate
+          }
+        }
+      });
+    }
+
+    // Standard time slots (you can customize these based on your business hours)
+    const standardSlots = [
+      '09:00-12:00',
+      '12:00-15:00', 
+      '15:00-18:00',
+      '18:00-21:00'
+    ];
+
+    // Get existing bookings for the date
+    const existingBookings = await prisma.booking.findMany({
+      where: {
+        scheduledAt: {
+          gte: new Date(`${date}T00:00:00`),
+          lte: new Date(`${date}T23:59:59`)
+        },
+        status: {
+          in: ['CONFIRMED', 'ASSIGNED', 'IN_PROGRESS']
+        }
+      },
+      select: {
+        timeSlot: true
+      }
+    });
+
+    // Filter out booked slots
+    const bookedSlots = existingBookings.map(booking => booking.timeSlot).filter(Boolean);
+    const availableSlots = standardSlots.filter(slot => !bookedSlots.includes(slot));
+
+    res.json({
+      success: true,
+      data: {
+        slots: availableSlots,
+        isBufferPeriod: false,
+        date: date,
+        totalSlots: standardSlots.length,
+        bookedSlots: bookedSlots.length,
+        availableSlots: availableSlots.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching available slots:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch available slots',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 const getBookingStats = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -756,5 +976,6 @@ module.exports = {
   updateBookingStatus,
   cancelBooking,
   completeBookingPayment,
+  getAvailableSlots,
   getBookingStats
 };

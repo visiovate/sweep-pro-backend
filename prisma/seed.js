@@ -1030,6 +1030,36 @@ async function main() {
     // Now create comprehensive buffer period test scenarios
     console.log('\n🛡️ Creating buffer period test scenarios...');
     
+    // Clean up any existing buffer period test data to prevent conflicts
+    await prisma.bufferPeriod.deleteMany({
+      where: {
+        subscription: {
+          customer: {
+            user: {
+              email: {
+                in: ['buffer@sweepro.com', 'expired@sweepro.com', 'cancelled@sweepro.com', 'paused@sweepro.com']
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // Clean up existing subscription cycles for buffer test users
+    await prisma.subscriptionCycle.deleteMany({
+      where: {
+        subscription: {
+          customer: {
+            user: {
+              email: {
+                in: ['buffer@sweepro.com', 'expired@sweepro.com', 'cancelled@sweepro.com', 'paused@sweepro.com']
+              }
+            }
+          }
+        }
+      }
+    });
+    
     // Calculate dates for buffer period testing
     const now = new Date();
     const currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1092,8 +1122,15 @@ async function main() {
     });
     
     // Create current subscription cycle
-    const bufferCurrentCycle = await prisma.subscriptionCycle.create({
-      data: {
+    const bufferCurrentCycle = await prisma.subscriptionCycle.upsert({
+      where: {
+        subscriptionId_cycleNumber: {
+          subscriptionId: bufferSubscription.id,
+          cycleNumber: 3
+        }
+      },
+      update: {},
+      create: {
         subscriptionId: bufferSubscription.id,
         cycleNumber: 3,
         startDate: monthStart,

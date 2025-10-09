@@ -443,13 +443,36 @@ const getMaidVerificationStatus = async (req, res) => {
     const panCard = documents.find(d => d.type === 'PAN_CARD');
     const electricityBill = documents.find(d => d.type === 'ADDRESS_PROOF');
 
+    // Calculate overall verification status based on documents
+    const requiredDocs = getRequiredDocuments().filter(doc => doc.required);
+    const allRequiredUploaded = requiredDocs.every(reqDoc => 
+      documents.some(doc => doc.type === reqDoc.type)
+    );
+    const allRequiredApproved = requiredDocs.every(reqDoc => 
+      documents.some(doc => doc.type === reqDoc.type && doc.verificationStatus === 'APPROVED')
+    );
+    const anyRejected = documents.some(doc => doc.verificationStatus === 'REJECTED');
+    
+    let overallStatus = 'NOT_SUBMITTED';
+    if (!allRequiredUploaded) {
+      overallStatus = 'NOT_SUBMITTED';
+    } else if (allRequiredApproved) {
+      overallStatus = 'APPROVED';
+    } else if (anyRejected) {
+      overallStatus = 'REJECTED';
+    } else {
+      overallStatus = 'PENDING';
+    }
+
     // Build verification status
     const verificationStatus = {
-      isSubmitted: documents.length > 0,
-      status: maidProfile.status,
+      hasDocuments: documents.length > 0,
+      overallStatus: overallStatus,
+      maidStatus: maidProfile.status,
       submittedAt: documents.length > 0 ? documents[0].createdAt : null,
       reviewedAt: documents.find(d => d.verifiedAt)?.verifiedAt || null,
-      documents: {
+      documents: documents,
+      transformedDocuments: {
         aadharCard: aadharCard ? {
           id: aadharCard.id,
           filename: aadharCard.fileName,
@@ -533,10 +556,10 @@ const getMaidVerificationData = async (req, res) => {
     const verificationData = maids.map(maid => {
       const documents = maid.documents;
       
-      // Find documents by type
+      // Find documents by type (map database types to frontend expected types)
       const aadharCard = documents.find(d => d.type === 'AADHAR_CARD');
-      const policeVerification = documents.find(d => d.type === 'POLICE_VERIFICATION');
-      const photo = documents.find(d => d.type === 'PHOTO');
+      const policeVerification = documents.find(d => d.type === 'PAN_CARD'); // PAN_CARD maps to policeVerification
+      const photo = documents.find(d => d.type === 'ADDRESS_PROOF'); // ADDRESS_PROOF maps to photo
       
       // Count uploaded documents (only required ones)
       const uploadedCount = [aadharCard, policeVerification, photo].filter(Boolean).length;
@@ -1385,6 +1408,7 @@ const getDocumentById = async (req, res) => {
     });
   }
 };
+
 
 module.exports = {
   uploadDocument,

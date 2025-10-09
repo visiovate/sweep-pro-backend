@@ -67,6 +67,17 @@ const authorizeAdmin = async (req, res, next) => {
   }
 };
 
+const authorizeMaid = async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'MAID') {
+      throw new Error();
+    }
+    next();
+  } catch (error) {
+    res.status(403).json({ error: 'Access denied. Maid privileges required.' });
+  }
+};
+
 const checkRole = (roles) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -85,6 +96,7 @@ module.exports = {
   auth,
   authenticateToken,
   authorizeAdmin,
+  authorizeMaid,
   checkRole
 }; 
 
