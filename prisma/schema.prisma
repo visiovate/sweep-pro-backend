@@ -87,6 +87,7 @@ model MaidProfile {
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   zones              MaidZone[]
   performanceMetrics PerformanceMetric[]
+  assignmentRequests AssignmentRequest[]
 
   @@index([status])
   @@index([isFloatingMaid])
@@ -202,6 +203,11 @@ model Booking {
   specialInstructions String?
   isSubscriptionBased Boolean             @default(false)
   isBufferSkipped     Boolean             @default(false)
+  assignmentStatus    AssignmentStatus?   @default(PENDING_ASSIGNMENT)
+  assignedAt          DateTime?
+  maidResponseAt      DateTime?
+  rejectionReason     String?
+  reassignmentCount   Int                 @default(0)
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   timeSlot            String?
@@ -216,6 +222,7 @@ model Booking {
   rescheduleHistory   RescheduleHistory[]
   serviceOTP          ServiceOTP?
   taskCompletions     TaskCompletion[]
+  assignmentRequests  AssignmentRequest[]
 
   @@index([customerId])
   @@index([maidId])
@@ -875,4 +882,41 @@ enum BufferReason {
   PAYMENT_ISSUE
   MAINTENANCE
   EMERGENCY
+}
+
+enum AssignmentStatus {
+  PENDING_ASSIGNMENT
+  ASSIGNED_PENDING_RESPONSE
+  ACCEPTED
+  REJECTED
+  REASSIGNED
+}
+
+enum AssignmentRequestStatus {
+  pending
+  accepted
+  rejected
+  expired
+  cancelled
+}
+
+model AssignmentRequest {
+  id              String                   @id @default(uuid())
+  bookingId       String
+  maidId          String
+  status          AssignmentRequestStatus  @default(pending)
+  requestedAt     DateTime                 @default(now())
+  respondedAt     DateTime?
+  rejectionReason String?
+  expiresAt       DateTime
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  
+  booking         Booking                  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  maid            MaidProfile              @relation(fields: [maidId], references: [id], onDelete: Cascade)
+  
+  @@index([bookingId])
+  @@index([maidId])
+  @@index([status])
+  @@index([expiresAt])
 }

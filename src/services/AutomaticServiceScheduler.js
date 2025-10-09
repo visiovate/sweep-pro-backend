@@ -1,16 +1,33 @@
-const { PrismaClient } = require('@prisma/client');
 const cron = require('node-cron');
-const NotificationService = require('./NotificationService');
+const NotificationService = require('./notificationService');
+const { getPrismaClient, executeWithErrorHandling } = require('../utils/database');
 
 class AutomaticServiceScheduler {
   constructor() {
-    this.prisma = new PrismaClient();
+    this.prisma = null;
+  }
+
+  /**
+   * Initialize Prisma client
+   */
+  async initializePrisma() {
+    try {
+      this.prisma = getPrismaClient();
+      if (!this.prisma) {
+        console.warn('⚠️ Prisma client not available for AutomaticServiceScheduler');
+      }
+    } catch (error) {
+      console.error('❌ Failed to get Prisma client for AutomaticServiceScheduler:', error);
+      this.prisma = null;
+    }
   }
 
   /**
    * Initialize the automatic scheduler
    */
-  init() {
+  async init() {
+    await this.initializePrisma();
+
     console.log('🤖 Initializing Automatic Service Scheduler...');
     
     // Schedule daily service creation at 6:00 AM every day
@@ -37,13 +54,13 @@ class AutomaticServiceScheduler {
   async scheduleDailyServices() {
     console.log('📅 Scheduling daily services...');
     
-    try {
+    return executeWithErrorHandling(async (prisma) => {
       const today = new Date();
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
       
       // Get all active subscriptions
-      const activeSubscriptions = await this.prisma.subscription.findMany({
+      const activeSubscriptions = await prisma.subscription.findMany({
         where: {
           status: 'ACTIVE',
           isInBufferPeriod: false,
@@ -75,7 +92,7 @@ class AutomaticServiceScheduler {
         }
 
         // Check if service already scheduled for tomorrow
-        const existingBooking = await this.prisma.booking.findFirst({
+        const existingBooking = await prisma.booking.findFirst({
           where: {
             customerId: subscription.customer.user.id,
             scheduledAt: {
@@ -98,7 +115,7 @@ class AutomaticServiceScheduler {
         const scheduledDateTime = new Date(tomorrow);
         scheduledDateTime.setHours(serviceTime.hour, serviceTime.minute, 0, 0);
 
-        await this.prisma.booking.create({
+        await prisma.booking.create({
           data: {
             customerId: subscription.customer.user.id,
             serviceId: subscription.plan.service.id,
@@ -129,9 +146,7 @@ class AutomaticServiceScheduler {
         count: servicesScheduled
       });
 
-    } catch (error) {
-      console.error('❌ Error scheduling daily services:', error);
-    }
+    }, 'Schedule daily services');
   }
 
   /**
@@ -140,13 +155,13 @@ class AutomaticServiceScheduler {
   async assignMaidsToServices() {
     console.log('👩‍🔧 Assigning maids to services...');
     
-    try {
+    return executeWithErrorHandling(async (prisma) => {
       // Get unassigned bookings for today and tomorrow
       const today = new Date();
       const dayAfterTomorrow = new Date(today);
       dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
 
-      const unassignedBookings = await this.prisma.booking.findMany({
+      const unassignedBookings = await prisma.booking.findMany({
         where: {
           maidId: null,
           status: 'CONFIRMED',
@@ -171,7 +186,7 @@ class AutomaticServiceScheduler {
         const assignedMaid = await this.findBestMaid(booking);
         
         if (assignedMaid) {
-          await this.prisma.booking.update({
+          await prisma.booking.update({
             where: { id: booking.id },
             data: { 
               maidId: assignedMaid.id,
@@ -207,17 +222,16 @@ class AutomaticServiceScheduler {
 
       console.log(`✅ Completed ${assignmentsCompleted} maid assignments`);
 
-    } catch (error) {
-      console.error('❌ Error assigning maids:', error);
-    }
+    }, 'Assign maids to services');
   }
 
   /**
    * Find the best available maid for a booking
    */
   async findBestMaid(booking) {
-    // Get available maids within service radius
-    const availableMaids = await this.prisma.user.findMany({
+    return executeWithErrorHandling(async (prisma) => {
+      // Get available maids within service radius
+      const availableMaids = await prisma.user.findMany({
       where: {
         role: 'MAID',
         status: 'ACTIVE',
@@ -228,54 +242,57 @@ class AutomaticServiceScheduler {
       include: {
         maidProfile: true
       }
-    });
+      });
 
-    // Filter maids by availability and skills
-    const suitableMaids = availableMaids.filter(maid => {
-      const profile = maid.maidProfile;
+      // Filter maids by availability and skills
+      const suitableMaids = availableMaids.filter(maid => {
+        const profile = maid.maidProfile;
+        
+        // Check if maid is not already assigned at this time
+        // Check if maid has required skills
+        // Check if maid is within service radius
+        return profile && 
+               profile.status === 'ACTIVE' && 
+               this.isWithinRadius(
+                 booking.serviceLatitude, 
+                 booking.serviceLongitude, 
+                 maid.latitude, 
+                 maid.longitude, 
+                 profile.serviceRadius
+               );
+      });
+
+      if (suitableMaids.length === 0) {
+        return null;
+      }
+
+      // Sort by rating and availability
+      suitableMaids.sort((a, b) => b.maidProfile.rating - a.maidProfile.rating);
       
-      // Check if maid is not already assigned at this time
-      // Check if maid has required skills
-      // Check if maid is within service radius
-      return profile && 
-             profile.status === 'ACTIVE' && 
-             this.isWithinRadius(
-               booking.serviceLatitude, 
-               booking.serviceLongitude, 
-               maid.latitude, 
-               maid.longitude, 
-               profile.serviceRadius
-             );
-    });
-
-    if (suitableMaids.length === 0) {
-      return null;
-    }
-
-    // Sort by rating and availability
-    suitableMaids.sort((a, b) => b.maidProfile.rating - a.maidProfile.rating);
-    
-    return suitableMaids[0];
+      return suitableMaids[0];
+    }, 'Find best maid');
   }
 
   /**
    * Check if a day is a buffer day for a subscription
    */
   async isBufferDay(subscriptionId, date) {
-    const bufferPeriod = await this.prisma.bufferPeriod.findFirst({
-      where: {
-        subscriptionId,
-        status: 'ACTIVE',
-        startDate: {
-          lte: date
-        },
-        endDate: {
-          gte: date
+    return executeWithErrorHandling(async (prisma) => {
+      const bufferPeriod = await prisma.bufferPeriod.findFirst({
+        where: {
+          subscriptionId,
+          status: 'ACTIVE',
+          startDate: {
+            lte: date
+          },
+          endDate: {
+            gte: date
+          }
         }
-      }
-    });
+      });
 
-    return !!bufferPeriod;
+      return !!bufferPeriod;
+    }, 'Check buffer day');
   }
 
   /**
@@ -284,9 +301,9 @@ class AutomaticServiceScheduler {
   async processBufferRequests() {
     console.log('🛡️ Processing buffer period requests...');
     
-    try {
+    return executeWithErrorHandling(async (prisma) => {
       // Find buffer periods that should auto-resume
-      const expiredBuffers = await this.prisma.bufferPeriod.findMany({
+      const expiredBuffers = await prisma.bufferPeriod.findMany({
         where: {
           status: 'ACTIVE',
           autoResumeDate: {
@@ -308,7 +325,7 @@ class AutomaticServiceScheduler {
 
       for (const buffer of expiredBuffers) {
         // End buffer period
-        await this.prisma.bufferPeriod.update({
+        await prisma.bufferPeriod.update({
           where: { id: buffer.id },
           data: {
             status: 'COMPLETED',
@@ -317,7 +334,7 @@ class AutomaticServiceScheduler {
         });
 
         // Update subscription
-        await this.prisma.subscription.update({
+        await prisma.subscription.update({
           where: { id: buffer.subscriptionId },
           data: {
             isInBufferPeriod: false,
@@ -345,9 +362,7 @@ class AutomaticServiceScheduler {
 
       console.log(`✅ Processed ${expiredBuffers.length} buffer period completions`);
 
-    } catch (error) {
-      console.error('❌ Error processing buffer requests:', error);
-    }
+    }, 'Process buffer requests');
   }
 
   /**
@@ -388,8 +403,8 @@ class AutomaticServiceScheduler {
    * Start buffer period for customer
    */
   async startBufferPeriod(subscriptionId, daysCount, reason = 'CUSTOMER_REQUEST', notes = '') {
-    try {
-      const subscription = await this.prisma.subscription.findUnique({
+    return executeWithErrorHandling(async (prisma) => {
+      const subscription = await prisma.subscription.findUnique({
         where: { id: subscriptionId },
         include: {
           customer: {
@@ -413,7 +428,7 @@ class AutomaticServiceScheduler {
       endDate.setDate(endDate.getDate() + daysCount);
 
       // Create buffer period
-      const bufferPeriod = await this.prisma.bufferPeriod.create({
+      const bufferPeriod = await prisma.bufferPeriod.create({
         data: {
           subscriptionId,
           startDate,
@@ -429,7 +444,7 @@ class AutomaticServiceScheduler {
       });
 
       // Update subscription
-      await this.prisma.subscription.update({
+      await prisma.subscription.update({
         where: { id: subscriptionId },
         data: {
           isInBufferPeriod: true,
@@ -455,70 +470,70 @@ class AutomaticServiceScheduler {
 
       console.log(`🛡️ Started buffer period for ${subscription.customer.user.email}`);
       return bufferPeriod;
-
-    } catch (error) {
-      console.error('❌ Error starting buffer period:', error);
-      throw error;
-    }
+    });
   }
 
   /**
    * Cancel services during buffer period
    */
   async cancelServicesInBufferPeriod(subscriptionId, startDate, endDate) {
-    // Find bookings within buffer period
-    const bookingsToCancel = await this.prisma.booking.findMany({
-      where: {
-        customer: {
-          customerProfile: {
-            subscription: {
-              id: subscriptionId
+    return executeWithErrorHandling(async (prisma) => {
+      // Find bookings within buffer period
+      const bookingsToCancel = await prisma.booking.findMany({
+        where: {
+          customer: {
+            customerProfile: {
+              subscription: {
+                id: subscriptionId
+              }
             }
+          },
+          scheduledAt: {
+            gte: startDate,
+            lte: endDate
+          },
+          status: {
+            in: ['CONFIRMED', 'ASSIGNED', 'PENDING']
           }
         },
-        scheduledAt: {
-          gte: startDate,
-          lte: endDate
-        },
-        status: {
-          in: ['CONFIRMED', 'ASSIGNED', 'PENDING']
-        }
-      },
-      include: {
-        maid: true
-      }
-    });
-
-    for (const booking of bookingsToCancel) {
-      await this.prisma.booking.update({
-        where: { id: booking.id },
-        data: {
-          status: 'CANCELLED',
-          isBufferSkipped: true,
-          specialInstructions: 'Service cancelled due to buffer period'
+        include: {
+          maid: true
         }
       });
 
-      // Notify maid about cancellation if assigned
-      if (booking.maidId) {
-        await NotificationService.notifyMaid(booking.maidId, 'SERVICE_CANCELLED', {
-          reason: 'Customer buffer period',
-          scheduledAt: booking.scheduledAt
+      for (const booking of bookingsToCancel) {
+        await prisma.booking.update({
+          where: { id: booking.id },
+          data: {
+            status: 'CANCELLED',
+            isBufferSkipped: true,
+            specialInstructions: 'Service cancelled due to buffer period'
+          }
         });
-      }
-    }
 
-    // Update buffer period with services skipped count
-    await this.prisma.bufferPeriod.updateMany({
-      where: {
-        subscriptionId,
-        startDate,
-        endDate,
-        status: 'ACTIVE'
-      },
-      data: {
-        servicesSkipped: bookingsToCancel.length
+        // Notify maid about cancellation if assigned
+        if (booking.maidId) {
+          await NotificationService.notifyMaid(booking.maidId, 'SERVICE_CANCELLED', {
+            reason: 'Customer buffer period',
+            scheduledAt: booking.scheduledAt
+          });
+        }
       }
+
+      // Update buffer period with services skipped count
+      await prisma.bufferPeriod.updateMany({
+        where: {
+          subscriptionId,
+          startDate,
+          endDate,
+          status: 'ACTIVE'
+        },
+        data: {
+          servicesSkipped: bookingsToCancel.length
+        }
+      });
+
+      return bookingsToCancel.length;
     });
   }
 }

@@ -27,6 +27,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const userDashboardRoutes = require('./routes/userDashboardRoutes');
 const bufferRoutes = require('./routes/bufferRoutes');
+const assignmentRoutes = require('./routes/assignmentRoutes');
 
 // Create Express app
 const app = express();
@@ -36,6 +37,9 @@ const server = http.createServer(app);
 
 // Set up WebSocket server
 const wss = new WebSocketServer({ server });
+
+// Import database utility
+const { initializePrisma } = require('./utils/database');
 
 // Import notification service
 const notificationService = require('./services/notificationService');
@@ -49,7 +53,9 @@ require('./scheduler/monthlySubscriptionScheduler');
 // Initialize automatic service scheduler
 const AutomaticServiceScheduler = require('./services/AutomaticServiceScheduler');
 const automaticScheduler = new AutomaticServiceScheduler();
-automaticScheduler.init();
+
+// Initialize buffer period scheduler
+const bufferPeriodScheduler = require('./scheduler/bufferPeriodScheduler');
 
 // Middleware
 app.use(cors({
@@ -59,11 +65,16 @@ app.use(cors({
     'http://localhost:8080',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:5173',
-    'http://127.0.0.1:8080'
+    'http://127.0.0.1:8080',
+    // Add additional common development ports
+    'http://localhost:4173',
+    'http://localhost:3001',
+    'http://127.0.0.1:4173',
+    'http://127.0.0.1:3001'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cache-Control', 'Pragma'],
   preflightContinue: false,
   optionsSuccessStatus: 200
 }));
@@ -72,9 +83,18 @@ app.use(cors({
 app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', req.headers.origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, Pragma');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.sendStatus(200);
+});
+
+// CORS debugging middleware
+app.use((req, res, next) => {
+  console.log(`🌐 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'No Origin'}`);
+  if (req.method === 'OPTIONS') {
+    console.log('🔍 Preflight request detected');
+  }
+  next();
 });
 
 app.use(express.json({ limit: '10mb' }));
@@ -116,12 +136,24 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/dashboard', userDashboardRoutes);
 app.use('/api/buffer', bufferRoutes);
+app.use('/api/assignments', assignmentRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString()
+  });
+});
+
+// CORS test endpoint
+app.get('/api/cors-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'CORS is working correctly',
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString(),
+    headers: req.headers
   });
 });
 
@@ -134,8 +166,25 @@ app.use((err, req, res, next) => {
 // Start server only if not in test environment
 if (process.env.NODE_ENV !== 'test') {
   const PORT = process.env.PORT || 3000;
-  server.listen(PORT, () => {
+  server.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
+    
+    // Initialize database connection
+    try {
+      await initializePrisma();
+      console.log('✅ Database initialized successfully');
+      
+      // Initialize automatic service scheduler after database is ready
+      await automaticScheduler.init();
+      console.log('✅ Automatic service scheduler initialized');
+      
+      // Initialize buffer period scheduler
+      bufferPeriodScheduler.start();
+      console.log('✅ Buffer period scheduler initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize database or scheduler:', error);
+      console.log('⚠️ Server will continue running but some features may not work');
+    }
   });
 }
 
@@ -144,6 +193,6 @@ module.exports = app;
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received. Closing HTTP server and Prisma Client...');
-  await prisma.$disconnect();
+  await disconnectDatabase();
   process.exit(0);
 });

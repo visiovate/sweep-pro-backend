@@ -15,6 +15,9 @@ class BufferController {
     this.getAllBufferPeriods = this.getAllBufferPeriods.bind(this);
     this.getBufferStatistics = this.getBufferStatistics.bind(this);
     this.getAffectedServices = this.getAffectedServices.bind(this);
+    this.checkBufferConflict = this.checkBufferConflict.bind(this);
+    this.getCurrentBufferStatus = this.getCurrentBufferStatus.bind(this);
+    this.cleanupMalformedNotes = this.cleanupMalformedNotes.bind(this);
   }
 
   /**
@@ -192,7 +195,8 @@ class BufferController {
       const result = await this.bufferService.approveBufferRequest(
         bufferPeriodId,
         req.user.id,
-        adminNotes
+        adminNotes,
+        req.user
       );
 
       res.json(result);
@@ -318,14 +322,42 @@ class BufferController {
         totalBufferDaysUsed,
         mostBufferUsageCustomer
       ] = await Promise.all([
-        // Active requests count (treating as pending since PENDING doesn't exist)
+        // Pending requests (ACTIVE status with PENDING_APPROVAL but not APPROVED/REJECTED)
         req.prisma.bufferPeriod.count({
-          where: { status: 'ACTIVE' }
+          where: { 
+            status: 'ACTIVE',
+            AND: [
+              {
+                notes: {
+                  contains: 'STATUS: PENDING_APPROVAL'
+                }
+              },
+              {
+                notes: {
+                  not: {
+                    contains: 'STATUS: APPROVED'
+                  }
+                }
+              },
+              {
+                notes: {
+                  not: {
+                    contains: 'STATUS: REJECTED'
+                  }
+                }
+              }
+            ]
+          }
         }),
 
-        // Active buffer periods
+        // Active buffer periods (ACTIVE status with APPROVED status)
         req.prisma.bufferPeriod.count({
-          where: { status: 'ACTIVE' }
+          where: { 
+            status: 'ACTIVE',
+            notes: {
+              contains: 'STATUS: APPROVED'
+            }
+          }
         }),
 
         // Buffer requests this month
@@ -475,6 +507,225 @@ class BufferController {
 
     } catch (error) {
       console.error('Get affected services error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Check if a date conflicts with buffer periods (customer)
+   */
+  async checkBufferConflict(req, res) {
+    try {
+      const { subscriptionId } = req.params;
+      const { date } = req.query;
+
+      if (!date) {
+        return res.status(400).json({
+          success: false,
+          message: 'Date parameter is required'
+        });
+      }
+
+      // Verify subscription belongs to customer
+      const subscription = await req.prisma.subscription.findFirst({
+        where: {
+          id: subscriptionId,
+          customer: {
+            userId: req.user.id
+          }
+        }
+      });
+
+      if (!subscription) {
+        return res.status(404).json({
+          success: false,
+          message: 'Subscription not found'
+        });
+      }
+
+      const checkDate = new Date(date);
+      const checkDateOnly = new Date(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate());
+      
+      console.log(`🔍 Buffer conflict check for date: ${date} (${checkDateOnly.toISOString()})`);
+      
+      // Check if the date falls within any active buffer period
+      const bufferConflict = await req.prisma.bufferPeriod.findFirst({
+        where: {
+          subscriptionId,
+          status: 'ACTIVE',
+          startDate: { lte: checkDateOnly },
+          endDate: { gte: checkDateOnly }
+        }
+      });
+      
+      if (bufferConflict) {
+        console.log(`❌ Buffer conflict found: ${bufferConflict.startDate} to ${bufferConflict.endDate}`);
+      } else {
+        console.log(`✅ No buffer conflict for date: ${date}`);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          hasConflict: !!bufferConflict,
+          bufferPeriod: bufferConflict || null,
+          date: date
+        }
+      });
+
+    } catch (error) {
+      console.error('Check buffer conflict error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Check current buffer period status (customer)
+   */
+  async getCurrentBufferStatus(req, res) {
+    try {
+      const { subscriptionId } = req.params;
+
+      // Verify subscription belongs to customer
+      const subscription = await req.prisma.subscription.findFirst({
+        where: {
+          id: subscriptionId,
+          customer: {
+            userId: req.user.id
+          }
+        }
+      });
+
+      if (!subscription) {
+        return res.status(404).json({
+          success: false,
+          message: 'Subscription not found'
+        });
+      }
+
+      // Get current active buffer period - check multiple conditions
+      const today = new Date();
+      
+      console.log('🔍 Checking buffer status for subscription:', subscriptionId);
+      console.log('🔍 Today:', today.toISOString());
+      console.log('🔍 Subscription buffer status:', {
+        isInBufferPeriod: subscription.isInBufferPeriod,
+        bufferStartDate: subscription.bufferStartDate,
+        bufferEndDate: subscription.bufferEndDate
+      });
+
+      // Create date-only version of today for proper comparison
+      const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayEndOfDay = new Date(todayDateOnly);
+      todayEndOfDay.setHours(23, 59, 59, 999);
+
+      // First try to find approved buffer periods
+      let activeBufferPeriod = await req.prisma.bufferPeriod.findFirst({
+        where: {
+          subscriptionId,
+          status: 'ACTIVE',
+          notes: {
+            contains: 'STATUS: APPROVED'
+          },
+          startDate: { lte: todayEndOfDay },
+          endDate: { gte: todayDateOnly }
+        }
+      });
+
+      console.log('🔍 Found approved buffer period:', activeBufferPeriod);
+
+      // If no approved buffer period found, check if subscription says it's in buffer period
+      if (!activeBufferPeriod && subscription.isInBufferPeriod) {
+        console.log('🔍 Subscription says in buffer period, looking for any active buffer period...');
+        
+        // Look for any active buffer period for this subscription
+        activeBufferPeriod = await req.prisma.bufferPeriod.findFirst({
+          where: {
+            subscriptionId,
+            status: 'ACTIVE',
+            startDate: { lte: todayEndOfDay },
+            endDate: { gte: todayDateOnly }
+          }
+        });
+        
+        console.log('🔍 Found any active buffer period:', activeBufferPeriod);
+      }
+
+      // If still no buffer period found but subscription says it's in buffer, use subscription data
+      if (!activeBufferPeriod && subscription.isInBufferPeriod && subscription.bufferStartDate && subscription.bufferEndDate) {
+        const bufferStart = new Date(subscription.bufferStartDate);
+        const bufferEnd = new Date(subscription.bufferEndDate);
+        
+        // Compare dates only (ignore time) to handle timezone issues
+        const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const bufferStartDateOnly = new Date(bufferStart.getFullYear(), bufferStart.getMonth(), bufferStart.getDate());
+        const bufferEndDateOnly = new Date(bufferEnd.getFullYear(), bufferEnd.getMonth(), bufferEnd.getDate());
+        
+        const isInDateRange = todayDateOnly >= bufferStartDateOnly && todayDateOnly <= bufferEndDateOnly;
+        
+        console.log('🔍 Checking subscription buffer dates (date-only comparison):', {
+          today: todayDateOnly.toDateString(),
+          bufferStart: bufferStartDateOnly.toDateString(),
+          bufferEnd: bufferEndDateOnly.toDateString(),
+          todayInRange: isInDateRange,
+          originalBufferStart: bufferStart.toISOString(),
+          originalBufferEnd: bufferEnd.toISOString()
+        });
+        
+        if (isInDateRange) {
+          // Create a virtual buffer period object from subscription data
+          activeBufferPeriod = {
+            id: 'subscription-buffer',
+            subscriptionId: subscriptionId,
+            startDate: subscription.bufferStartDate,
+            endDate: subscription.bufferEndDate,
+            status: 'ACTIVE',
+            notes: 'Active buffer period from subscription'
+          };
+          
+          console.log('🔍 Using subscription buffer data as active period');
+        }
+      }
+
+      console.log('🔍 Final active buffer period:', activeBufferPeriod);
+
+      res.json({
+        success: true,
+        data: {
+          isInBufferPeriod: !!activeBufferPeriod,
+          activeBufferPeriod: activeBufferPeriod || null,
+          subscriptionBufferStatus: {
+            isInBufferPeriod: subscription.isInBufferPeriod,
+            bufferStartDate: subscription.bufferStartDate,
+            bufferEndDate: subscription.bufferEndDate
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Get current buffer status error:', error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Clean up malformed buffer notes (admin utility)
+   */
+  async cleanupMalformedNotes(req, res) {
+    try {
+      const result = await this.bufferService.cleanupMalformedBufferNotes();
+      res.json(result);
+    } catch (error) {
+      console.error('Cleanup malformed notes error:', error);
       res.status(500).json({
         success: false,
         message: error.message

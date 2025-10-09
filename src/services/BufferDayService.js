@@ -153,43 +153,44 @@ class BufferDayService {
         }
       });
 
-      // Parse start date
+      // Parse start date and ensure it's date-only (no time component)
       const bufferStartDate = new Date(startDate);
+      const bufferStartDateOnly = new Date(bufferStartDate.getFullYear(), bufferStartDate.getMonth(), bufferStartDate.getDate());
+      
       const today = new Date();
       const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       
+      console.log(`🛡️ Creating buffer period: Start=${startDate} (${bufferStartDateOnly.toISOString()}), Days=${daysCount}`);
+      
       // Ensure start date is not in the past (allow same day)
-      if (bufferStartDate < todayMidnight) {
+      if (bufferStartDateOnly < todayMidnight) {
         const todayStr = today.toISOString().split('T')[0];
         throw new Error(`Buffer period cannot start in the past. Today is ${todayStr}. Please choose a date from today onwards.`);
       }
 
-      const bufferEndDate = new Date(bufferStartDate);
+      const bufferEndDate = new Date(bufferStartDateOnly);
       bufferEndDate.setDate(bufferEndDate.getDate() + daysCount - 1); // Include start day
+      
+      console.log(`🛡️ Buffer period dates: ${bufferStartDateOnly.toISOString()} to ${bufferEndDate.toISOString()}`);
 
-      // Create buffer period request
+      // Create buffer period request (PENDING status for admin approval)
       const bufferPeriod = await this.prisma.bufferPeriod.create({
         data: {
           subscriptionId,
-          startDate: bufferStartDate,
+          startDate: bufferStartDateOnly,
           endDate: bufferEndDate,
-          status: 'ACTIVE', // Using ACTIVE as default since PENDING doesn't exist in enum
+          status: 'ACTIVE', // Note: Using ACTIVE as PENDING status since PENDING doesn't exist in enum
           reason: 'CUSTOMER_REQUEST',
           daysCount,
           servicesSkipped: 0,
           autoResumeDate: new Date(bufferEndDate.getTime() + 24 * 60 * 60 * 1000), // Resume next day
           isAutomatic: false,
-          notes: `Customer request: ${reason}. ${notes}`
+          notes: `Customer request: ${reason}. ${notes}. STATUS: PENDING_APPROVAL`
         }
       });
 
-      // Update subscription to reserve buffer days
-      await this.prisma.subscription.update({
-        where: { id: subscriptionId },
-        data: {
-          bufferDaysUsed: subscription.bufferDaysUsed + daysCount
-        }
-      });
+      // DO NOT update subscription buffer days yet - wait for admin approval
+      // Buffer days will be deducted only after admin approval
 
       // Create admin notification
       await this.createBufferRequestNotification(subscription, bufferPeriod, reason);
@@ -201,7 +202,7 @@ class BufferDayService {
         data: {
           bufferPeriod
         },
-        message: 'Buffer period activated successfully. Your services will be paused during this period.'
+        message: 'Buffer period request submitted successfully. Your request is pending admin approval. You will be notified once approved.'
       };
 
     } catch (error) {
@@ -213,8 +214,10 @@ class BufferDayService {
   /**
    * Admin approve buffer period request
    */
-  async approveBufferRequest(bufferPeriodId, adminId, adminNotes = '') {
+  async approveBufferRequest(bufferPeriodId, adminId, adminNotes = '', adminUser = null) {
     try {
+      console.log(`🔄 Starting approval process for buffer period: ${bufferPeriodId}`);
+      
       const bufferPeriod = await this.prisma.bufferPeriod.findUnique({
         where: { id: bufferPeriodId },
         include: {
@@ -227,40 +230,90 @@ class BufferDayService {
           }
         }
       });
-
+      
       if (!bufferPeriod) {
+        console.error(`❌ Buffer period not found: ${bufferPeriodId}`);
         throw new Error('Buffer period request not found');
       }
+      
+      console.log(`📋 Found buffer period:`, {
+        id: bufferPeriod.id,
+        status: bufferPeriod.status,
+        notes: bufferPeriod.notes?.substring(0, 100) + '...',
+        subscriptionId: bufferPeriod.subscriptionId
+      });
 
-      if (bufferPeriod.status !== 'ACTIVE') {
-        throw new Error('Buffer period request is not in active status for approval');
+      // Check if this is a pending approval request
+      if (bufferPeriod.status !== 'ACTIVE' || !bufferPeriod.notes?.includes('PENDING_APPROVAL')) {
+        throw new Error('Buffer period request is not pending approval');
       }
 
-      // Activate buffer period
+      // Check if already approved (prevent double approval)
+      if (bufferPeriod.notes?.includes('STATUS: APPROVED')) {
+        throw new Error('Buffer period request has already been approved');
+      }
+
+      console.log(`🔄 Step 1: Updating buffer period status...`);
+      
+      // Activate buffer period and remove PENDING_APPROVAL status
+      let updatedNotes = bufferPeriod.notes || '';
+      
+      // Clean up any existing duplicate admin approval entries
+      updatedNotes = updatedNotes.replace(/\nAdmin approved:\s*\n?/g, '');
+      updatedNotes = updatedNotes.replace(/\nAdmin approved:\s*$/g, '');
+      
+      // Remove PENDING_APPROVAL status and replace with APPROVED
+      updatedNotes = updatedNotes.replace('STATUS: PENDING_APPROVAL', 'STATUS: APPROVED');
+      
+      // Add proper admin approval note
+      if (adminNotes) {
+        const adminName = adminUser?.name || 'Admin';
+        const timestamp = new Date().toISOString().split('T')[0]; // Just date, not full timestamp
+        updatedNotes += `\nAdmin approved by ${adminName} on ${timestamp}: ${adminNotes}`;
+      }
+      
       await this.prisma.bufferPeriod.update({
         where: { id: bufferPeriodId },
         data: {
           status: 'ACTIVE',
-          notes: `${bufferPeriod.notes}\\nAdmin approved: ${adminNotes}`
+          notes: updatedNotes
         }
       });
+      
+      console.log(`✅ Step 1 completed: Buffer period status updated`);
+      console.log(`🔄 Step 2: Updating subscription...`);
 
-      // Update subscription
+      // Update subscription - deduct buffer days and set buffer period flags
       await this.prisma.subscription.update({
         where: { id: bufferPeriod.subscriptionId },
         data: {
           isInBufferPeriod: true,
           bufferStartDate: bufferPeriod.startDate,
-          bufferEndDate: bufferPeriod.endDate
+          bufferEndDate: bufferPeriod.endDate,
+          bufferDaysUsed: bufferPeriod.subscription.bufferDaysUsed + bufferPeriod.daysCount
         }
       });
+      
+      console.log(`✅ Step 2 completed: Subscription updated`);
+      console.log(`🔄 Step 3: Cancelling services in buffer period...`);
 
-      // Cancel services in buffer period
-      await this.cancelServicesInBufferPeriod(
-        bufferPeriod.subscriptionId,
-        bufferPeriod.startDate,
-        bufferPeriod.endDate
-      );
+      // Cancel services in buffer period (with error handling)
+      let cancelledCount = 0;
+      try {
+        cancelledCount = await this.cancelServicesInBufferPeriod(
+          bufferPeriod.subscriptionId,
+          bufferPeriod.startDate,
+          bufferPeriod.endDate
+        );
+        console.log(`✅ Successfully cancelled ${cancelledCount} bookings during buffer period`);
+      } catch (serviceError) {
+        console.error('⚠️ Error cancelling services during buffer period:', serviceError);
+        // Don't fail the entire approval process if service cancellation fails
+        // The buffer period is still approved, but services weren't cancelled
+      }
+      
+      console.log(`✅ Step 3 completed: Service cancellation handled`);
+      console.log(`🔄 Step 4: Sending customer notification...`);
 
       // Notify customer about approval
       await this.prisma.notification.create({
@@ -277,7 +330,8 @@ class BufferDayService {
           }
         }
       });
-
+      
+      console.log(`✅ Step 4 completed: Customer notification sent`);
       console.log(`✅ Buffer period approved for ${bufferPeriod.subscription.customer.user.email}`);
       
       return {
@@ -287,6 +341,58 @@ class BufferDayService {
 
     } catch (error) {
       console.error('❌ Error approving buffer request:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up malformed buffer request notes (utility function)
+   */
+  async cleanupMalformedBufferNotes() {
+    try {
+      console.log('🧹 Starting cleanup of malformed buffer notes...');
+      
+      // Find all buffer periods with malformed notes
+      const malformedRequests = await this.prisma.bufferPeriod.findMany({
+        where: {
+          status: 'ACTIVE',
+          notes: {
+            contains: 'Admin approved: \n'
+          }
+        }
+      });
+
+      console.log(`🧹 Found ${malformedRequests.length} requests with malformed notes`);
+
+      for (const request of malformedRequests) {
+        let cleanedNotes = request.notes || '';
+        
+        // Remove duplicate empty admin approval entries
+        cleanedNotes = cleanedNotes.replace(/\nAdmin approved:\s*\n?/g, '');
+        cleanedNotes = cleanedNotes.replace(/\nAdmin approved:\s*$/g, '');
+        
+        // If it still has PENDING_APPROVAL but no proper approval, mark as approved
+        if (cleanedNotes.includes('STATUS: PENDING_APPROVAL') && !cleanedNotes.includes('STATUS: APPROVED')) {
+          cleanedNotes = cleanedNotes.replace('STATUS: PENDING_APPROVAL', 'STATUS: APPROVED');
+          cleanedNotes += '\nAdmin approved by System Cleanup on ' + new Date().toISOString().split('T')[0] + ': Cleaned up malformed request';
+        }
+
+        await this.prisma.bufferPeriod.update({
+          where: { id: request.id },
+          data: { notes: cleanedNotes }
+        });
+      }
+
+      console.log(`🧹 Cleaned up ${malformedRequests.length} malformed buffer requests`);
+      
+      return {
+        success: true,
+        message: `Cleaned up ${malformedRequests.length} malformed buffer requests`,
+        cleanedCount: malformedRequests.length
+      };
+
+    } catch (error) {
+      console.error('❌ Error cleaning up malformed buffer notes:', error);
       throw error;
     }
   }
@@ -313,12 +419,21 @@ class BufferDayService {
         throw new Error('Buffer period request not found');
       }
 
-      // Reject buffer period
+      // Check if this is a pending approval request
+      if (bufferPeriod.status !== 'ACTIVE' || !bufferPeriod.notes?.includes('PENDING_APPROVAL')) {
+        throw new Error('Buffer period request is not pending approval');
+      }
+
+      // Reject buffer period and update notes
+      const updatedNotes = bufferPeriod.notes
+        .replace('STATUS: PENDING_APPROVAL', 'STATUS: REJECTED')
+        + `\nAdmin rejected: ${rejectionReason}`;
+      
       await this.prisma.bufferPeriod.update({
         where: { id: bufferPeriodId },
         data: {
           status: 'CANCELLED',
-          notes: `${bufferPeriod.notes}\\nAdmin rejected: ${rejectionReason}`
+          notes: updatedNotes
         }
       });
 
@@ -365,7 +480,28 @@ class BufferDayService {
 
     const requests = await this.prisma.bufferPeriod.findMany({
       where: {
-        status: 'ACTIVE'
+        status: 'ACTIVE',
+        AND: [
+          {
+            notes: {
+              contains: 'STATUS: PENDING_APPROVAL'
+            }
+          },
+          {
+            notes: {
+              not: {
+                contains: 'STATUS: APPROVED'
+              }
+            }
+          },
+          {
+            notes: {
+              not: {
+                contains: 'STATUS: REJECTED'
+              }
+            }
+          }
+        ]
       },
       include: {
         subscription: {
@@ -387,7 +523,30 @@ class BufferDayService {
     });
 
     const totalCount = await this.prisma.bufferPeriod.count({
-      where: { status: 'ACTIVE' }
+      where: { 
+        status: 'ACTIVE',
+        AND: [
+          {
+            notes: {
+              contains: 'STATUS: PENDING_APPROVAL'
+            }
+          },
+          {
+            notes: {
+              not: {
+                contains: 'STATUS: APPROVED'
+              }
+            }
+          },
+          {
+            notes: {
+              not: {
+                contains: 'STATUS: REJECTED'
+              }
+            }
+          }
+        ]
+      }
     });
 
     return {
@@ -436,9 +595,25 @@ class BufferDayService {
   }
 
   /**
-   * Cancel services in buffer period
+   * Cancel services within buffer period dates
    */
   async cancelServicesInBufferPeriod(subscriptionId, startDate, endDate) {
+    try {
+      console.log(`🚫 Starting service cancellation for subscription ${subscriptionId} from ${startDate} to ${endDate}`);
+
+      // Ensure we're using date-only comparisons for buffer period
+      const bufferStartDate = new Date(startDate);
+      const bufferEndDate = new Date(endDate);
+      
+      // Set time to cover the entire day range
+      const startOfBufferPeriod = new Date(bufferStartDate.getFullYear(), bufferStartDate.getMonth(), bufferStartDate.getDate(), 0, 0, 0);
+      const endOfBufferPeriod = new Date(bufferEndDate.getFullYear(), bufferEndDate.getMonth(), bufferEndDate.getDate(), 23, 59, 59);
+
+      console.log(`🚫 Searching for bookings between ${startOfBufferPeriod.toISOString()} and ${endOfBufferPeriod.toISOString()}`);
+
+    // Find all bookings within the buffer period
+    console.log(`🔍 Executing booking query with subscription ID: ${subscriptionId}`);
+    
     const bookingsToCancel = await this.prisma.booking.findMany({
       where: {
         customer: {
@@ -449,17 +624,30 @@ class BufferDayService {
           }
         },
         scheduledAt: {
-          gte: startDate,
-          lte: endDate
+          gte: startOfBufferPeriod,
+          lte: endOfBufferPeriod
         },
         status: {
           in: ['CONFIRMED', 'ASSIGNED', 'PENDING']
         }
       },
       include: {
-        maid: true
+        maid: true,
+        customer: {
+          include: {
+            customerProfile: {
+              include: {
+                subscription: true
+              }
+            }
+          }
+        }
       }
     });
+    
+    console.log(`🔍 Query executed successfully, found ${bookingsToCancel.length} bookings`);
+
+    console.log(`🚫 Found ${bookingsToCancel.length} bookings to cancel during buffer period`);
 
     let cancelledCount = 0;
 
@@ -469,7 +657,22 @@ class BufferDayService {
         data: {
           status: 'CANCELLED',
           isBufferSkipped: true,
-          specialInstructions: 'Service cancelled due to approved buffer period'
+          notes: `${booking.notes || ''}\nCancelled due to approved buffer period`
+        }
+      });
+
+      // Notify customer about cancellation
+      await this.prisma.notification.create({
+        data: {
+          userId: booking.customer.id,
+          type: 'SERVICE_CANCELLED',
+          title: 'Service Cancelled - Buffer Period',
+          message: `Your service scheduled for ${booking.scheduledAt.toDateString()} has been cancelled due to your approved buffer period.`,
+          data: {
+            bookingId: booking.id,
+            reason: 'Buffer period approved',
+            scheduledAt: booking.scheduledAt
+          }
         }
       });
 
@@ -493,6 +696,8 @@ class BufferDayService {
       cancelledCount++;
     }
 
+    console.log(`🚫 Cancelled ${cancelledCount} bookings during buffer period`);
+
     // Update buffer period with cancelled services count
     await this.prisma.bufferPeriod.updateMany({
       where: {
@@ -507,6 +712,88 @@ class BufferDayService {
     });
 
     return cancelledCount;
+    
+    } catch (error) {
+      console.error('❌ Error in cancelServicesInBufferPeriod:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Automatically end expired buffer periods and resume services
+   */
+  async processExpiredBufferPeriods() {
+    try {
+      const today = new Date();
+      today.setHours(23, 59, 59, 999); // End of today
+
+      // Find all active buffer periods that have ended
+      const expiredBufferPeriods = await this.prisma.bufferPeriod.findMany({
+        where: {
+          status: 'ACTIVE',
+          endDate: { lt: today }
+        },
+        include: {
+          subscription: {
+            include: {
+              customer: {
+                include: { user: true }
+              }
+            }
+          }
+        }
+      });
+
+      console.log(`🔄 Processing ${expiredBufferPeriods.length} expired buffer periods`);
+
+      for (const bufferPeriod of expiredBufferPeriods) {
+        // Mark buffer period as completed
+        await this.prisma.bufferPeriod.update({
+          where: { id: bufferPeriod.id },
+          data: {
+            status: 'COMPLETED',
+            notes: `${bufferPeriod.notes}\\nAutomatically completed on ${today.toISOString()}`
+          }
+        });
+
+        // Resume subscription services
+        await this.prisma.subscription.update({
+          where: { id: bufferPeriod.subscriptionId },
+          data: {
+            isInBufferPeriod: false,
+            bufferStartDate: null,
+            bufferEndDate: null
+          }
+        });
+
+        // Notify customer about buffer period completion
+        await this.prisma.notification.create({
+          data: {
+            userId: bufferPeriod.subscription.customer.user.id,
+            type: 'BUFFER_COMPLETED',
+            title: 'Buffer Period Completed',
+            message: `Your buffer period has ended. Your cleaning services have been automatically resumed. You can now book new services.`,
+            data: {
+              bufferPeriodId: bufferPeriod.id,
+              endDate: bufferPeriod.endDate,
+              daysCount: bufferPeriod.daysCount
+            }
+          }
+        });
+
+        console.log(`✅ Buffer period completed for ${bufferPeriod.subscription.customer.user.email}`);
+      }
+
+      return {
+        success: true,
+        processedCount: expiredBufferPeriods.length,
+        message: `Processed ${expiredBufferPeriods.length} expired buffer periods`
+      };
+
+    } catch (error) {
+      console.error('❌ Error processing expired buffer periods:', error);
+      throw error;
+    }
   }
 
   /**

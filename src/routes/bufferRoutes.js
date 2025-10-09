@@ -145,4 +145,38 @@ router.get(
   bufferController.getAffectedServices
 );
 
+/**
+ * @route   GET /api/buffer/subscription/:subscriptionId/check-conflict
+ * @desc    Check if a date conflicts with buffer periods (customer)
+ * @access  Private (Customer)
+ */
+router.get(
+  '/subscription/:subscriptionId/check-conflict',
+  authenticateToken,
+  bufferController.checkBufferConflict
+);
+
+/**
+ * @route   GET /api/buffer/subscription/:subscriptionId/current-status
+ * @desc    Check current buffer period status (customer)
+ * @access  Private (Customer)
+ */
+router.get(
+  '/subscription/:subscriptionId/current-status',
+  authenticateToken,
+  bufferController.getCurrentBufferStatus
+);
+
+/**
+ * @route   POST /api/buffer/admin/cleanup-notes
+ * @desc    Clean up malformed buffer request notes (admin utility)
+ * @access  Private (Admin)
+ */
+router.post(
+  '/admin/cleanup-notes',
+  authenticateToken,
+  authorizeAdmin,
+  bufferController.cleanupMalformedNotes
+);
+
 module.exports = router;
