@@ -28,6 +28,9 @@ const documentRoutes = require('./routes/documentRoutes');
 const userDashboardRoutes = require('./routes/userDashboardRoutes');
 const bufferRoutes = require('./routes/bufferRoutes');
 const assignmentRoutes = require('./routes/assignmentRoutes');
+const customerAssignmentRoutes = require('./routes/customerAssignmentRoutes');
+const automaticBookingRoutes = require('./routes/automaticBookingRoutes');
+const automaticAssignmentRoutes = require('./routes/automaticAssignmentRoutes');
 
 // Create Express app
 const app = express();
@@ -44,8 +47,15 @@ const { initializePrisma } = require('./utils/database');
 // Import notification service
 const notificationService = require('./services/notificationService');
 
+// Import cron scheduler and automatic assignment service
+const CronScheduler = require('./services/cronScheduler');
+const AutomaticAssignmentService = require('./services/automaticAssignmentService');
+
 // Initialize notification service with WebSocket server
 notificationService.init(wss);
+
+// Initialize cron scheduler
+const cronJobs = CronScheduler.init();
 
 // Initialize monthly subscription scheduler
 require('./scheduler/monthlySubscriptionScheduler');
@@ -137,6 +147,9 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/dashboard', userDashboardRoutes);
 app.use('/api/buffer', bufferRoutes);
 app.use('/api/assignments', assignmentRoutes);
+app.use('/api/admin/customer-assignments', customerAssignmentRoutes);
+app.use('/api/automatic-bookings', automaticBookingRoutes);
+app.use('/api/automatic-assignments', automaticAssignmentRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {
@@ -167,7 +180,13 @@ app.use((err, req, res, next) => {
 if (process.env.NODE_ENV !== 'test') {
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, async () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📊 Admin Dashboard: http://localhost:${PORT}/admin`);
+    console.log(`🔗 WebSocket server initialized`);
+    
+    // Start cron jobs
+    cronJobs.start();
+    console.log(`⏰ Automatic assignment cron jobs started`);
     
     // Initialize database connection
     try {
@@ -181,6 +200,12 @@ if (process.env.NODE_ENV !== 'test') {
       // Initialize buffer period scheduler
       bufferPeriodScheduler.start();
       console.log('✅ Buffer period scheduler initialized');
+      
+      // Process any missed assignment requests on server startup
+      setTimeout(async () => {
+        await AutomaticAssignmentService.processOnServerStartup();
+      }, 5000); // Wait 5 seconds for everything to initialize
+      
     } catch (error) {
       console.error('❌ Failed to initialize database or scheduler:', error);
       console.log('⚠️ Server will continue running but some features may not work');

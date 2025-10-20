@@ -39,6 +39,9 @@ model User {
   maidProfile         MaidProfile?
   notifications       Notification[]
   payments            Payment[]        @relation("CustomerPayments")
+  customerAssignments CustomerMaidAssignment[] @relation("CustomerAssignments")
+  customerAssignmentRequests CustomerAssignmentRequest[] @relation("CustomerAssignmentRequests")
+  adminAssignmentRequests    CustomerAssignmentRequest[] @relation("AdminAssignmentRequests")
 
   @@index([email])
   @@index([phone])
@@ -88,6 +91,8 @@ model MaidProfile {
   zones              MaidZone[]
   performanceMetrics PerformanceMetric[]
   assignmentRequests AssignmentRequest[]
+  maidAssignments    CustomerMaidAssignment[] @relation("MaidAssignments")
+  maidAssignmentRequests CustomerAssignmentRequest[] @relation("MaidAssignmentRequests")
 
   @@index([status])
   @@index([isFloatingMaid])
@@ -208,6 +213,7 @@ model Booking {
   maidResponseAt      DateTime?
   rejectionReason     String?
   reassignmentCount   Int                 @default(0)
+  isAutomatic         Boolean             @default(false)
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   timeSlot            String?
@@ -249,10 +255,12 @@ model RescheduleHistory {
 model TaskCompletion {
   id                 String             @id @default(uuid())
   bookingId          String
-  taskId             String
-  status             TaskStatus         @default(PENDING)
-  completedAt        DateTime?
-  notes              String?
+  timeSlot            String?
+  status              BookingStatus        @default(PENDING)
+  assignmentStatus    AssignmentStatus?
+  totalAmount         Float
+  notes               String?
+  isAutomatic         Boolean              @default(false)
   proofImages        String[]           @default([])
   timeSpent          Int?
   customerOtp        String?
@@ -920,3 +928,51 @@ model AssignmentRequest {
   @@index([status])
   @@index([expiresAt])
 }
+
+model CustomerAssignmentRequest {
+  id              String                   @id @default(uuid())
+  customerId      String
+  maidId          String
+  requestedBy     String                   // Admin user ID who initiated the request
+  status          AssignmentRequestStatus  @default(pending)
+  requestedAt     DateTime                 @default(now())
+  respondedAt     DateTime?
+  rejectionReason String?
+  notes           String?
+  expiresAt       DateTime
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  
+  customer        User                     @relation("CustomerAssignmentRequests", fields: [customerId], references: [id], onDelete: Cascade)
+  maid            MaidProfile              @relation("MaidAssignmentRequests", fields: [maidId], references: [id], onDelete: Cascade)
+  admin           User                     @relation("AdminAssignmentRequests", fields: [requestedBy], references: [id], onDelete: Cascade)
+  
+  @@index([customerId])
+  @@index([maidId])
+  @@index([requestedBy])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+model CustomerMaidAssignment {
+  id          String    @id @default(uuid())
+  customerId  String
+  maidId      String
+  isActive    Boolean   @default(true)
+  assignedAt  DateTime  @default(now())
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  customer    User      @relation("CustomerAssignments", fields: [customerId], references: [id], onDelete: Cascade)
+  maid        MaidProfile @relation("MaidAssignments", fields: [maidId], references: [id], onDelete: Cascade)
+  
+  @@unique([customerId, isActive])
+  @@index([customerId])
+  @@index([maidId])
+  @@index([isActive])
+}
+
+
+
+
