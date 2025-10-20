@@ -400,17 +400,28 @@ const rejectAssignment = async (req, res) => {
       });
 
       console.log('🔍 Updating booking status to CANCELLED for reassignment...');
+      console.log(`📋 Booking ID to update: ${assignment.bookingId}`);
+      
       // Update booking status and increment reassignment count
-      await tx.booking.update({
+      const updatedBooking = await tx.booking.update({
         where: { id: assignment.bookingId },
         data: {
           status: 'CANCELLED', // Set status to CANCELLED for reassignment
+          assignmentStatus: 'REJECTED', // Mark as rejected for reassignment
           rejectionReason: rejectionReason.trim(),
           reassignmentCount: {
             increment: 1
           },
           maidId: null // Remove maid assignment
         }
+      });
+      
+      console.log('✅ Booking updated successfully:', {
+        id: updatedBooking.id,
+        status: updatedBooking.status,
+        assignmentStatus: updatedBooking.assignmentStatus,
+        rejectionReason: updatedBooking.rejectionReason,
+        reassignmentCount: updatedBooking.reassignmentCount
       });
 
       console.log('✅ Booking updated for reassignment');
@@ -979,7 +990,9 @@ const sendAssignmentRequest = async (req, res) => {
         data: {
           maidId, // This is User.id, correct for Booking.maidId foreign key
           status: 'ASSIGNED',
-          rejectionReason: null // Clear previous rejection reason for reassignment
+          assignmentStatus: 'ASSIGNED_PENDING_RESPONSE', // Reset assignment status
+          rejectionReason: null, // Clear previous rejection reason for reassignment
+          assignedAt: new Date() // Track when assignment was made
         }
       });
 
@@ -1020,15 +1033,59 @@ const getReassignmentBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching reassignment bookings...');
     
+    // First, let's see all bookings with rejected assignment requests
+    const allBookingsWithRejectedRequests = await prisma.booking.findMany({
+      include: {
+        assignmentRequests: {
+          where: {
+            status: 'rejected'
+          }
+        }
+      }
+    });
+    
+    console.log(`📊 Total bookings with rejected requests: ${allBookingsWithRejectedRequests.filter(b => b.assignmentRequests.length > 0).length}`);
+    
+    // Get bookings that need reassignment - focus on assignmentStatus
     const bookings = await prisma.booking.findMany({
       where: {
-        status: 'CANCELLED',
-        rejectionReason: { not: null }
+        OR: [
+          {
+            // Bookings with assignment status indicating reassignment needed
+            assignmentStatus: 'REJECTED'
+          },
+          {
+            // Bookings marked for reassignment
+            assignmentStatus: 'REASSIGNED'
+          },
+          {
+            // Legacy: Bookings rejected by maid (old flow)
+            status: 'CANCELLED',
+            rejectionReason: { not: null },
+            maidId: null
+          }
+        ]
       },
       include: {
         service: true,
         customer: true,
-        maid: true
+        maid: true,
+        assignmentRequests: {
+          where: {
+            status: 'rejected'
+          },
+          include: {
+            maid: {
+              include: {
+                user: true
+              }
+            }
+          },
+          orderBy: {
+            respondedAt: 'desc'
+          },
+          take: 1 // Get the most recent rejection
+        }
       },
       orderBy: {
         updatedAt: 'desc'
@@ -1048,7 +1105,22 @@ const getReassignmentBookings = async (req, res) => {
       });
     });
     
-    const transformedBookings = bookings.map(booking => transformBookingForFrontend(booking));
+    const transformedBookings = bookings.map(booking => {
+      const transformed = transformBookingForFrontend(booking);
+      
+      // Add rejection details from the most recent rejected assignment request
+      if (booking.assignmentRequests && booking.assignmentRequests.length > 0) {
+        const rejectedRequest = booking.assignmentRequests[0];
+        transformed.lastRejectedBy = {
+          maidId: rejectedRequest.maidId,
+          maidName: rejectedRequest.maid?.user?.name || 'Unknown',
+          rejectionReason: rejectedRequest.rejectionReason,
+          rejectedAt: rejectedRequest.respondedAt
+        };
+      }
+      
+      return transformed;
+    });
 
     // Debug: Log transformed bookings
     transformedBookings.forEach((booking, index) => {

@@ -241,6 +241,110 @@ const createBooking = async (req, res) => {
       }
     });
 
+    console.log(`✅ Booking created: ${booking.id}, checking for buffer period and assigned maid...`);
+
+    // Check if customer is in buffer period
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        customerId: customerId,
+        status: 'ACTIVE'
+      }
+    });
+
+    if (subscription) {
+      const activeBufferPeriod = await prisma.bufferPeriod.findFirst({
+        where: {
+          subscriptionId: subscription.id,
+          status: 'ACTIVE',
+          startDate: { lte: new Date() },
+          endDate: { gte: new Date() }
+        }
+      });
+
+      if (activeBufferPeriod) {
+        console.log(`🚫 Customer is in active buffer period: ${activeBufferPeriod.id}`);
+        
+        // Cancel the booking as customer is in buffer period
+        await prisma.booking.update({
+          where: { id: booking.id },
+          data: {
+            status: 'CANCELLED',
+            rejectionReason: 'Booking cancelled: Customer is in active buffer period'
+          }
+        });
+
+        return res.status(400).json({
+          success: false,
+          message: `Booking cannot be created during buffer period. Your services are paused until ${new Date(activeBufferPeriod.endDate).toLocaleDateString()}.`,
+          error: 'BUFFER_PERIOD_ACTIVE',
+          bufferEndDate: activeBufferPeriod.endDate
+        });
+      }
+    }
+
+    // Check if customer has an assigned maid
+    const customerAssignment = await prisma.customerMaidAssignment.findFirst({
+      where: {
+        customerId: customerId,
+        isActive: true
+      },
+      include: {
+        maid: {
+          include: {
+            user: true
+          }
+        }
+      }
+    });
+
+    let responseMessage = 'Booking request submitted successfully.';
+    let assignmentStatus = 'PENDING_ASSIGNMENT';
+
+    if (customerAssignment) {
+      console.log(`✅ Found assigned maid: ${customerAssignment.maid.user.name}, auto-sending assignment request...`);
+      
+      try {
+        // Automatically send assignment request to assigned maid
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiry
+
+        await prisma.$transaction(async (tx) => {
+          // Create assignment request
+          await tx.assignmentRequest.create({
+            data: {
+              bookingId: booking.id,
+              maidId: customerAssignment.maidId,
+              status: 'pending',
+              requestedAt: new Date(),
+              expiresAt: expiresAt
+            }
+          });
+
+          // Update booking status
+          await tx.booking.update({
+            where: { id: booking.id },
+            data: {
+              maidId: customerAssignment.maid.userId, // User ID for booking
+              status: 'ASSIGNED',
+              assignmentStatus: 'ASSIGNED_PENDING_RESPONSE',
+              assignedAt: new Date()
+            }
+          });
+        });
+
+        responseMessage = `Booking request sent to your assigned maid (${customerAssignment.maid.user.name}). You will be notified once they respond.`;
+        assignmentStatus = 'ASSIGNED_PENDING_RESPONSE';
+        
+        console.log(`✅ Assignment request sent automatically to maid: ${customerAssignment.maid.user.name}`);
+      } catch (assignmentError) {
+        console.error('❌ Failed to auto-assign maid:', assignmentError);
+        responseMessage = 'Booking created but failed to auto-assign maid. Admin will assign manually.';
+      }
+    } else {
+      console.log('ℹ️ No assigned maid found, booking will require admin assignment');
+      responseMessage = 'Booking request submitted successfully. Admin will assign a maid shortly.';
+    }
+
     // Send notification for booking creation
     await notificationService.notifyBookingCreated(booking);
 
@@ -250,9 +354,10 @@ const createBooking = async (req, res) => {
       data: {
         booking
       },
-      message: 'Booking request submitted successfully. Your booking is pending admin assignment of a maid. You will be notified once a maid is assigned.',
+      message: responseMessage,
       hasActiveSubscription: true,
-      status: 'PENDING_ASSIGNMENT'
+      status: assignmentStatus,
+      autoAssigned: !!customerAssignment
     });
 
   } catch (error) {
