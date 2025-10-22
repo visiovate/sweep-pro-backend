@@ -259,6 +259,7 @@ model TaskCompletion {
   status              BookingStatus        @default(PENDING)
   assignmentStatus    AssignmentStatus?
   totalAmount         Float
+  taskId              String
   notes               String?
   isAutomatic         Boolean              @default(false)
   proofImages        String[]           @default([])
