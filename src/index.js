@@ -31,6 +31,7 @@ const assignmentRoutes = require('./routes/assignmentRoutes');
 const customerAssignmentRoutes = require('./routes/customerAssignmentRoutes');
 const automaticBookingRoutes = require('./routes/automaticBookingRoutes');
 const automaticAssignmentRoutes = require('./routes/automaticAssignmentRoutes');
+const queueRoutes = require('./routes/queueRoutes');
 
 // Create Express app
 const app = express();
@@ -47,9 +48,9 @@ const { initializePrisma } = require('./utils/database');
 // Import notification service
 const notificationService = require('./services/notificationService');
 
-// Import cron scheduler and automatic assignment service
-const CronScheduler = require('./services/cronScheduler');
-const AutomaticAssignmentService = require('./services/automaticAssignmentService');
+// Import BullMQ job scheduler and Redis connection
+const JobScheduler = require('./services/jobScheduler');
+const { testRedisConnection } = require('./config/redis');
 
 // Initialize notification service with WebSocket server
 notificationService.init(wss);
@@ -150,6 +151,7 @@ app.use('/api/assignments', assignmentRoutes);
 app.use('/api/admin/customer-assignments', customerAssignmentRoutes);
 app.use('/api/automatic-bookings', automaticBookingRoutes);
 app.use('/api/automatic-assignments', automaticAssignmentRoutes);
+app.use('/api/queue', queueRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {
@@ -184,14 +186,24 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(`📊 Admin Dashboard: http://localhost:${PORT}/admin`);
     console.log(`🔗 WebSocket server initialized`);
     
-    // Start cron jobs
-    cronJobs.start();
-    console.log(`⏰ Automatic assignment cron jobs started`);
-    
     // Initialize database connection
     try {
       await initializePrisma();
       console.log('✅ Database initialized successfully');
+      
+      // Test Redis connection
+      const redisConnected = await testRedisConnection();
+      if (!redisConnected) {
+        console.error('⚠️ Redis connection failed. BullMQ features will not work.');
+        console.log('⚠️ Please ensure Redis is running and configured correctly.');
+      }
+      
+      // Initialize BullMQ job scheduler
+      if (redisConnected) {
+        await JobScheduler.initialize();
+        console.log('✅ BullMQ Job Scheduler initialized successfully');
+        console.log('📋 Background worker should be running separately: npm run worker');
+      }
       
       // Initialize automatic service scheduler after database is ready
       await automaticScheduler.init();
@@ -200,11 +212,6 @@ if (process.env.NODE_ENV !== 'test') {
       // Initialize buffer period scheduler
       bufferPeriodScheduler.start();
       console.log('✅ Buffer period scheduler initialized');
-      
-      // Process any missed assignment requests on server startup
-      setTimeout(async () => {
-        await AutomaticAssignmentService.processOnServerStartup();
-      }, 5000); // Wait 5 seconds for everything to initialize
       
     } catch (error) {
       console.error('❌ Failed to initialize database or scheduler:', error);
@@ -217,7 +224,11 @@ module.exports = app;
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Closing HTTP server and Prisma Client...');
+  console.log('SIGTERM received. Closing HTTP server, Redis, and Prisma Client...');
+  const { closeRedisConnection } = require('./config/redis');
+  const { closeQueue } = require('./queues/assignmentQueue');
+  await closeQueue();
+  await closeRedisConnection();
   await disconnectDatabase();
   process.exit(0);
 });

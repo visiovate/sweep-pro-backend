@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const JobScheduler = require('../services/jobScheduler');
 
 // Assign a maid to a customer (Admin only)
 const assignMaidToCustomer = async (req, res) => {
@@ -858,6 +859,20 @@ const acceptAssignmentRequest = async (req, res) => {
         return newAssignment;
       }
     });
+
+    // Schedule background jobs for automatic assignment requests
+    try {
+      const timeSlot = assignmentRequest.customer.timeSlot;
+      await JobScheduler.onNewAssignment(
+        assignmentRequest.customerId,
+        maidProfile.id,
+        timeSlot
+      );
+      console.log('✅ Background jobs scheduled for customer assignment');
+    } catch (jobError) {
+      console.error('⚠️ Failed to schedule background jobs:', jobError);
+      // Don't fail the request if job scheduling fails
+    }
 
     return res.status(200).json({
       success: true,
