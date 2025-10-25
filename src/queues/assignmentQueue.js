@@ -13,14 +13,14 @@ const { createRedisConnection } = require('../config/redis');
 // Create Redis connection for queue
 const connection = createRedisConnection();
 
-// Assignment Queue
+// Assignment Queue with enhanced reliability
 const assignmentQueue = new Queue('maid-assignment', {
   connection,
   defaultJobOptions: {
     attempts: 3, // Retry up to 3 times on failure
     backoff: {
       type: 'exponential',
-      delay: 2000, // Start with 2 seconds, exponentially increase
+      delay: 5000, // Start with 5 seconds, exponentially increase
     },
     removeOnComplete: {
       count: 100, // Keep last 100 completed jobs
@@ -30,6 +30,13 @@ const assignmentQueue = new Queue('maid-assignment', {
       count: 50, // Keep last 50 failed jobs
       age: 7 * 24 * 3600, // Remove after 7 days
     },
+    // Job deduplication
+    jobId: undefined, // Will be set per job for idempotency
+  },
+  // Queue-level settings
+  settings: {
+    stalledInterval: 30 * 1000, // Check for stalled jobs every 30 seconds
+    maxStalledCount: 1, // Max times a job can be stalled before failing
   },
 });
 
@@ -73,23 +80,34 @@ const JOB_TYPES = {
 const scheduleAssignmentRequest = async (data, scheduledTime) => {
   const delay = scheduledTime.getTime() - Date.now();
   
+  // Use bookingId for idempotency if available, otherwise use customerId + timestamp
+  const jobId = data.bookingId 
+    ? `assignment-${data.bookingId}` 
+    : `assignment-${data.customerId}-${scheduledTime.getTime()}`;
+  
   if (delay < 0) {
     console.log(`⚠️ Scheduled time is in the past, executing immediately`);
+    console.log(`🆔 Job ID: ${jobId}`);
     return await assignmentQueue.add(
       JOB_TYPES.CREATE_ASSIGNMENT_REQUEST,
       data,
-      { priority: 1 } // High priority for immediate jobs
+      { 
+        priority: 1, // High priority for immediate jobs
+        jobId: jobId
+      }
     );
   }
 
   console.log(`📅 Scheduling assignment request for ${scheduledTime.toISOString()}`);
+  console.log(`⏳ Delay: ${(delay / 1000 / 60 / 60).toFixed(2)} hours`);
+  console.log(`🆔 Job ID: ${jobId}`);
   
   return await assignmentQueue.add(
     JOB_TYPES.CREATE_ASSIGNMENT_REQUEST,
     data,
     {
       delay, // Delay in milliseconds
-      jobId: `assignment-${data.customerId}-${data.timeSlot}-${scheduledTime.getTime()}`,
+      jobId: jobId,
     }
   );
 };

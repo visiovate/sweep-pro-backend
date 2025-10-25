@@ -272,6 +272,8 @@ const updateCustomerAssignment = async (req, res) => {
 // Get all customer-maid assignments (Admin only)
 const getAllCustomerAssignments = async (req, res) => {
   try {
+    console.log('🔍 Fetching all customer-maid assignments...');
+    
     const { page = 1, limit = 20, customerId, maidId, isActive } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -280,14 +282,34 @@ const getAllCustomerAssignments = async (req, res) => {
     if (maidId) where.maidId = maidId;
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
+    console.log('📋 Query parameters:', { page, limit, customerId, maidId, isActive });
+
     const [assignments, totalCount] = await Promise.all([
       prisma.customerMaidAssignment.findMany({
         where,
         include: {
-          customer: true,
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              address: true,
+              timeSlot: true,
+              status: true
+            }
+          },
           maid: {
             include: {
-              user: true
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phone: true,
+                  status: true
+                }
+              }
             }
           }
         },
@@ -300,12 +322,46 @@ const getAllCustomerAssignments = async (req, res) => {
       prisma.customerMaidAssignment.count({ where })
     ]);
 
+    console.log(`✅ Found ${assignments.length} assignments out of ${totalCount} total`);
+
     const totalPages = Math.ceil(totalCount / parseInt(limit));
+
+    // Transform assignments for better frontend display
+    const transformedAssignments = assignments.map(assignment => ({
+      id: assignment.id,
+      customerId: assignment.customerId,
+      maidId: assignment.maidId,
+      isActive: assignment.isActive,
+      assignedAt: assignment.assignedAt,
+      notes: assignment.notes,
+      createdAt: assignment.createdAt,
+      updatedAt: assignment.updatedAt,
+      customer: {
+        id: assignment.customer.id,
+        name: assignment.customer.name,
+        email: assignment.customer.email,
+        phone: assignment.customer.phone,
+        address: assignment.customer.address,
+        timeSlot: assignment.customer.timeSlot,
+        status: assignment.customer.status
+      },
+      maid: {
+        id: assignment.maid.id,
+        userId: assignment.maid.userId,
+        name: assignment.maid.user.name,
+        email: assignment.maid.user.email,
+        phone: assignment.maid.user.phone,
+        status: assignment.maid.user.status,
+        rating: assignment.maid.rating,
+        skills: assignment.maid.skills,
+        completedBookings: assignment.maid.completedBookings
+      }
+    }));
 
     return res.status(200).json({
       success: true,
       data: {
-        assignments,
+        assignments: transformedAssignments,
         pagination: {
           currentPage: parseInt(page),
           totalPages,
@@ -317,11 +373,16 @@ const getAllCustomerAssignments = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get all customer assignments error:', error);
+    console.error('❌ Get all customer assignments error:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -330,6 +391,16 @@ const getAllCustomerAssignments = async (req, res) => {
 const getCustomerStatus = async (req, res) => {
   try {
     const { customerId } = req.params;
+    
+    console.log(`🔍 Getting customer status for ID: ${customerId}`);
+
+    // Validate customerId
+    if (!customerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer ID is required'
+      });
+    }
 
     // Get customer assignment
     const assignment = await prisma.customerMaidAssignment.findFirst({
@@ -346,6 +417,8 @@ const getCustomerStatus = async (req, res) => {
         }
       }
     });
+    
+    console.log(`📋 Customer assignment found: ${assignment ? 'Yes' : 'No'}`);
 
     // Get customer's subscription first
     const subscription = await prisma.subscription.findFirst({
@@ -448,17 +521,172 @@ const getCustomerStatus = async (req, res) => {
       lastBookingDate: lastBooking?.scheduledAt || null
     };
 
+    console.log(`✅ Customer status retrieved successfully for customer: ${customerId}`);
+    
     return res.status(200).json({
       success: true,
       data: customerStatus
     });
 
   } catch (error) {
-    console.error('Get customer status error:', error);
+    console.error('❌ Get customer status error:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Get customer's own status (for customers to check their own status)
+const getMyCustomerStatus = async (req, res) => {
+  try {
+    const customerId = req.user.id; // Get customer ID from authenticated user
+    
+    console.log(`🔍 Getting customer status for authenticated customer: ${customerId}`);
+
+    // Get customer assignment
+    const assignment = await prisma.customerMaidAssignment.findFirst({
+      where: {
+        customerId: customerId,
+        isActive: true
+      },
+      include: {
+        customer: true,
+        maid: {
+          include: {
+            user: true
+          }
+        }
+      }
+    });
+    
+    console.log(`📋 Customer assignment found: ${assignment ? 'Yes' : 'No'}`);
+
+    // Get customer's subscription first
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        customer: {
+          userId: customerId
+        },
+        status: {
+          in: ['ACTIVE', 'PENDING_PAYMENT']
+        }
+      }
+    });
+
+    // Get active buffer period only if customer has a subscription
+    let activeBufferPeriod = null;
+    if (subscription) {
+      activeBufferPeriod = await prisma.bufferPeriod.findFirst({
+        where: {
+          subscriptionId: subscription.id,
+          status: 'ACTIVE',
+          startDate: {
+            lte: new Date()
+          },
+          endDate: {
+            gte: new Date()
+          }
+        }
+      });
+    }
+
+    // Get next booking (if any)
+    const nextBooking = await prisma.booking.findFirst({
+      where: {
+        customerId: customerId,
+        scheduledAt: {
+          gte: new Date()
+        },
+        status: {
+          in: ['PENDING', 'CONFIRMED', 'ASSIGNED', 'IN_PROGRESS']
+        }
+      },
+      orderBy: {
+        scheduledAt: 'asc'
+      }
+    });
+
+    // Get last booking
+    const lastBooking = await prisma.booking.findFirst({
+      where: {
+        customerId: customerId,
+        scheduledAt: {
+          lt: new Date()
+        }
+      },
+      orderBy: {
+        scheduledAt: 'desc'
+      }
+    });
+
+    const customerStatus = {
+      customerId: customerId,
+      hasAssignment: !!assignment,
+      hasSubscription: !!subscription,
+      assignment: assignment ? {
+        id: assignment.id,
+        assignedAt: assignment.assignedAt,
+        notes: assignment.notes,
+        customer: {
+          id: assignment.customer.id,
+          name: assignment.customer.name,
+          email: assignment.customer.email,
+          phone: assignment.customer.phone,
+          address: assignment.customer.address
+        },
+        maid: {
+          id: assignment.maid.id,
+          name: assignment.maid.user.name,
+          email: assignment.maid.user.email,
+          phone: assignment.maid.user.phone,
+          rating: assignment.maid.rating,
+          skills: assignment.maid.skills,
+          completedBookings: assignment.maid.completedBookings
+        }
+      } : null,
+      subscription: subscription ? {
+        id: subscription.id,
+        status: subscription.status,
+        startDate: subscription.startDate,
+        endDate: subscription.endDate
+      } : null,
+      isInBufferPeriod: !!activeBufferPeriod,
+      bufferPeriod: activeBufferPeriod ? {
+        id: activeBufferPeriod.id,
+        startDate: activeBufferPeriod.startDate,
+        endDate: activeBufferPeriod.endDate,
+        status: activeBufferPeriod.status,
+        reason: activeBufferPeriod.reason
+      } : null,
+      nextBookingDate: nextBooking?.scheduledAt || null,
+      lastBookingDate: lastBooking?.scheduledAt || null
+    };
+
+    console.log(`✅ Customer status retrieved successfully for customer: ${customerId}`);
+    
+    return res.status(200).json({
+      success: true,
+      data: customerStatus
+    });
+
+  } catch (error) {
+    console.error('❌ Get my customer status error:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -1039,69 +1267,69 @@ const getAllAssignmentRequests = async (req, res) => {
 
 // Test assignment request creation
 const testCreateAssignmentRequest = async (req, res) => {
-try {
-console.log('🧪 Testing assignment request creation...');
-  
-// Get first customer and first maid for testing
-const customer = await prisma.user.findFirst({
-  where: { role: 'CUSTOMER' }
-});
-  
-const maid = await prisma.maidProfile.findFirst({
-  include: { user: true }
-});
-  
-const admin = await prisma.user.findFirst({
-  where: { role: 'ADMIN' }
-});
-  
-if (!customer || !maid || !admin) {
-  return res.status(404).json({
-    success: false,
-    message: 'Missing test data - need at least one customer, maid, and admin'
-  });
-}
-  
-console.log('📝 Test data found:', {
-  customer: customer.name,
-  maid: maid.user.name,
-  admin: admin.name
-});
-  
-// Create test assignment request
-const testRequest = await prisma.customerAssignmentRequest.create({
-  data: {
-    customerId: customer.id,
-    maidId: maid.id,
-    requestedBy: admin.id,
-    notes: 'Test assignment request',
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
-  },
-  include: {
-    customer: true,
-    maid: {
+  try {
+    console.log('🧪 Testing assignment request creation...');
+    
+    // Get first customer and first maid for testing
+    const customer = await prisma.user.findFirst({
+      where: { role: 'CUSTOMER' }
+    });
+    
+    const maid = await prisma.maidProfile.findFirst({
       include: { user: true }
-    },
-    admin: true
+    });
+    
+    const admin = await prisma.user.findFirst({
+      where: { role: 'ADMIN' }
+    });
+    
+    if (!customer || !maid || !admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Missing test data - need at least one customer, maid, and admin'
+      });
+    }
+    
+    console.log('📝 Test data found:', {
+      customer: customer.name,
+      maid: maid.user.name,
+      admin: admin.name
+    });
+    
+    // Create test assignment request
+    const testRequest = await prisma.customerAssignmentRequest.create({
+      data: {
+        customerId: customer.id,
+        maidId: maid.id,
+        requestedBy: admin.id,
+        notes: 'Test assignment request',
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+      },
+      include: {
+        customer: true,
+        maid: {
+          include: { user: true }
+        },
+        admin: true
+      }
+    });
+    
+    console.log('✅ Test assignment request created:', testRequest.id);
+    
+    return res.status(201).json({
+      success: true,
+      message: 'Test assignment request created successfully',
+      data: testRequest
+    });
+    
+  } catch (error) {
+    console.error('❌ Test creation error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Test failed',
+      error: error.message
+    });
   }
-});
-  
-console.log('✅ Test assignment request created:', testRequest.id);
-  
-return res.status(201).json({
-  success: true,
-  message: 'Test assignment request created successfully',
-  data: testRequest
-});
-  
-} catch (error) {
-console.error('❌ Test creation error:', error);
-return res.status(500).json({
-  success: false,
-  message: 'Test failed',
-  error: error.message
-});
-}
 };
 
 module.exports = {
@@ -1110,6 +1338,7 @@ module.exports = {
   updateCustomerAssignment,
   getAllCustomerAssignments,
   getCustomerStatus,
+  getMyCustomerStatus,
   removeCustomerAssignment,
   checkMaidStatus,
   getMaidAssignmentRequests,

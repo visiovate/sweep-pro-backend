@@ -43,10 +43,20 @@ const getActiveCustomers = async (req, res) => {
 // Get pending bookings that need maid assignment
 const getPendingBookings = async (req, res) => {
   try {
+    console.log('🔍 Fetching pending bookings for admin...');
+    
     const bookings = await prisma.booking.findMany({
       where: {
-        status: 'CONFIRMED',
-        maidId: null
+        OR: [
+          {
+            status: 'PENDING',
+            maidId: null
+          },
+          {
+            status: 'CONFIRMED',
+            maidId: null
+          }
+        ]
       },
       include: {
         customer: {
@@ -67,10 +77,18 @@ const getPendingBookings = async (req, res) => {
       }
     });
 
-    res.json(bookings);
+    console.log(`✅ Found ${bookings.length} pending bookings`);
+    
+    res.json({
+      success: true,
+      data: bookings
+    });
   } catch (error) {
     console.error('Error fetching pending bookings:', error);
-    res.status(500).json({ message: 'Failed to fetch pending bookings' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to fetch pending bookings' 
+    });
   }
 };
 

@@ -381,14 +381,22 @@ const checkCustomerBufferStatus = async (customerId) => {
   }
 };
 
-// Create the worker
+// Create the worker with enhanced reliability settings
 const worker = new Worker('maid-assignment', processJob, {
   connection,
-  concurrency: 5, // Process up to 5 jobs concurrently
+  concurrency: parseInt(process.env.WORKER_CONCURRENCY) || 5, // Process up to 5 jobs concurrently
   limiter: {
-    max: 10, // Max 10 jobs
+    max: parseInt(process.env.WORKER_RATE_LIMIT) || 10, // Max 10 jobs
     duration: 1000, // per 1 second
   },
+  // Enhanced reliability settings
+  settings: {
+    stalledInterval: 30 * 1000, // Check for stalled jobs every 30 seconds
+    maxStalledCount: 1, // Max times a job can be stalled before failing
+  },
+  // Job processing options
+  skipLockRenewal: false, // Keep renewing locks for long-running jobs
+  skipDelayedJobs: false, // Process delayed jobs
 });
 
 // Worker event listeners

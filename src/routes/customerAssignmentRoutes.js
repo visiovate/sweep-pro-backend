@@ -7,6 +7,7 @@ const {
   updateCustomerAssignment,
   getAllCustomerAssignments,
   getCustomerStatus,
+  getMyCustomerStatus,
   removeCustomerAssignment,
   checkMaidStatus,
   getMaidAssignmentRequests,
@@ -18,13 +19,14 @@ const {
 
 // Admin routes for customer-maid assignments
 router.post('/assign', authenticateToken, authorizeAdmin, assignMaidToCustomer);
+router.get('/status/:customerId', authenticateToken, authorizeAdmin, getCustomerStatus);
 router.get('/:customerId', authenticateToken, authorizeAdmin, getCustomerAssignment);
 router.patch('/:customerId/update', authenticateToken, authorizeAdmin, updateCustomerAssignment);
 router.get('/', authenticateToken, authorizeAdmin, getAllCustomerAssignments);
 router.delete('/:customerId', authenticateToken, authorizeAdmin, removeCustomerAssignment);
 
-// Customer routes
-router.get('/status/:customerId', authenticateToken, authorizeAdmin, getCustomerStatus);
+// Customer routes (for customers to check their own status)
+router.get('/my-status', authenticateToken, getMyCustomerStatus);
 
 // Assignment request routes for maids
 router.get('/requests/maid', authenticateToken, getMaidAssignmentRequests);

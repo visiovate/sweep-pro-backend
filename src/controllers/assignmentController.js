@@ -428,6 +428,21 @@ const rejectAssignment = async (req, res) => {
       return updatedAssignment;
     });
 
+    // Queue rejected assignment for admin reassignment
+    try {
+      const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
+      await queueRejectedAssignment({
+        bookingId: assignment.bookingId,
+        maidId: maidId,
+        rejectionReason: rejectionReason.trim(),
+        customerId: assignment.booking.customerId
+      });
+      console.log(`📋 Queued rejected assignment for admin reassignment: ${assignment.bookingId}`);
+    } catch (queueError) {
+      console.error('❌ Failed to queue rejected assignment:', queueError);
+      // Don't fail the request if queueing fails
+    }
+
     console.log(`✅ Assignment ${assignmentId} rejected successfully, booking ${assignment.bookingId} moved to reassignment queue`);
 
     res.json({
@@ -1033,20 +1048,7 @@ const getReassignmentBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching reassignment bookings...');
     
-    // First, let's see all bookings with rejected assignment requests
-    const allBookingsWithRejectedRequests = await prisma.booking.findMany({
-      include: {
-        assignmentRequests: {
-          where: {
-            status: 'rejected'
-          }
-        }
-      }
-    });
-    
-    console.log(`📊 Total bookings with rejected requests: ${allBookingsWithRejectedRequests.filter(b => b.assignmentRequests.length > 0).length}`);
-    
-    // Get bookings that need reassignment - focus on assignmentStatus
+    // Get bookings that need reassignment - focus on assignmentStatus and rejected requests
     const bookings = await prisma.booking.findMany({
       where: {
         OR: [
@@ -1057,6 +1059,14 @@ const getReassignmentBookings = async (req, res) => {
           {
             // Bookings marked for reassignment
             assignmentStatus: 'REASSIGNED'
+          },
+          {
+            // Bookings that have rejected assignment requests
+            assignmentRequests: {
+              some: {
+                status: 'rejected'
+              }
+            }
           },
           {
             // Legacy: Bookings rejected by maid (old flow)
@@ -1099,9 +1109,11 @@ const getReassignmentBookings = async (req, res) => {
       console.log(`📋 Reassignment Booking ${index + 1}:`, {
         id: booking.id,
         status: booking.status,
+        assignmentStatus: booking.assignmentStatus,
         rejectionReason: booking.rejectionReason,
         maidId: booking.maidId,
-        customerName: booking.customer?.name
+        customerName: booking.customer?.name,
+        rejectedRequests: booking.assignmentRequests?.length || 0
       });
     });
     
@@ -1120,16 +1132,6 @@ const getReassignmentBookings = async (req, res) => {
       }
       
       return transformed;
-    });
-
-    // Debug: Log transformed bookings
-    transformedBookings.forEach((booking, index) => {
-      console.log(`🔄 Transformed Booking ${index + 1}:`, {
-        id: booking.id,
-        status: booking.status,
-        assignmentStatus: booking.assignmentStatus,
-        rejectionReason: booking.rejectionReason
-      });
     });
 
     console.log('✅ Successfully transformed reassignment bookings for frontend');

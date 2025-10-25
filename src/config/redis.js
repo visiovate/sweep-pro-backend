@@ -17,7 +17,7 @@ const createRedisConnection = () => {
     maxRetriesPerRequest: null, // Required for BullMQ
     enableReadyCheck: false,
     
-    // Retry strategy
+    // Enhanced retry strategy with exponential backoff
     retryStrategy(times) {
       const delay = Math.min(times * 50, 2000);
       console.log(`⏳ Redis reconnecting... attempt ${times}, delay: ${delay}ms`);
@@ -27,8 +27,18 @@ const createRedisConnection = () => {
     // Connection timeout
     connectTimeout: 10000,
     
-    // Keep alive
+    // Keep alive settings
     keepAlive: 30000,
+    
+    // Additional reliability options
+    lazyConnect: true,
+    maxRetriesPerRequest: null,
+    retryDelayOnFailover: 100,
+    enableOfflineQueue: false,
+    
+    // Production-specific settings
+    family: 4, // Force IPv4
+    db: 0, // Default database
   };
 
   // If Redis password is provided (for production)
@@ -36,11 +46,23 @@ const createRedisConnection = () => {
     redisConfig.password = process.env.REDIS_PASSWORD;
   }
 
+  // If Redis username is provided (for Redis 6+ ACL)
+  if (process.env.REDIS_USERNAME) {
+    redisConfig.username = process.env.REDIS_USERNAME;
+  }
+
   // If Redis URL is provided (alternative to individual params)
   if (process.env.REDIS_URL) {
     return new Redis(process.env.REDIS_URL, {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
+      retryStrategy: redisConfig.retryStrategy,
+      connectTimeout: redisConfig.connectTimeout,
+      keepAlive: redisConfig.keepAlive,
+      lazyConnect: redisConfig.lazyConnect,
+      retryDelayOnFailover: redisConfig.retryDelayOnFailover,
+      enableOfflineQueue: redisConfig.enableOfflineQueue,
+      family: redisConfig.family,
     });
   }
 

@@ -52,11 +52,14 @@ const notificationService = require('./services/notificationService');
 const JobScheduler = require('./services/jobScheduler');
 const { testRedisConnection } = require('./config/redis');
 
+// Import Bull Board for queue monitoring
+const { serverAdapter: bullBoardAdapter } = require('./monitoring/bullBoard');
+
+// Import Cron Manager
+const cronManager = require('./cron/cronManager');
+
 // Initialize notification service with WebSocket server
 notificationService.init(wss);
-
-// Initialize cron scheduler
-const cronJobs = CronScheduler.init();
 
 // Initialize monthly subscription scheduler
 require('./scheduler/monthlySubscriptionScheduler');
@@ -113,6 +116,9 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static('uploads'));
+
+// Bull Board queue monitoring dashboard
+app.use('/admin/queues', bullBoardAdapter.getRouter());
 
 // Make notification service available globally
 app.use((req, res, next) => {
@@ -204,6 +210,10 @@ if (process.env.NODE_ENV !== 'test') {
         console.log('✅ BullMQ Job Scheduler initialized successfully');
         console.log('📋 Background worker should be running separately: npm run worker');
       }
+      
+      // Initialize centralized cron manager
+      await cronManager.initialize();
+      console.log('✅ Cron Manager initialized successfully');
       
       // Initialize automatic service scheduler after database is ready
       await automaticScheduler.init();

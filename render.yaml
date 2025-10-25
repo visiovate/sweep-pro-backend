@@ -1,0 +1,167 @@
+services:
+  # Main web service (Express API server)
+  - type: web
+    name: sweepro-api
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_USERNAME
+        sync: false
+      - key: WORKER_CONCURRENCY
+        value: "5"
+      - key: WORKER_RATE_LIMIT
+        value: "10"
+      - key: REASSIGNMENT_WORKER_CONCURRENCY
+        value: "3"
+      - key: REASSIGNMENT_WORKER_RATE_LIMIT
+        value: "5"
+      - key: ASSIGNMENT_REQUEST_HOURS_BEFORE
+        value: "20"
+      - key: TZ
+        value: "UTC"
+    healthCheckPath: /api/queue/health
+    autoDeploy: true
+
+  # Background worker service (BullMQ processor)
+  - type: worker
+    name: sweepro-worker
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run worker
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_USERNAME
+        sync: false
+      - key: WORKER_CONCURRENCY
+        value: "5"
+      - key: WORKER_RATE_LIMIT
+        value: "10"
+      - key: REASSIGNMENT_WORKER_CONCURRENCY
+        value: "3"
+      - key: REASSIGNMENT_WORKER_RATE_LIMIT
+        value: "5"
+      - key: ASSIGNMENT_REQUEST_HOURS_BEFORE
+        value: "20"
+      - key: TZ
+        value: "UTC"
+    autoDeploy: true
+
+  # Admin reassignment worker service
+  - type: worker
+    name: sweepro-reassign-worker
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run reassign-worker
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_USERNAME
+        sync: false
+      - key: WORKER_CONCURRENCY
+        value: "5"
+      - key: WORKER_RATE_LIMIT
+        value: "10"
+      - key: REASSIGNMENT_WORKER_CONCURRENCY
+        value: "3"
+      - key: REASSIGNMENT_WORKER_RATE_LIMIT
+        value: "5"
+      - key: ASSIGNMENT_REQUEST_HOURS_BEFORE
+        value: "20"
+      - key: TZ
+        value: "UTC"
+    autoDeploy: true
+
+  # Cron service (scheduling service)
+  - type: worker
+    name: sweepro-cron
+    env: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run cron
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_USERNAME
+        sync: false
+      - key: WORKER_CONCURRENCY
+        value: "5"
+      - key: WORKER_RATE_LIMIT
+        value: "10"
+      - key: REASSIGNMENT_WORKER_CONCURRENCY
+        value: "3"
+      - key: REASSIGNMENT_WORKER_RATE_LIMIT
+        value: "5"
+      - key: ASSIGNMENT_REQUEST_HOURS_BEFORE
+        value: "20"
+      - key: TZ
+        value: "UTC"
+    autoDeploy: true
+
+# Database configuration
+databases:
+  - name: sweepro-postgres
+    plan: starter
+    engine: postgresql
+
+# Redis configuration
+databases:
+  - name: sweepro-redis
+    plan: starter
+    engine: redis
