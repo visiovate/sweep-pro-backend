@@ -104,3 +104,5 @@ debugCustomerStatusAPI()
   .catch(error => {
     console.error('💥 Debug script error:', error.message);
   });
+
+
