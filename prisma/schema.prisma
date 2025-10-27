@@ -20,7 +20,14 @@ model User {
   status              UserStatus       @default(ACTIVE)
   timeSlot            String?
   profileImage        String?
+  coverImage          String?
+  bio                 String?
+  dateOfBirth         DateTime?
+  gender              String?
   languagePreferences String[]         @default([])
+  socialLinks         Json?            // {facebook, instagram, twitter, linkedin}
+  isProfilePublic     Boolean          @default(true)
+  lastActive          DateTime?        @default(now())
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   addressLine         String?
@@ -54,6 +61,13 @@ model CustomerProfile {
   preferences         Json?
   emergencyContact    String?
   specialInstructions String?
+  interests           String[]            @default([])
+  favoriteServices    String[]            @default([])
+  totalBookingsCount  Int                 @default(0)
+  totalSpent          Float               @default(0)
+  memberSince         DateTime            @default(now())
+  lastBookingDate     DateTime?
+  preferredMaidIds    String[]            @default([])
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -82,6 +96,15 @@ model MaidProfile {
   performanceScore   Float               @default(0)
   hourlyRate         Float?
   commissionRate     Float               @default(0.15)
+  experienceYears    Int                 @default(0)
+  certifications     String[]            @default([])
+  achievements       String[]            @default([])
+  specializations    String[]            @default([])
+  totalEarnings      Float               @default(0)
+  averageResponseTime Int                @default(0) // in minutes
+  profileViews       Int                 @default(0)
+  isVerified         Boolean             @default(false)
+  verificationDate   DateTime?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   attendance         Attendance[]
@@ -255,6 +278,7 @@ model RescheduleHistory {
 model TaskCompletion {
   id                 String             @id @default(uuid())
   bookingId          String
+  taskId             String
   timeSlot            String?
   status              BookingStatus        @default(PENDING)
   assignmentStatus    AssignmentStatus?

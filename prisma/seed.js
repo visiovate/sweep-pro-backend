@@ -20,6 +20,9 @@ async function main() {
         role: 'ADMIN',
         status: 'ACTIVE',
         address: 'Admin Office',
+        profileImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin',
+        bio: 'System Administrator managing Sweep Pro operations',
+        isProfilePublic: false,
         adminProfile: {
           create: {
             permissions: {
@@ -48,16 +51,34 @@ async function main() {
         role: 'CUSTOMER',
         status: 'ACTIVE',
         address: '123 Main Street, City Center',
+        addressLine: 'Apartment 101, Green Valley Complex',
+        locality: 'City Center',
+        city: 'Bangalore',
+        state: 'Karnataka',
+        pincode: '560001',
+        landmark: 'Near Central Mall',
         latitude: 12.9716,
         longitude: 77.5946,
         timeSlot: '09:00-12:00',
+        profileImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=John',
+        coverImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200&h=400&fit=crop',
+        bio: 'Homeowner looking for reliable and professional cleaning services',
+        gender: 'Male',
+        isProfilePublic: true,
+        socialLinks: {
+          facebook: 'https://facebook.com/johncustomer',
+          instagram: 'https://instagram.com/johncustomer'
+        },
         customerProfile: {
           create: {
             preferences: {
               preferredTime: 'morning',
               cleaningIntensity: 'regular'
             },
-            emergencyContact: '9876543211'
+            emergencyContact: '9876543211',
+            specialInstructions: 'Please use eco-friendly cleaning products',
+            interests: ['Eco-friendly cleaning', 'Home organization', 'Deep cleaning'],
+            favoriteServices: ['Daily House Cleaning', 'Deep Cleaning Service']
           }
         }
       }
@@ -76,8 +97,21 @@ async function main() {
         role: 'MAID',
         status: 'ACTIVE',
         address: '456 Service Lane, Worker Area',
+        addressLine: 'Room 205, Workers Hostel',
+        locality: 'Worker Area',
+        city: 'Bangalore',
+        state: 'Karnataka',
+        pincode: '560002',
         latitude: 12.9716,
         longitude: 77.5946,
+        profileImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
+        coverImage: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=1200&h=400&fit=crop',
+        bio: 'Professional cleaner with 5+ years of experience. Specialized in deep cleaning and eco-friendly products.',
+        gender: 'Female',
+        isProfilePublic: true,
+        socialLinks: {
+          instagram: 'https://instagram.com/sarahmaid'
+        },
         maidProfile: {
           create: {
             skills: ['house_cleaning', 'kitchen_cleaning', 'bathroom_cleaning'],
@@ -94,7 +128,13 @@ async function main() {
             totalRatings: 10,
             status: 'ACTIVE',
             hourlyRate: 150.0,
-            serviceRadius: 5.0
+            serviceRadius: 5.0,
+            experienceYears: 5,
+            certifications: ['Professional Cleaning Certificate', 'Safety Training Completion'],
+            achievements: ['Top performer for 3 consecutive months', '100+ satisfied customers', 'Eco-friendly cleaning specialist'],
+            specializations: ['Deep Cleaning', 'Kitchen Cleaning', 'Bathroom Sanitization', 'Eco-friendly Products'],
+            isVerified: true,
+            verificationDate: new Date()
           }
         }
       }
@@ -1647,6 +1687,149 @@ async function main() {
     console.log('- Buffer periods automatically pause scheduled services');
     console.log('- Services resume automatically after buffer period ends');
     
+    console.log('\n📬 Creating sample notifications for testing...');
+    
+    const notifications = [
+      // Customer Notifications (Unread)
+      {
+        userId: customer.id,
+        type: 'BOOKING_CONFIRMED',
+        title: 'Booking Confirmed',
+        message: 'Your booking for Daily House Cleaning has been created successfully',
+        data: { serviceName: 'Daily House Cleaning', amount: 200 },
+        read: false,
+        delivered: true,
+        deliveredAt: new Date()
+      },
+      {
+        userId: customer.id,
+        type: 'MAID_ASSIGNED',
+        title: 'Maid Assigned',
+        message: 'Sarah Maid has been assigned to your booking',
+        data: { maidName: 'Sarah Maid', maidRating: 4.5 },
+        read: false,
+        delivered: true,
+        deliveredAt: new Date()
+      },
+      {
+        userId: customer.id,
+        type: 'BOOKING_REMINDER',
+        title: 'Service Reminder',
+        message: 'Your Daily House Cleaning service is scheduled for tomorrow',
+        data: { serviceName: 'Daily House Cleaning' },
+        read: false,
+        delivered: true,
+        deliveredAt: new Date()
+      },
+      // Customer Notifications (Read)
+      {
+        userId: customer.id,
+        type: 'PAYMENT_SUCCESS',
+        title: 'Payment Received',
+        message: 'Payment of ₹5,400 received successfully for Basic Plan',
+        data: { amount: 5400, planName: 'Basic Daily Cleaning' },
+        read: true,
+        readAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        delivered: true,
+        deliveredAt: new Date(Date.now() - 2 * 60 * 60 * 1000)
+      },
+      {
+        userId: customer.id,
+        type: 'SUBSCRIPTION_RENEWED',
+        title: 'Subscription Activated',
+        message: 'Your Basic Daily Cleaning subscription is now active',
+        data: { planName: 'Basic Daily Cleaning' },
+        read: true,
+        readAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        delivered: true,
+        deliveredAt: new Date(Date.now() - 3 * 60 * 60 * 1000)
+      },
+      // Maid Notifications
+      {
+        userId: maid.id,
+        type: 'SERVICE_ASSIGNED',
+        title: 'New Service Assignment',
+        message: 'You have been assigned to a new service: Daily House Cleaning',
+        data: { serviceName: 'Daily House Cleaning', customerAddress: '123 Main Street' },
+        read: false,
+        delivered: true,
+        deliveredAt: new Date()
+      },
+      {
+        userId: maid.id,
+        type: 'BOOKING_REMINDER',
+        title: 'Shift Reminder',
+        message: 'Your shift starts in 2 hours at 123 Main Street',
+        data: { customerAddress: '123 Main Street' },
+        read: false,
+        delivered: true,
+        deliveredAt: new Date()
+      },
+      {
+        userId: maid.id,
+        type: 'FEEDBACK_REQUEST',
+        title: 'Great Job!',
+        message: 'You received a 5-star rating! Keep up the excellent work!',
+        data: { rating: 5 },
+        read: true,
+        readAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
+        delivered: true,
+        deliveredAt: new Date(Date.now() - 1 * 60 * 60 * 1000)
+      },
+      // Admin Notifications
+      {
+        userId: admin.id,
+        type: 'BOOKING_CONFIRMED',
+        title: 'New Booking Created',
+        message: 'New booking for Daily House Cleaning by John Customer',
+        data: { customerName: 'John Customer', serviceName: 'Daily House Cleaning' },
+        read: false,
+        delivered: true,
+        deliveredAt: new Date()
+      },
+      {
+        userId: admin.id,
+        type: 'PAYMENT_SUCCESS',
+        title: 'Payment Confirmation',
+        message: 'Payment of ₹5,400 received from customer',
+        data: { amount: 5400, customerName: 'John Customer' },
+        read: false,
+        delivered: true,
+        deliveredAt: new Date()
+      },
+      {
+        userId: admin.id,
+        type: 'SUBSCRIPTION_RENEWED',
+        title: 'New Subscription',
+        message: 'New subscription created: Basic Daily Cleaning',
+        data: { planName: 'Basic Daily Cleaning', customerName: 'John Customer' },
+        read: true,
+        readAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
+        delivered: true,
+        deliveredAt: new Date(Date.now() - 1 * 60 * 60 * 1000)
+      },
+      {
+        userId: admin.id,
+        type: 'SYSTEM_ALERT',
+        title: 'System Health Check',
+        message: 'All systems operational',
+        data: { status: 'healthy' },
+        read: true,
+        readAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        delivered: true,
+        deliveredAt: new Date(Date.now() - 3 * 60 * 60 * 1000)
+      }
+    ];
+
+    for (const notification of notifications) {
+      await prisma.notification.create({ data: notification });
+    }
+
+    console.log(`✅ Created ${notifications.length} sample notifications`);
+    console.log('  • Customer: 5 notifications (3 unread, 2 read)');
+    console.log('  • Maid: 3 notifications (2 unread, 1 read)');
+    console.log('  • Admin: 4 notifications (2 unread, 2 read)');
+    
     console.log('\n🎯 TESTING RECOMMENDATIONS:');
     console.log('1. Login as any customer to see automatically scheduled services (no booking buttons)');
     console.log('2. Login as buffer@sweepro.com to request buffer days for pausing services');
@@ -1658,6 +1841,12 @@ async function main() {
     console.log('8. Check notifications for buffer requests and approvals');
     console.log('9. Verify buffer day allocation rules (3/month, 7/3months, etc.)');
     console.log('10. Test admin can see which services are affected by buffer periods');
+    console.log('\n📬 NOTIFICATION SYSTEM TESTING:');
+    console.log('11. Test notification endpoints: GET /api/notifications');
+    console.log('12. Check unread count: GET /api/notifications/unread/count');
+    console.log('13. Test WebSocket real-time delivery at ws://localhost:3000');
+    console.log('14. Admin can send test notifications and broadcasts');
+    console.log('15. Import Postman collection from: postman/Sweep-Pro-Notifications.postman_collection.json');
     
   } catch (error) {
     console.error('❌ Error seeding database:', error);

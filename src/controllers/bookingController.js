@@ -456,10 +456,12 @@ const getAllBookings = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error fetching bookings:', error);
+    console.error('Error fetching bookings:', error.message || error);
+    console.error('Stack trace:', error.stack);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to fetch bookings' 
+      message: 'Failed to fetch bookings',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
