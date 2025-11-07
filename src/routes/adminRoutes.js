@@ -10,7 +10,11 @@ const {
   getAdminStats,
   getAllSubscriptions,
   getAllPayments,
-  getAllMaidsWithDocuments
+  getAllMaidsWithDocuments,
+  // Instagram-style paginated endpoints
+  getAllUsersWithPagination,
+  getAllPaymentsWithPagination,
+  getAllMaidsWithPagination
 } = require('../controllers/adminController');
 
 // Protected Admin Routes
@@ -23,5 +27,10 @@ router.get('/payments', authenticateToken, authorizeAdmin, getAllPayments);
 router.get('/maids-documents', authenticateToken, authorizeAdmin, getAllMaidsWithDocuments);
 router.post('/assign-maid', authenticateToken, authorizeAdmin, assignMaidToBooking);
 router.post('/generate-otp', authenticateToken, authorizeAdmin, generateServiceOTP);
+
+// Instagram-style paginated routes
+router.get('/users/paginated', authenticateToken, authorizeAdmin, getAllUsersWithPagination);
+router.get('/payments/paginated', authenticateToken, authorizeAdmin, getAllPaymentsWithPagination);
+router.get('/maids/paginated', authenticateToken, authorizeAdmin, getAllMaidsWithPagination);
 
 module.exports = router;

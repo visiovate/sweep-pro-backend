@@ -68,6 +68,9 @@ model CustomerProfile {
   memberSince         DateTime            @default(now())
   lastBookingDate     DateTime?
   preferredMaidIds    String[]            @default([])
+  propertyType        PropertyType?       // apartment or bungalow
+  bhkType             BHKType?            // 1BHK, 2BHK, 3BHK, 4BHK
+  squareFeet          Int?                // Property size in sqft
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -402,6 +405,7 @@ model ServicePlan {
   name             String         @unique
   description      String
   serviceId        String
+  planType         PlanType       @default(TOUCH) // TOUCH or LUX
   sessionsPerWeek  Int
   sessionsPerMonth Int
   duration         Int
@@ -411,6 +415,7 @@ model ServicePlan {
   isActive         Boolean        @default(true)
   isPopular        Boolean        @default(false)
   bufferDaysAllowed Int           @default(3)
+  hasBufferSystem  Boolean        @default(false) // Only LUX has buffer system
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   service          Service        @relation(fields: [serviceId], references: [id])
@@ -418,6 +423,7 @@ model ServicePlan {
 
   @@index([serviceId])
   @@index([isActive])
+  @@index([planType])
 }
 
 model SubscriptionCycle {
@@ -789,6 +795,23 @@ enum BillingCycle {
   MONTHLY
   QUARTERLY
   YEARLY
+}
+
+enum PlanType {
+  TOUCH
+  LUX
+}
+
+enum PropertyType {
+  APARTMENT
+  BUNGALOW
+}
+
+enum BHKType {
+  ONE_BHK
+  TWO_BHK
+  THREE_BHK
+  FOUR_PLUS_BHK
 }
 
 enum DocumentType {

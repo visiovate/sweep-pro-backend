@@ -8,24 +8,25 @@ const prisma = new PrismaClient();
  * Handles all notification-related operations for Customer, Admin, and Maid roles
  */
 
-// Get user's notifications with advanced filtering
+// Get user's notifications with advanced filtering (supports cursor or page/limit)
 const getNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { 
-      page = 1, 
-      limit = 20, 
-      read, 
-      type, 
+    const {
+      page = 1,
+      limit = 20,
+      read,
+      type,
       priority,
       startDate,
       endDate,
       sortBy = 'createdAt',
-      sortOrder = 'desc'
+      sortOrder = 'desc',
+      cursor,
     } = req.query;
-    
+
     const where = { userId };
-    
+
     // Apply filters
     if (read !== undefined) where.read = read === 'true';
     if (type) where.type = type;
@@ -35,34 +36,67 @@ const getNotifications = async (req, res) => {
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
+    // Cursor-based pagination path (preferred)
+    if (cursor !== undefined) {
+      const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 20, 50));
+
+      const findArgs = {
+        where,
+        orderBy: sortBy === 'createdAt' ? { createdAt: sortOrder } : { id: sortOrder },
+        take: pageSize + 1,
+      };
+
+      if (cursor) {
+        findArgs.cursor = { id: cursor };
+        findArgs.skip = 1;
+      }
+
+      const results = await prisma.notification.findMany(findArgs);
+      const hasNextPage = results.length > pageSize;
+      const items = hasNextPage ? results.slice(0, pageSize) : results;
+      const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+      const unreadCount = await prisma.notification.count({ where: { userId, read: false } });
+
+      return res.json({
+        success: true,
+        data: items,
+        pageInfo: {
+          nextCursor,
+          hasNextPage,
+          pageSize,
+        },
+        unreadCount,
+      });
+    }
+
+    // Fallback to page/limit (offset) for compatibility
     const notifications = await prisma.notification.findMany({
       where,
       orderBy: { [sortBy]: sortOrder },
       skip: (parseInt(page) - 1) * parseInt(limit),
-      take: parseInt(limit)
+      take: parseInt(limit),
     });
 
     const totalCount = await prisma.notification.count({ where });
-    const unreadCount = await prisma.notification.count({
-      where: { userId, read: false }
-    });
+    const unreadCount = await prisma.notification.count({ where: { userId, read: false } });
 
-    res.json({
+    return res.json({
       success: true,
       data: notifications,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
         total: totalCount,
-        totalPages: Math.ceil(totalCount / parseInt(limit))
+        totalPages: Math.ceil(totalCount / parseInt(limit)),
       },
-      unreadCount
+      unreadCount,
     });
   } catch (error) {
     console.error('Error fetching notifications:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      error: 'Failed to fetch notifications' 
+      error: 'Failed to fetch notifications'
     });
   }
 };

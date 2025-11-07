@@ -292,25 +292,43 @@ const updatePaymentStatus = async (req, res) => {
 const getUserPayments = async (req, res) => {
   try {
     const userId = req.user.id;
-    const payments = await prisma.payment.findMany({
-      where: {
-        customerId: userId
-      },
+    const { cursor, limit = 10 } = req.query;
+
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 10, 50));
+
+    const findArgs = {
+      where: { customerId: userId },
       include: {
         booking: {
-          include: {
-            service: true
-          }
+          include: { service: true }
         }
       },
-      orderBy: {
-        createdAt: 'desc'
+      orderBy: { id: 'desc' },
+      take: pageSize + 1
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.payment.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+    res.json({
+      success: true,
+      data: items,
+      pageInfo: {
+        nextCursor,
+        hasNextPage,
+        pageSize
       }
     });
-    res.json(payments);
   } catch (error) {
     console.error('Error fetching user payments:', error);
-    res.status(500).json({ error: 'Failed to fetch user payments' });
+    res.status(500).json({ success: false, error: 'Failed to fetch user payments' });
   }
 };
 

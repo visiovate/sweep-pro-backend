@@ -1,10 +1,13 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// Get all customers with active subscriptions for admin dashboard
+// Get all customers with active subscriptions for admin dashboard (Instagram-style pagination)
 const getActiveCustomers = async (req, res) => {
   try {
-    const customers = await prisma.subscription.findMany({
+    const { cursor, limit = 10 } = req.query;
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 10, 25));
+
+    const findArgs = {
       where: {
         status: 'ACTIVE',
         endDate: { gte: new Date() }
@@ -20,7 +23,8 @@ const getActiveCustomers = async (req, res) => {
                 phone: true,
                 address: true,
                 latitude: true,
-                longitude: true
+                longitude: true,
+                createdAt: true
               }
             }
           }
@@ -30,24 +34,56 @@ const getActiveCustomers = async (req, res) => {
             service: true
           }
         }
-      }
-    });
+      },
+      orderBy: { createdAt: 'desc' },
+      take: pageSize + 1
+    };
 
-    res.json(customers);
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.subscription.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+    res.json({
+      success: true,
+      data: items,
+      pageInfo: { nextCursor, hasNextPage, pageSize }
+    });
   } catch (error) {
     console.error('Error fetching active customers:', error);
-    res.status(500).json({ message: 'Failed to fetch active customers' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch active customers' 
+    });
   }
 };
 
-// Get pending bookings that need maid assignment
+// Get pending bookings that need maid assignment (Instagram-style pagination)
 const getPendingBookings = async (req, res) => {
   try {
-    const bookings = await prisma.booking.findMany({
-      where: {
-        status: 'CONFIRMED',
-        maidId: null
-      },
+    const { cursor, limit = 8, status = 'CONFIRMED' } = req.query;
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 8, 20));
+
+    const whereClause = {
+      maidId: null
+    };
+
+    // Add status filter
+    if (status && status !== 'all') {
+      if (status === 'pending') {
+        whereClause.status = { in: ['PENDING', 'CONFIRMED'] };
+      } else {
+        whereClause.status = status.toUpperCase();
+      }
+    }
+
+    const findArgs = {
+      where: whereClause,
       include: {
         customer: {
           select: {
@@ -60,16 +96,33 @@ const getPendingBookings = async (req, res) => {
             longitude: true
           }
         },
-        service: true
+        service: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+            basePrice: true
+          }
+        }
       },
-      orderBy: {
-        scheduledAt: 'asc'
-      }
-    });
+      orderBy: { scheduledAt: 'asc' },
+      take: pageSize + 1
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.booking.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
 
     res.json({
       success: true,
-      data: bookings
+      data: items,
+      pageInfo: { nextCursor, hasNextPage, pageSize }
     });
   } catch (error) {
     console.error('Error fetching pending bookings:', error.message || error);
@@ -567,6 +620,279 @@ const getAllMaidsWithDocuments = async (req, res) => {
   }
 };
 
+// Get all users with Instagram-style pagination
+const getAllUsersWithPagination = async (req, res) => {
+  try {
+    const { cursor, limit = 12, role, status, search } = req.query;
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 12, 30));
+
+    const whereClause = {};
+
+    // Add role filter
+    if (role && role !== 'all') {
+      whereClause.role = role.toUpperCase();
+    }
+
+    // Add status filter
+    if (status && status !== 'all') {
+      whereClause.status = status.toUpperCase();
+    }
+
+    // Add search filter
+    if (search) {
+      whereClause.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+
+    const findArgs = {
+      where: whereClause,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        status: true,
+        address: true,
+        createdAt: true,
+        updatedAt: true,
+        customerProfile: {
+          select: {
+            id: true,
+            subscription: {
+              select: {
+                id: true,
+                status: true,
+                plan: { select: { name: true } }
+              }
+            }
+          }
+        },
+        maidProfile: {
+          select: {
+            id: true,
+            status: true,
+            rating: true,
+            completedBookings: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: pageSize + 1
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.user.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+    res.json({
+      success: true,
+      data: items,
+      pageInfo: { nextCursor, hasNextPage, pageSize }
+    });
+  } catch (error) {
+    console.error('Error fetching users with pagination:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users'
+    });
+  }
+};
+
+// Get all payments with Instagram-style pagination
+const getAllPaymentsWithPagination = async (req, res) => {
+  try {
+    const { cursor, limit = 10, status, type, search } = req.query;
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 10, 25));
+
+    const whereClause = {};
+    
+    if (status && status !== 'all') {
+      whereClause.status = status.toUpperCase();
+    }
+    
+    if (type && type !== 'all') {
+      whereClause.paymentType = type.toUpperCase();
+    }
+
+    // Add search filter
+    if (search) {
+      whereClause.OR = [
+        { description: { contains: search, mode: 'insensitive' } },
+        { customer: { name: { contains: search, mode: 'insensitive' } } },
+        { customer: { email: { contains: search, mode: 'insensitive' } } }
+      ];
+    }
+
+    const findArgs = {
+      where: whereClause,
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true
+          }
+        },
+        booking: {
+          select: {
+            id: true,
+            scheduledAt: true,
+            service: {
+              select: {
+                name: true
+              }
+            }
+          }
+        },
+        subscription: {
+          select: {
+            id: true,
+            plan: {
+              select: {
+                name: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: pageSize + 1
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.payment.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+    res.json({
+      success: true,
+      data: items,
+      pageInfo: { nextCursor, hasNextPage, pageSize }
+    });
+  } catch (error) {
+    console.error('Error fetching payments with pagination:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payments'
+    });
+  }
+};
+
+// Get all maids with Instagram-style pagination
+const getAllMaidsWithPagination = async (req, res) => {
+  try {
+    const { cursor, limit = 10, status, search } = req.query;
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 10, 25));
+
+    const whereClause = { role: 'MAID' };
+
+    // Add status filter
+    if (status && status !== 'all') {
+      if (status === 'verified') {
+        whereClause.maidProfile = { status: 'ACTIVE' };
+      } else if (status === 'pending') {
+        whereClause.maidProfile = { status: 'PENDING_VERIFICATION' };
+      } else {
+        whereClause.status = status.toUpperCase();
+      }
+    }
+
+    // Add search filter
+    if (search) {
+      whereClause.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+        { phone: { contains: search, mode: 'insensitive' } }
+      ];
+    }
+
+    const findArgs = {
+      where: whereClause,
+      include: {
+        maidProfile: {
+          include: {
+            documents: {
+              select: {
+                id: true,
+                type: true,
+                verificationStatus: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: pageSize + 1
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.user.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+    // Calculate document verification status for each maid
+    const requiredDocTypes = ['AADHAR_CARD', 'PAN_CARD', 'ADDRESS_PROOF', 'POLICE_VERIFICATION', 'MEDICAL_CERTIFICATE', 'PHOTO'];
+    
+    const maidsWithDocumentStatus = items.map(maid => {
+      const documents = maid.maidProfile?.documents || [];
+      const totalRequired = requiredDocTypes.length;
+      const uploaded = requiredDocTypes.filter(type => 
+        documents.some(doc => doc.type === type)
+      ).length;
+      const verified = requiredDocTypes.filter(type => 
+        documents.some(doc => doc.type === type && doc.verificationStatus === 'APPROVED')
+      ).length;
+      const pending = requiredDocTypes.filter(type => 
+        documents.some(doc => doc.type === type && doc.verificationStatus === 'PENDING')
+      ).length;
+
+      return {
+        ...maid,
+        documentVerification: {
+          totalRequired,
+          uploaded,
+          verified,
+          pending,
+          completionPercentage: Math.round((verified / totalRequired) * 100)
+        }
+      };
+    });
+
+    res.json({
+      success: true,
+      data: maidsWithDocumentStatus,
+      pageInfo: { nextCursor, hasNextPage, pageSize }
+    });
+  } catch (error) {
+    console.error('Error fetching maids with pagination:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch maids'
+    });
+  }
+};
+
 module.exports = {
   getActiveCustomers,
   getPendingBookings,
@@ -576,5 +902,9 @@ module.exports = {
   getAdminStats,
   getAllSubscriptions,
   getAllPayments,
-  getAllMaidsWithDocuments
+  getAllMaidsWithDocuments,
+  // New Instagram-style paginated endpoints
+  getAllUsersWithPagination,
+  getAllPaymentsWithPagination,
+  getAllMaidsWithPagination
 };
