@@ -100,6 +100,106 @@ async function main() {
       }
     });
 
+    // Create maid-to-customer assignments for the first 5 customers
+    console.log('\n🔗 Creating maid-to-customer assignments...');
+    
+    // Assign maid@sweepro.com to customer@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: customer.id,
+          maidId: maid.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: customer.id,
+        maidId: maid.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer@sweepro.com'
+      }
+    });
+    
+    // Assign maid2@sweepro.com to customer2@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: user2.id,
+          maidId: maid2.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: user2.id,
+        maidId: maid2.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer2@sweepro.com'
+      }
+    });
+    
+    // Assign maid3@sweepro.com to customer3@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: user3.id,
+          maidId: maid3.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: user3.id,
+        maidId: maid3.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer3@sweepro.com'
+      }
+    });
+    
+    // Assign maid4@sweepro.com to customer4@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: user4.id,
+          maidId: maid4.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: user4.id,
+        maidId: maid4.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer4@sweepro.com'
+      }
+    });
+    
+    // Assign maid5@sweepro.com to customer5@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: user5.id,
+          maidId: maid5.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: user5.id,
+        maidId: maid5.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer5@sweepro.com'
+      }
+    });
+    
+    console.log('✅ Created maid-to-customer assignments for all 5 customers');
+
     // Create services
     const dailyCleaningService = await prisma.service.upsert({
       where: { id: 'daily-cleaning-service' },
@@ -113,7 +213,8 @@ async function main() {
         basePrice: 200.0,
         isActive: true,
         bufferTime: 30,
-        maxDailyBookings: 20
+        maxDailyBookings: 20,
+        isSubscriptionService: true // Mark as subscription service for automatic assignments
       }
     });
 

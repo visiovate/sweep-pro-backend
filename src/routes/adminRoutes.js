@@ -19,7 +19,8 @@ const {
   getAssignedBookings,
   getReassignmentBookings,
   getAvailableMaids: getAvailableMaidsForAssignment,
-  sendAssignmentRequest
+  sendAssignmentRequest,
+  getAllPendingAssignmentRequests
 } = require('../controllers/assignmentController');
 
 // Import customer assignment controller functions
@@ -41,6 +42,7 @@ router.post('/generate-otp', authenticateToken, authorizeAdmin, generateServiceO
 
 // Admin Dashboard Routes for Assignment Management
 router.get('/pending-assignments', authenticateToken, authorizeAdmin, getPendingAssignmentBookings);
+router.get('/pending-assignment-requests', authenticateToken, authorizeAdmin, getAllPendingAssignmentRequests); // NEW: truly pending requests
 router.get('/assigned-bookings', authenticateToken, authorizeAdmin, getAssignedBookings);
 router.get('/reassignment-bookings', authenticateToken, authorizeAdmin, getReassignmentBookings);
 router.get('/available-maids/:bookingId', authenticateToken, authorizeAdmin, getAvailableMaidsForAssignment);

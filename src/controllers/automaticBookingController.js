@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const bookingDeduplicationService = require('../services/bookingDeduplicationService');
 
 // Create automatic booking for customer
 const createAutomaticBooking = async (req, res) => {
@@ -45,6 +46,22 @@ const createAutomaticBooking = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Service not found'
+      });
+    }
+
+    // Check for duplicate booking request using Redis
+    const isDuplicate = await bookingDeduplicationService.isDuplicate(
+      customerId,
+      customerAssignment.maidId,
+      scheduledDate
+    );
+
+    if (isDuplicate) {
+      console.log(`🚫 Duplicate booking request prevented for customer ${customerId} with maid ${customerAssignment.maidId} on ${scheduledDate}`);
+      return res.status(409).json({
+        success: false,
+        message: 'Booking request already sent to this maid for the selected date. Please wait for the maid to respond.',
+        isDuplicate: true
       });
     }
 
@@ -154,6 +171,14 @@ const createAutomaticBooking = async (req, res) => {
 
     console.log('📨 Assignment request sent to maid:', assignmentRequest.id);
 
+    // Mark booking request as processed in Redis to prevent duplicates
+    await bookingDeduplicationService.markAsProcessed(
+      customerId,
+      customerAssignment.maidId,
+      scheduledDate,
+      48 * 60 * 60 // 48 hours TTL
+    );
+
     return res.status(201).json({
       success: true,
       message: 'Automatic booking created and sent to maid successfully',
@@ -229,6 +254,18 @@ const createDailyAutomaticBookings = async (req, res) => {
 
     for (const assignment of activeAssignments) {
       try {
+        // Check for duplicate booking request using Redis
+        const isDuplicate = await bookingDeduplicationService.isDuplicate(
+          assignment.customerId,
+          assignment.maidId,
+          targetDate
+        );
+
+        if (isDuplicate) {
+          console.log(`🚫 Duplicate booking request prevented for customer ${assignment.customer.name} on ${targetDate.toISOString().split('T')[0]}`);
+          continue;
+        }
+
         // Check if customer is in buffer period
         const activeBuffer = await prisma.bufferPeriod.findFirst({
           where: {
@@ -290,6 +327,14 @@ const createDailyAutomaticBookings = async (req, res) => {
             status: 'pending'
           }
         });
+
+        // Mark booking request as processed in Redis
+        await bookingDeduplicationService.markAsProcessed(
+          assignment.customerId,
+          assignment.maidId,
+          targetDate,
+          48 * 60 * 60 // 48 hours TTL
+        );
 
         results.push({
           customerId: assignment.customerId,

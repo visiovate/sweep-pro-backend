@@ -1048,58 +1048,30 @@ const getReassignmentBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching reassignment bookings...');
     
-    // Get bookings that need reassignment - focus on assignmentStatus and rejected requests
+    // Only include bookings where assignmentStatus is 'REJECTED' and booking.status is not 'CONFIRMED' or 'ASSIGNED' or 'ACCEPTED'.
     const bookings = await prisma.booking.findMany({
       where: {
-        OR: [
-          {
-            // Bookings with assignment status indicating reassignment needed
-            assignmentStatus: 'REJECTED'
-          },
-          {
-            // Bookings marked for reassignment
-            assignmentStatus: 'REASSIGNED'
-          },
-          {
-            // Bookings that have rejected assignment requests
-            assignmentRequests: {
-              some: {
-                status: 'rejected'
-              }
-            }
-          },
-          {
-            // Legacy: Bookings rejected by maid (old flow)
-            status: 'CANCELLED',
-            rejectionReason: { not: null },
-            maidId: null
+        assignmentStatus: 'REJECTED',
+        NOT: {
+          status: {
+            in: ['CONFIRMED', 'ASSIGNED', 'ACCEPTED']
           }
-        ]
+        }
       },
       include: {
         service: true,
         customer: true,
         maid: true,
         assignmentRequests: {
-          where: {
-            status: 'rejected'
-          },
+          where: { status: 'rejected' },
           include: {
-            maid: {
-              include: {
-                user: true
-              }
-            }
+            maid: { include: { user: true } }
           },
-          orderBy: {
-            respondedAt: 'desc'
-          },
-          take: 1 // Get the most recent rejection
+          orderBy: { respondedAt: 'desc' },
+          take: 1
         }
       },
-      orderBy: {
-        updatedAt: 'desc'
-      }
+      orderBy: { updatedAt: 'desc' }
     });
 
     console.log(`✅ Found ${bookings.length} reassignment bookings`);
@@ -1155,6 +1127,48 @@ const getReassignmentBookings = async (req, res) => {
   }
 };
 
+// Admin: Get all truly pending assignment requests (for pending bookings section)
+const getAllPendingAssignmentRequests = async (req, res) => {
+  try {
+    // All assignment requests that are pending and not expired
+    const requests = await prisma.assignmentRequest.findMany({
+      where: {
+        status: 'pending',
+        expiresAt: {
+          gt: new Date()
+        }
+      },
+      include: {
+        booking: {
+          include: {
+            service: true,
+            customer: true
+          }
+        },
+        maid: {
+          include: {
+            user: true
+          }
+        }
+      },
+      orderBy: {
+        requestedAt: 'asc'
+      }
+    });
+    res.json({
+      success: true,
+      data: requests
+    });
+  } catch (error) {
+    console.error('❌ Error fetching all pending assignment requests:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   // Maid routes
   getPendingAssignments,
@@ -1174,5 +1188,6 @@ module.exports = {
   getAssignedBookings,
   getReassignmentBookings,
   getAvailableMaids,
-  sendAssignmentRequest
+  sendAssignmentRequest,
+  getAllPendingAssignmentRequests
 };
