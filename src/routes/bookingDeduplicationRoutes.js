@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const bookingDeduplicationService = require('../services/bookingDeduplicationService');
-const { authenticate, authorize } = require('../middleware/auth');
+const { auth, checkRole } = require('../middleware/auth');
 
 /**
  * Get deduplication statistics
  * Admin only
  */
-router.get('/stats', authenticate, authorize(['ADMIN']), async (req, res) => {
+router.get('/stats', auth, checkRole(['ADMIN']), async (req, res) => {
   try {
     const stats = await bookingDeduplicationService.getStats();
     res.json({
@@ -28,7 +28,7 @@ router.get('/stats', authenticate, authorize(['ADMIN']), async (req, res) => {
  * Check if a booking request is duplicate
  * Admin only
  */
-router.post('/check', authenticate, authorize(['ADMIN']), async (req, res) => {
+router.post('/check', auth, checkRole(['ADMIN']), async (req, res) => {
   try {
     const { customerId, maidId, scheduledDate } = req.body;
 
@@ -72,7 +72,7 @@ router.post('/check', authenticate, authorize(['ADMIN']), async (req, res) => {
  * Remove a booking request marker
  * Admin only
  */
-router.delete('/remove', authenticate, authorize(['ADMIN']), async (req, res) => {
+router.delete('/remove', auth, checkRole(['ADMIN']), async (req, res) => {
   try {
     const { customerId, maidId, scheduledDate } = req.body;
 
@@ -108,7 +108,7 @@ router.delete('/remove', authenticate, authorize(['ADMIN']), async (req, res) =>
  * Clear all deduplication markers
  * Admin only - use with caution
  */
-router.post('/clear-all', authenticate, authorize(['ADMIN']), async (req, res) => {
+router.post('/clear-all', auth, checkRole(['ADMIN']), async (req, res) => {
   try {
     const cleared = await bookingDeduplicationService.clearAll();
 
