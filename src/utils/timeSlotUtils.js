@@ -5,7 +5,7 @@
 const { toZonedTime, fromZonedTime, formatInTimeZone } = require('date-fns-tz');
 
 const TIMEZONE = 'Asia/Kolkata';
-const ASSIGNMENT_REQUEST_HOURS_BEFORE = 20; // keep whatever you already have
+const ASSIGNMENT_REQUEST_HOURS_BEFORE = 20; // Send booking request 20 hours before service time
 
 function normalizeTimeSlot(ts) {
   if (!ts || typeof ts !== 'string') return null;

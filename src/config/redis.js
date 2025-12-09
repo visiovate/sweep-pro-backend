@@ -32,9 +32,16 @@ const createRedisConnection = () => {
     
     // Additional reliability options
     lazyConnect: true,
-    maxRetriesPerRequest: null,
+    maxRetriesPerRequest: 3, // Allow retries for failed requests
     retryDelayOnFailover: 100,
-    enableOfflineQueue: false,
+    enableOfflineQueue: true, // Enable offline queue to buffer commands when Redis is down
+    reconnectOnError: (err) => {
+      const targetError = 'READONLY';
+      if (err.message.includes(targetError)) {
+        return true; // Reconnect on READONLY error (in case of Redis failover)
+      }
+      return false;
+    },
     
     // Production-specific settings
     family: 4, // Force IPv4

@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const bookingDeduplicationService = require('../services/bookingDeduplicationService');
+const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
 
 // Create automatic booking for customer
 const createAutomaticBooking = async (req, res) => {
@@ -106,34 +107,83 @@ const createAutomaticBooking = async (req, res) => {
       });
     }
 
-    // Create the automatic booking
-    const booking = await prisma.booking.create({
-      data: {
-        customerId: customerId,
-        maidId: customerAssignment.maid.user.id, // Use the User ID for maid
-        serviceId: serviceId,
-        scheduledAt: new Date(scheduledDate),
-        timeSlot: customerAssignment.customer.timeSlot || 'morning',
-        status: 'PENDING',
-        assignmentStatus: 'PENDING_ASSIGNMENT',
-        totalAmount: service.basePrice,
-        notes: notes || `Automatic booking for ${service.name}`,
-        isAutomatic: true
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-            address: true,
-            timeSlot: true
-          }
+    const maidUnavailable = customerAssignment.maid?.availability && customerAssignment.maid.availability.isAvailable === false;
+    let booking;
+    if (maidUnavailable) {
+      booking = await prisma.booking.create({
+        data: {
+          customerId: customerId,
+          maidId: null,
+          serviceId: serviceId,
+          scheduledAt: new Date(scheduledDate),
+          timeSlot: customerAssignment.customer.timeSlot || 'morning',
+          status: 'CANCELLED',
+          assignmentStatus: 'REJECTED',
+          rejectionReason: 'Maid unavailable',
+          totalAmount: service.basePrice,
+          notes: notes || `Automatic booking for ${service.name}`,
+          isAutomatic: true
         },
-        service: true
-      }
-    });
+        include: {
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              address: true,
+              timeSlot: true
+            }
+          },
+          service: true
+        }
+      });
+      await queueRejectedAssignment({
+        bookingId: booking.id,
+        maidId: customerAssignment.maidId,
+        rejectionReason: 'Maid unavailable',
+        customerId: customerId
+      });
+      await bookingDeduplicationService.markAsProcessed(
+        customerId,
+        customerAssignment.maidId,
+        scheduledDate,
+        48 * 60 * 60
+      );
+      return res.status(201).json({
+        success: true,
+        message: 'Maid unavailable. Booking queued for admin reassignment',
+        data: { booking }
+      });
+    } else {
+      booking = await prisma.booking.create({
+        data: {
+          customerId: customerId,
+          maidId: customerAssignment.maid.user.id,
+          serviceId: serviceId,
+          scheduledAt: new Date(scheduledDate),
+          timeSlot: customerAssignment.customer.timeSlot || 'morning',
+          status: 'PENDING',
+          assignmentStatus: 'PENDING_ASSIGNMENT',
+          totalAmount: service.basePrice,
+          notes: notes || `Automatic booking for ${service.name}`,
+          isAutomatic: true
+        },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              address: true,
+              timeSlot: true
+            }
+          },
+          service: true
+        }
+      });
+    }
 
     console.log('📅 Automatic booking created:', booking.id);
 
@@ -302,31 +352,54 @@ const createDailyAutomaticBookings = async (req, res) => {
           continue;
         }
 
-        // Create automatic booking
-        const booking = await prisma.booking.create({
-          data: {
-            customerId: assignment.customerId,
-            maidId: assignment.maid.user.id,
-            serviceId: defaultService.id,
-            scheduledAt: new Date(targetDate.setHours(9, 0, 0, 0)), // Default to 9 AM
-            timeSlot: assignment.customer.timeSlot || 'morning',
-            status: 'PENDING',
-            assignmentStatus: 'PENDING_ASSIGNMENT',
-            totalAmount: defaultService.basePrice,
-            notes: `Daily automatic booking for ${defaultService.name}`,
-            isAutomatic: true
-          }
-        });
-
-        // Create assignment request for the maid
-        const assignmentRequest = await prisma.assignmentRequest.create({
-          data: {
+        const maidUnavailable = assignment.maid?.availability && assignment.maid.availability.isAvailable === false;
+        let booking;
+        if (maidUnavailable) {
+          booking = await prisma.booking.create({
+            data: {
+              customerId: assignment.customerId,
+              maidId: null,
+              serviceId: defaultService.id,
+              scheduledAt: new Date(targetDate.setHours(9, 0, 0, 0)),
+              timeSlot: assignment.customer.timeSlot || 'morning',
+              status: 'CANCELLED',
+              assignmentStatus: 'REJECTED',
+              rejectionReason: 'Maid unavailable',
+              totalAmount: defaultService.basePrice,
+              notes: `Daily automatic booking for ${defaultService.name}`,
+              isAutomatic: true
+            }
+          });
+          await queueRejectedAssignment({
             bookingId: booking.id,
             maidId: assignment.maidId,
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            status: 'pending'
-          }
-        });
+            rejectionReason: 'Maid unavailable',
+            customerId: assignment.customerId
+          });
+        } else {
+          booking = await prisma.booking.create({
+            data: {
+              customerId: assignment.customerId,
+              maidId: assignment.maid.user.id,
+              serviceId: defaultService.id,
+              scheduledAt: new Date(targetDate.setHours(9, 0, 0, 0)),
+              timeSlot: assignment.customer.timeSlot || 'morning',
+              status: 'PENDING',
+              assignmentStatus: 'PENDING_ASSIGNMENT',
+              totalAmount: defaultService.basePrice,
+              notes: `Daily automatic booking for ${defaultService.name}`,
+              isAutomatic: true
+            }
+          });
+          await prisma.assignmentRequest.create({
+            data: {
+              bookingId: booking.id,
+              maidId: assignment.maidId,
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+              status: 'pending'
+            }
+          });
+        }
 
         // Mark booking request as processed in Redis
         await bookingDeduplicationService.markAsProcessed(
@@ -340,8 +413,8 @@ const createDailyAutomaticBookings = async (req, res) => {
           customerId: assignment.customerId,
           customerName: assignment.customer.name,
           bookingId: booking.id,
-          assignmentRequestId: assignmentRequest.id,
-          maidName: assignment.maid.user.name
+          maidName: assignment.maid.user.name,
+          queuedForReassignment: maidUnavailable || false
         });
 
         console.log(`✅ Created automatic booking for ${assignment.customer.name}`);

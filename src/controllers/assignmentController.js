@@ -867,20 +867,25 @@ const getAvailableMaids = async (req, res) => {
 
     console.log(`✅ Found ${maids.length} active maids`);
 
-    // Transform maid data for frontend
-    const availableMaids = maids.map(maid => ({
-      id: maid.user.id, // Use User.id instead of MaidProfile.id
-      maidProfileId: maid.id, // Keep MaidProfile.id for reference
-      name: maid.user.name,
-      email: maid.user.email,
-      phone: maid.user.phone,
-      rating: maid.rating,
-      completedBookings: maid.completedBookings,
-      skills: maid.skills,
-      isAvailable: maid.assignmentRequests.length < (maid.maxDailyBookings || 5),
-      currentAssignments: maid.assignmentRequests.length,
-      maxDailyBookings: maid.maxDailyBookings || 5
-    }));
+    const availableMaids = maids
+      .filter(maid => (maid.availability && maid.availability.isAvailable === false) ? false : true)
+      .map(maid => {
+        const capacityAvailable = maid.assignmentRequests.length < (maid.maxDailyBookings || 5);
+        const availabilityFlag = (maid.availability && maid.availability.isAvailable === false) ? false : true;
+        return {
+          id: maid.user.id,
+          maidProfileId: maid.id,
+          name: maid.user.name,
+          email: maid.user.email,
+          phone: maid.user.phone,
+          rating: maid.rating,
+          completedBookings: maid.completedBookings,
+          skills: maid.skills,
+          isAvailable: availabilityFlag && capacityAvailable,
+          currentAssignments: maid.assignmentRequests.length,
+          maxDailyBookings: maid.maxDailyBookings || 5
+        };
+      });
 
     console.log(`✅ Transformed ${availableMaids.length} available maids for frontend`);
 
@@ -972,6 +977,17 @@ const sendAssignmentRequest = async (req, res) => {
     }
 
     console.log(`✅ Found maid: ${user.name}, Status: ${user.maidProfile.status}`);
+
+    const isMaidAvailable = !(
+      user.maidProfile.availability && user.maidProfile.availability.isAvailable === false
+    );
+    if (!isMaidAvailable) {
+      console.log(`❌ Maid is marked unavailable: ${maidId}`);
+      return res.status(400).json({
+        success: false,
+        message: 'Maid is currently unavailable'
+      });
+    }
 
     // Create assignment request and update booking in a transaction
     console.log('🔍 Creating assignment request and updating booking...');

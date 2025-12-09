@@ -1,4 +1,12 @@
 const express = require('express');
+const {
+  getActiveAssignments,
+  triggerJobScheduling,
+  getAssignmentStatus,
+  createAssignment,
+  deactivateAssignment,
+  runDailyAutomation
+} = require('../controllers/adminAssignmentController');
 const router = express.Router();
 const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
 const {
@@ -51,5 +59,13 @@ router.post('/send-assignment-request', authenticateToken, authorizeAdmin, sendA
 // Admin Customer Assignment Routes
 router.get('/customer-assignments', authenticateToken, authorizeAdmin, getAllCustomerAssignments);
 router.get('/assignment-requests', authenticateToken, authorizeAdmin, getAllAssignmentRequests);
+
+// Admin Assignment Management Routes (new)
+router.get('/active-assignments', authenticateToken, authorizeAdmin, getActiveAssignments);
+router.post('/trigger-job-scheduling', authenticateToken, authorizeAdmin, triggerJobScheduling);
+router.get('/assignment-status', authenticateToken, authorizeAdmin, getAssignmentStatus);
+router.post('/create-assignment', authenticateToken, authorizeAdmin, createAssignment);
+router.patch('/assignments/:assignmentId/deactivate', authenticateToken, authorizeAdmin, deactivateAssignment);
+router.post('/run-daily-automation', authenticateToken, authorizeAdmin, runDailyAutomation);
 
 module.exports = router;

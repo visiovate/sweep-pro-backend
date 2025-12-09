@@ -2,6 +2,7 @@ const { Worker } = require('bullmq');
 const { PrismaClient } = require('@prisma/client');
 const { createRedisConnection } = require('../config/redis');
 const { JOB_TYPES } = require('../queues/assignmentQueue');
+const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
 const { 
   getNextServiceDateTime, 
   calculateRequestTime,
@@ -103,8 +104,8 @@ const createAssignmentRequest = async (data) => {
     };
   }
 
-  // Get default service
-  const defaultService = await prisma.service.findFirst({
+  // Get default service (prefer subscription service, fallback to any active service)
+  let defaultService = await prisma.service.findFirst({
     where: {
       isActive: true,
       isSubscriptionService: true
@@ -112,7 +113,13 @@ const createAssignmentRequest = async (data) => {
   });
 
   if (!defaultService) {
-    throw new Error('No default subscription service found');
+    defaultService = await prisma.service.findFirst({
+      where: { isActive: true }
+    });
+  }
+
+  if (!defaultService) {
+    throw new Error('No active service found');
   }
 
   // Get customer details
@@ -121,11 +128,53 @@ const createAssignmentRequest = async (data) => {
     select: { address: true }
   });
 
-  // Create the booking first
+  const maidProfile = await prisma.maidProfile.findUnique({ where: { id: maidId }, include: { user: true } });
+  const isMaidAvailable = !(
+    maidProfile?.availability && maidProfile.availability.isAvailable === false
+  );
+
+  if (!isMaidAvailable) {
+    const booking = await prisma.booking.create({
+      data: {
+        customerId: customerId,
+        maidId: null,
+        serviceId: defaultService.id,
+        scheduledAt: serviceDateTime,
+        timeSlot: timeSlot,
+        status: 'CANCELLED',
+        assignmentStatus: 'REJECTED',
+        rejectionReason: 'Maid unavailable',
+        totalAmount: defaultService.basePrice,
+        finalAmount: defaultService.basePrice,
+        serviceAddress: customer?.address || 'Customer Address',
+        estimatedDuration: defaultService.baseDuration,
+        specialInstructions: `Automatic booking for ${timeSlot} time slot`
+      }
+    });
+    try {
+      await queueRejectedAssignment({
+        bookingId: booking.id,
+        maidId: maidId,
+        rejectionReason: 'Maid unavailable',
+        customerId
+      });
+    } catch (e) {}
+    return {
+      success: true,
+      customerId,
+      customerName,
+      maidName,
+      timeSlot,
+      serviceDateTime: serviceDateTime.toISOString(),
+      bookingId: booking.id,
+      queuedForReassignment: true
+    };
+  }
+
   const booking = await prisma.booking.create({
     data: {
       customerId: customerId,
-      maidId: data.maidUserId, // Use the maid's user ID for the booking
+      maidId: data.maidUserId,
       serviceId: defaultService.id,
       scheduledAt: serviceDateTime,
       timeSlot: timeSlot,
@@ -135,17 +184,15 @@ const createAssignmentRequest = async (data) => {
       finalAmount: defaultService.basePrice,
       serviceAddress: customer?.address || 'Customer Address',
       estimatedDuration: defaultService.baseDuration,
-      notes: `Automatic booking for ${timeSlot} time slot`,
-      isAutomatic: true
+      specialInstructions: `Automatic booking for ${timeSlot} time slot`
     }
   });
 
-  // Create assignment request
   const assignmentRequest = await prisma.assignmentRequest.create({
     data: {
       bookingId: booking.id,
-      maidId: maidId, // MaidProfile ID
-      expiresAt: new Date(serviceDateTime.getTime() - (2 * 60 * 60 * 1000)), // Expires 2 hours before service
+      maidId: maidId,
+      expiresAt: new Date(serviceDateTime.getTime() - (2 * 60 * 60 * 1000)),
       status: 'pending'
     }
   });
@@ -154,6 +201,29 @@ const createAssignmentRequest = async (data) => {
   console.log(`   Booking ID: ${booking.id}`);
   console.log(`   Assignment Request ID: ${assignmentRequest.id}`);
   console.log(`   Service Time: ${serviceDateTime.toISOString()}`);
+
+  // Send notification to maid
+  try {
+    await prisma.notification.create({
+      data: {
+        userId: data.maidUserId,
+        type: 'ASSIGNMENT_REQUEST',
+        title: 'New Booking Request',
+        message: `You have a new booking request from ${customerName} for ${timeSlot} time slot.`,
+        data: {
+          bookingId: booking.id,
+          assignmentRequestId: assignmentRequest.id,
+          customerName: customerName,
+          timeSlot: timeSlot,
+          scheduledAt: serviceDateTime.toISOString(),
+          expiresAt: assignmentRequest.expiresAt.toISOString()
+        }
+      }
+    });
+    console.log(`📧 Notification sent to maid: ${maidName}`);
+  } catch (notifError) {
+    console.error(`⚠️  Failed to send notification to maid:`, notifError.message);
+  }
 
   return {
     success: true,

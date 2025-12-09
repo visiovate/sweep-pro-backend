@@ -95,25 +95,29 @@ const processRejectedAssignment = async (data) => {
       }
     });
 
-    // Get list of rejected maids for this booking
-    const rejectedMaidIds = booking.assignmentRequests
-      .map(req => req.maidId)
-      .concat(maidId); // Include current rejection
-
-    // Queue finding alternative maid
-    await findAlternativeMaid({
-      bookingId,
-      excludedMaidIds: rejectedMaidIds,
-      customerId
-    });
-
-    // Queue admin notification
-    await notifyAdminReassignment({
-      bookingId,
-      customerId,
-      maidId,
-      reason: rejectionReason
-    });
+    if (rejectionReason === 'Maid unavailable') {
+      await notifyAdminReassignment({
+        bookingId,
+        customerId,
+        maidId,
+        reason: rejectionReason
+      });
+    } else {
+      const rejectedMaidIds = booking.assignmentRequests
+        .map(req => req.maidId)
+        .concat(maidId);
+      await findAlternativeMaid({
+        bookingId,
+        excludedMaidIds: rejectedMaidIds,
+        customerId
+      });
+      await notifyAdminReassignment({
+        bookingId,
+        customerId,
+        maidId,
+        reason: rejectionReason
+      });
+    }
 
     console.log(`✅ Processed rejected assignment for booking ${bookingId}`);
     
@@ -158,7 +162,7 @@ const findAlternativeMaid = async (data) => {
     const availableMaids = await prisma.maidProfile.findMany({
       where: {
         id: { notIn: excludedMaidIds },
-        status: 'VERIFIED',
+        status: 'ACTIVE',
         isFloatingMaid: false,
         zones: booking.zoneId ? {
           some: {
@@ -174,8 +178,9 @@ const findAlternativeMaid = async (data) => {
       },
       take: 5 // Limit to top 5 candidates
     });
+    const filteredMaids = availableMaids.filter(m => (m.availability && m.availability.isAvailable === false) ? false : true);
 
-    if (availableMaids.length === 0) {
+    if (filteredMaids.length === 0) {
       console.log(`⚠️ No available maids found for booking ${bookingId}`);
       
       // Update booking status to require manual assignment
@@ -196,7 +201,7 @@ const findAlternativeMaid = async (data) => {
     }
 
     // Select the best maid (highest rating, most completed bookings)
-    const selectedMaid = availableMaids.reduce((best, current) => {
+    const selectedMaid = filteredMaids.reduce((best, current) => {
       if (current.rating > best.rating) return current;
       if (current.rating === best.rating && current.completedBookings > best.completedBookings) {
         return current;

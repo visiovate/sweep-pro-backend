@@ -12,6 +12,7 @@ const cron = require('node-cron');
 const bookingDeduplicationService = require('./bookingDeduplicationService');
 
 const prisma = new PrismaClient();
+const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
 
 /**
  * Create automatic assignment requests for customers based on their time slots
@@ -220,6 +221,52 @@ class AutomaticAssignmentService {
       }
 
       console.log(`✅ Using service: ${defaultService.name} (ID: ${defaultService.id})`);
+
+      const maidUnavailable = assignment.maid?.availability && assignment.maid.availability.isAvailable === false;
+
+      if (maidUnavailable) {
+        const booking = await prisma.booking.create({
+          data: {
+            customerId: customer.id,
+            maidId: null,
+            serviceId: defaultService.id,
+            scheduledAt: serviceDateTime,
+            timeSlot: timeSlot,
+            status: 'CANCELLED',
+            assignmentStatus: 'REJECTED',
+            totalAmount: defaultService.basePrice,
+            finalAmount: defaultService.basePrice,
+            specialInstructions: `Automatic booking for ${timeSlot} time slot`,
+            isAutomatic: true,
+            rejectionReason: 'Maid unavailable'
+          }
+        });
+
+        await queueRejectedAssignment({
+          bookingId: booking.id,
+          maidId: maid.id,
+          rejectionReason: 'Maid unavailable',
+          customerId: customer.id
+        });
+
+        await bookingDeduplicationService.markAsProcessed(
+          customer.id,
+          maid.id,
+          serviceDateTime,
+          48 * 60 * 60
+        );
+
+        return {
+          success: true,
+          customerId: customer.id,
+          customerName: customer.name,
+          maidName: maid.user.name,
+          timeSlot: timeSlot,
+          serviceDateTime: serviceDateTime.toISOString(),
+          bookingId: booking.id,
+          queuedForReassignment: true
+        };
+      }
 
       const bookingData = {
         customerId: customer.id,
