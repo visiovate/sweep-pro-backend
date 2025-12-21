@@ -1,0 +1,77 @@
+{
+	"info": {
+		"name": "Sweep-Pro Notification System",
+		"description": "Complete test collection for notifications",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{"key": "base_url", "value": "http://localhost:3000"},
+		{"key": "auth_token", "value": ""},
+		{"key": "admin_token", "value": ""},
+		{"key": "user_id", "value": ""}
+	],
+	"item": [
+		{
+			"name": "1. Get All Notifications",
+			"request": {
+				"method": "GET",
+				"header": [{"key": "Authorization", "value": "Bearer {{auth_token}}"}],
+				"url": "{{base_url}}/api/notifications?page=1&limit=20"
+			}
+		},
+		{
+			"name": "2. Get Unread Count",
+			"request": {
+				"method": "GET",
+				"header": [{"key": "Authorization", "value": "Bearer {{auth_token}}"}],
+				"url": "{{base_url}}/api/notifications/unread/count"
+			}
+		},
+		{
+			"name": "3. Mark All as Read",
+			"request": {
+				"method": "PATCH",
+				"header": [{"key": "Authorization", "value": "Bearer {{auth_token}}"}],
+				"url": "{{base_url}}/api/notifications/read-all"
+			}
+		},
+		{
+			"name": "4. Admin - Get Stats",
+			"request": {
+				"method": "GET",
+				"header": [{"key": "Authorization", "value": "Bearer {{admin_token}}"}],
+				"url": "{{base_url}}/api/notifications/admin/stats?timeframe=7d"
+			}
+		},
+		{
+			"name": "5. Admin - Send Test Notification",
+			"request": {
+				"method": "POST",
+				"header": [
+					{"key": "Authorization", "value": "Bearer {{admin_token}}"},
+					{"key": "Content-Type", "value": "application/json"}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"userId\":\"{{user_id}}\",\"type\":\"BOOKING_CREATED\",\"title\":\"Test\",\"message\":\"Test notification\",\"data\":{}}"
+				},
+				"url": "{{base_url}}/api/notifications/admin/test"
+			}
+		},
+		{
+			"name": "6. Admin - Broadcast",
+			"request": {
+				"method": "POST",
+				"header": [
+					{"key": "Authorization", "value": "Bearer {{admin_token}}"},
+					{"key": "Content-Type", "value": "application/json"}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"type\":\"SYSTEM_ALERT\",\"title\":\"Announcement\",\"message\":\"System update tonight\",\"targetRole\":\"CUSTOMER\"}"
+				},
+				"url": "{{base_url}}/api/notifications/admin/broadcast"
+			}
+		}
+	]
+}

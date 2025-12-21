@@ -151,20 +151,32 @@ class NotificationService {
 
   // Send notification to all admins
   async sendToAdmins(notification) {
+    console.log('📢 Sending to admins. Connected admin clients:', this.adminClients.size);
+    
+    let sentCount = 0;
     this.adminClients.forEach(client => {
       if (client.readyState === client.OPEN) {
         client.send(JSON.stringify(notification));
+        sentCount++;
+        console.log('✅ Sent to admin via WebSocket:', client.userName);
+      } else {
+        console.log('⚠️ Admin client not open:', client.userName, 'State:', client.readyState);
       }
     });
+    
+    console.log(`📊 Sent to ${sentCount} connected admin(s) via WebSocket`);
 
     // Save to admin users in database
     const adminUsers = await prisma.user.findMany({
       where: { role: { in: ['ADMIN', 'SUPERVISOR'] } },
-      select: { id: true }
+      select: { id: true, name: true, email: true }
     });
 
+    console.log(`💾 Saving notification to ${adminUsers.length} admin(s) in database`);
+    
     for (const admin of adminUsers) {
       await this.saveNotificationToDatabase(admin.id, notification);
+      console.log(`✅ Saved notification for admin: ${admin.name} (${admin.email})`);
     }
   }
 
@@ -268,6 +280,8 @@ class NotificationService {
 
   // Notification types and methods
   async notifyUserRegistration(user) {
+    console.log('🔔 Sending user registration notification for:', user.name, user.role);
+    
     const notification = {
       type: 'USER_REGISTERED',
       title: 'New User Registration',
@@ -281,7 +295,12 @@ class NotificationService {
       timestamp: new Date().toISOString()
     };
 
+    console.log('📊 Admin clients connected:', this.adminClients.size);
+    console.log('📊 Total clients connected:', this.clients.size);
+    
     await this.sendToAdmins(notification);
+    
+    console.log('✅ User registration notification sent to admins');
   }
 
   async notifyBookingCreated(booking) {

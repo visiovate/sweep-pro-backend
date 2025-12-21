@@ -84,10 +84,12 @@ const getPendingBookings = async (req, res) => {
       data: bookings
     });
   } catch (error) {
-    console.error('Error fetching pending bookings:', error);
+    console.error('Error fetching pending bookings:', error.message || error);
+    console.error('Stack trace:', error.stack);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to fetch pending bookings' 
+      message: 'Failed to fetch pending bookings',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

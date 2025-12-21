@@ -1,6 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
 const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
+const checkBufferEligibility = require('../middleware/bufferEligibility');
 const prisma = require('../middleware/prisma');
 const bufferController = require('../controllers/bufferController');
 
@@ -12,22 +13,24 @@ router.use(prisma);
 /**
  * @route   GET /api/buffer/subscription/:subscriptionId/remaining
  * @desc    Get remaining buffer days for a subscription (customer)
- * @access  Private (Customer)
+ * @access  Private (Customer - SweePro Lux only)
  */
 router.get(
   '/subscription/:subscriptionId/remaining',
   authenticateToken,
+  checkBufferEligibility,
   bufferController.getRemainingBufferDays
 );
 
 /**
  * @route   POST /api/buffer/subscription/:subscriptionId/request
  * @desc    Request buffer days (customer)
- * @access  Private (Customer)
+ * @access  Private (Customer - SweePro Lux only)
  */
 router.post(
   '/subscription/:subscriptionId/request',
   authenticateToken,
+  checkBufferEligibility,
   [
     body('daysCount')
       .isInt({ min: 1, max: 7 })
@@ -52,11 +55,12 @@ router.post(
 /**
  * @route   GET /api/buffer/subscription/:subscriptionId/history
  * @desc    Get customer's buffer history (customer)
- * @access  Private (Customer)
+ * @access  Private (Customer - SweePro Lux only)
  */
 router.get(
   '/subscription/:subscriptionId/history',
   authenticateToken,
+  checkBufferEligibility,
   bufferController.getCustomerBufferHistory
 );
 
@@ -148,22 +152,24 @@ router.get(
 /**
  * @route   GET /api/buffer/subscription/:subscriptionId/check-conflict
  * @desc    Check if a date conflicts with buffer periods (customer)
- * @access  Private (Customer)
+ * @access  Private (Customer - SweePro Lux only)
  */
 router.get(
   '/subscription/:subscriptionId/check-conflict',
   authenticateToken,
+  checkBufferEligibility,
   bufferController.checkBufferConflict
 );
 
 /**
  * @route   GET /api/buffer/subscription/:subscriptionId/current-status
  * @desc    Check current buffer period status (customer)
- * @access  Private (Customer)
+ * @access  Private (Customer - SweePro Lux only)
  */
 router.get(
   '/subscription/:subscriptionId/current-status',
   authenticateToken,
+  checkBufferEligibility,
   bufferController.getCurrentBufferStatus
 );
 

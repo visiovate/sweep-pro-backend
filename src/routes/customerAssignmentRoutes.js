@@ -14,7 +14,8 @@ const {
   acceptAssignmentRequest,
   rejectAssignmentRequest,
   getAllAssignmentRequests,
-  testCreateAssignmentRequest
+  testCreateAssignmentRequest,
+  getMyMaidAssignment
 } = require('../controllers/customerAssignmentController');
 
 // Admin routes for customer-maid assignments
@@ -27,6 +28,9 @@ router.delete('/:customerId', authenticateToken, authorizeAdmin, removeCustomerA
 
 // Customer routes (for customers to check their own status)
 router.get('/my-status', authenticateToken, getMyCustomerStatus);
+// Customer routes
+router.get('/my-assignment', authenticateToken, getMyMaidAssignment);
+router.get('/status/:customerId', authenticateToken, authorizeAdmin, getCustomerStatus);
 
 // Assignment request routes for maids
 router.get('/requests/maid', authenticateToken, getMaidAssignmentRequests);

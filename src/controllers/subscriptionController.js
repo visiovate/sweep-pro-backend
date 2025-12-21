@@ -67,12 +67,17 @@ const subscribeToPlan = async (req, res) => {
       return res.status(404).json({ message: 'Plan not found' });
     }
 
+    if (!plan.isActive) {
+      return res.status(400).json({ message: 'This plan is no longer available for new subscriptions' });
+    }
+
     // Calculate subscription dates
     const startDate = new Date();
     const endDate = new Date();
     endDate.setMonth(startDate.getMonth() + plan.duration);
 
     // Create subscription (initially pending payment)
+    // Buffer configuration depends on plan type
     const subscription = await prisma.subscription.create({
       data: {
         customerId,
@@ -85,7 +90,8 @@ const subscribeToPlan = async (req, res) => {
         discount: plan.basePrice - plan.finalPrice,
         autoRenew: true,
         nextBillDate: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-        bufferDaysCount: plan.bufferDaysAllowed || 3,
+        bufferDaysCount: plan.hasBufferSystem ? (plan.bufferDaysAllowed || 0) : 0,
+        bufferDaysUsed: 0,
         currentCycleStart: startDate,
         currentCycleEnd: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000)
       },
@@ -152,6 +158,19 @@ const getUserSubscription = async (req, res) => {
             service: true
           }
         },
+        customer: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true
+              }
+            }
+          }
+        },
         payments: {
           orderBy: {
             createdAt: 'desc'
@@ -173,6 +192,19 @@ const getUserSubscription = async (req, res) => {
               service: true
             }
           },
+          customer: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phone: true,
+                  address: true
+                }
+              }
+            }
+          },
           payments: {
             orderBy: {
               createdAt: 'desc'
@@ -183,10 +215,18 @@ const getUserSubscription = async (req, res) => {
     }
 
     if (!subscription) {
-      return res.status(404).json({ message: 'No subscription found' });
+      // Return success with null subscription instead of 404 error
+      return res.json({ 
+        success: true,
+        subscription: null,
+        message: 'No active subscription found'
+      });
     }
 
-    res.json(subscription);
+    res.json({ 
+      success: true,
+      subscription 
+    });
   } catch (error) {
     console.error('Error fetching subscription:', error);
     res.status(500).json({ message: 'Failed to fetch subscription' });
@@ -253,12 +293,15 @@ const startBufferPeriod = async (req, res) => {
       return res.status(404).json({ message: 'Customer profile not found' });
     }
 
-    // Get active subscription
+    // Get active subscription with plan details
     const subscription = await prisma.subscription.findFirst({
       where: {
         customerId: customerProfile.id,
         status: 'ACTIVE',
         endDate: { gte: new Date() }
+      },
+      include: {
+        plan: true
       }
     });
 
@@ -266,8 +309,26 @@ const startBufferPeriod = async (req, res) => {
       return res.status(404).json({ message: 'No active subscription found' });
     }
 
+    // Check if plan supports buffer system
+    if (!subscription.plan.hasBufferSystem) {
+      return res.status(400).json({ 
+        message: 'Your current plan (SweepPro Touch) does not support buffer system. Please upgrade to SweepPro Lux to access buffer functionality.',
+        planType: subscription.plan.planType,
+        upgradeRequired: true
+      });
+    }
+
     if (subscription.isInBufferPeriod) {
       return res.status(400).json({ message: 'Subscription is already in buffer period' });
+    }
+
+    // Check buffer days availability
+    if (subscription.bufferDaysUsed >= subscription.bufferDaysCount) {
+      return res.status(400).json({ 
+        message: `You have used all ${subscription.bufferDaysCount} buffer days for this period.`,
+        bufferDaysUsed: subscription.bufferDaysUsed,
+        bufferDaysTotal: subscription.bufferDaysCount
+      });
     }
 
     const bufferPeriod = await subscriptionBufferService.startBufferPeriod(subscription.id, reason);
@@ -275,12 +336,16 @@ const startBufferPeriod = async (req, res) => {
     res.json({
       success: true,
       message: 'Buffer period started successfully',
-      bufferPeriod
+      bufferPeriod,
+      remainingBufferDays: subscription.bufferDaysCount - subscription.bufferDaysUsed - 1
     });
 
   } catch (error) {
     console.error('Error starting buffer period:', error);
-    res.status(500).json({ message: 'Failed to start buffer period' });
+    res.status(500).json({ 
+      message: error.message || 'Failed to start buffer period',
+      error: error.message 
+    });
   }
 };
 
@@ -548,7 +613,10 @@ const updateSubscriptionPlan = async (req, res) => {
       sessionsPerMonth,
       isActive,
       isPopular,
-      serviceId
+      serviceId,
+      planType,
+      bufferDaysAllowed,
+      hasBufferSystem
     } = req.body;
 
     // Check if user is admin
@@ -572,6 +640,16 @@ const updateSubscriptionPlan = async (req, res) => {
       return res.status(404).json({ message: 'Subscription plan not found' });
     }
 
+    // Validate buffer configuration
+    const finalHasBufferSystem = hasBufferSystem !== undefined ? hasBufferSystem : existingPlan.hasBufferSystem;
+    const finalBufferDaysAllowed = bufferDaysAllowed !== undefined ? bufferDaysAllowed : existingPlan.bufferDaysAllowed;
+    
+    if (!finalHasBufferSystem && finalBufferDaysAllowed > 0) {
+      return res.status(400).json({
+        message: 'Cannot set buffer days for a plan without buffer system enabled'
+      });
+    }
+
     // Update the plan
     const updatedPlan = await prisma.servicePlan.update({
       where: { id },
@@ -586,7 +664,10 @@ const updateSubscriptionPlan = async (req, res) => {
         sessionsPerMonth: sessionsPerMonth || 4,
         isActive: isActive !== undefined ? isActive : true,
         isPopular: isPopular || false,
-        serviceId
+        serviceId,
+        planType: planType || existingPlan.planType,
+        bufferDaysAllowed: finalBufferDaysAllowed,
+        hasBufferSystem: finalHasBufferSystem
       },
       include: {
         service: true
@@ -619,7 +700,10 @@ const createSubscriptionPlan = async (req, res) => {
       sessionsPerMonth,
       isActive,
       isPopular,
-      serviceId
+      serviceId,
+      planType,
+      bufferDaysAllowed,
+      hasBufferSystem
     } = req.body;
 
     // Check if user is admin
@@ -631,6 +715,16 @@ const createSubscriptionPlan = async (req, res) => {
     if (!name || !basePrice || !finalPrice || !duration || !serviceId) {
       return res.status(400).json({
         message: 'Missing required fields: name, basePrice, finalPrice, duration, serviceId'
+      });
+    }
+
+    // Validate buffer configuration
+    const finalHasBufferSystem = hasBufferSystem || false;
+    const finalBufferDaysAllowed = bufferDaysAllowed || 0;
+    
+    if (!finalHasBufferSystem && finalBufferDaysAllowed > 0) {
+      return res.status(400).json({
+        message: 'Cannot set buffer days for a plan without buffer system enabled'
       });
     }
 
@@ -647,7 +741,10 @@ const createSubscriptionPlan = async (req, res) => {
         sessionsPerMonth: sessionsPerMonth || 4,
         isActive: isActive !== undefined ? isActive : true,
         isPopular: isPopular || false,
-        serviceId
+        serviceId,
+        planType: planType || 'TOUCH',
+        bufferDaysAllowed: finalBufferDaysAllowed,
+        hasBufferSystem: finalHasBufferSystem
       },
       include: {
         service: true
@@ -1046,6 +1143,72 @@ const getSubscriptionAnalytics = async (req, res) => {
   }
 };
 
+// Get upcoming services for subscription
+const getUpcomingServices = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get customer profile
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId }
+    });
+
+    if (!customerProfile) {
+      return res.status(404).json({ message: 'Customer profile not found' });
+    }
+
+    // Get upcoming bookings for the customer
+    const now = new Date();
+    const upcomingBookings = await prisma.booking.findMany({
+      where: {
+        customerId: userId,
+        scheduledAt: { gte: now },
+        status: { in: ['CONFIRMED', 'ASSIGNED', 'PENDING'] },
+        isSubscriptionBased: true
+      },
+      include: {
+        service: {
+          select: {
+            name: true,
+            category: true,
+            baseDuration: true
+          }
+        },
+        maid: {
+          select: {
+            name: true,
+            phone: true
+          }
+        }
+      },
+      orderBy: { scheduledAt: 'asc' },
+      take: 10
+    });
+
+    res.json({
+      success: true,
+      data: {
+        services: upcomingBookings.map(booking => ({
+          id: booking.id,
+          serviceName: booking.service.name,
+          status: booking.status,
+          scheduledTime: booking.scheduledAt,
+          maidName: booking.maid?.name,
+          duration: booking.service.baseDuration,
+          isSubscriptionBased: booking.isSubscriptionBased,
+          isBufferSkipped: booking.isBufferSkipped,
+          serviceAddress: booking.serviceAddress,
+          finalAmount: booking.finalAmount
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting upcoming services:', error);
+    res.status(500).json({ message: 'Failed to get upcoming services' });
+  }
+};
+
 module.exports = {
   getSubscriptionPlans,
   subscribeToPlan,
@@ -1063,5 +1226,6 @@ module.exports = {
   getBufferPeriods,
   adminStartBufferPeriod,
   adminEndBufferPeriod,
-  getSubscriptionAnalytics
+  getSubscriptionAnalytics,
+  getUpcomingServices
 };

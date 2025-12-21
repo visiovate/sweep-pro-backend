@@ -31,10 +31,6 @@ const assignmentRoutes = require('./routes/assignmentRoutes');
 const customerAssignmentRoutes = require('./routes/customerAssignmentRoutes');
 const automaticBookingRoutes = require('./routes/automaticBookingRoutes');
 const automaticAssignmentRoutes = require('./routes/automaticAssignmentRoutes');
-const queueRoutes = require('./routes/queueRoutes');
-const bookingDeduplicationRoutes = require('./routes/bookingDeduplicationRoutes');
-const bookingRequestRoutes = require('./routes/bookingRequestRoutes');
-const bookingCompletionRoutes = require('./routes/bookingCompletionRoutes');
 
 // Create Express app
 const app = express();
@@ -151,10 +147,6 @@ app.use('/api/assignments', assignmentRoutes);
 app.use('/api/admin/customer-assignments', customerAssignmentRoutes);
 app.use('/api/automatic-bookings', automaticBookingRoutes);
 app.use('/api/automatic-assignments', automaticAssignmentRoutes);
-app.use('/api/queue', queueRoutes);
-app.use('/api/booking-deduplication', bookingDeduplicationRoutes);
-app.use('/api/booking-requests', bookingRequestRoutes);
-app.use('/api/booking-completion', bookingCompletionRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {

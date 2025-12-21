@@ -1332,6 +1332,96 @@ const testCreateAssignmentRequest = async (req, res) => {
   }
 };
 
+// Get current user's maid assignment
+const getMyMaidAssignment = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get user to verify they are a customer
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        customerProfile: true
+      }
+    });
+
+    if (!user || user.role !== 'CUSTOMER') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only customers can view their maid assignment'
+      });
+    }
+
+    // Get customer's active maid assignment
+    const assignment = await prisma.customerMaidAssignment.findFirst({
+      where: {
+        customerId: userId,
+        isActive: true
+      },
+      include: {
+        maid: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                profileImage: true,
+                bio: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!assignment) {
+      return res.status(200).json({
+        success: true,
+        data: null,
+        message: 'No active maid assignment found'
+      });
+    }
+
+    // Format response with maid details
+    const formattedAssignment = {
+      id: assignment.id,
+      assignedAt: assignment.assignedAt,
+      notes: assignment.notes,
+      status: 'ACTIVE',
+      maid: {
+        id: assignment.maid.id,
+        name: assignment.maid.user.name,
+        email: assignment.maid.user.email,
+        phone: assignment.maid.user.phone,
+        photoUrl: assignment.maid.user.profileImage,
+        bio: assignment.maid.user.bio,
+        rating: assignment.maid.rating || 0,
+        totalServices: assignment.maid.totalRatings || 0,
+        experience: `${assignment.maid.experienceYears || 0} years`,
+        skills: assignment.maid.skills || [],
+        languages: assignment.maid.languages || [],
+        isAvailable: assignment.maid.status === 'ACTIVE',
+        monthlySchedule: [] // Can be populated with actual schedule if needed
+      }
+    };
+
+    return res.status(200).json({
+      success: true,
+      data: formattedAssignment
+    });
+
+  } catch (error) {
+    console.error('Get my maid assignment error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   assignMaidToCustomer,
   getCustomerAssignment,
@@ -1345,5 +1435,6 @@ module.exports = {
   acceptAssignmentRequest,
   rejectAssignmentRequest,
   getAllAssignmentRequests,
-  testCreateAssignmentRequest
+  testCreateAssignmentRequest,
+  getMyMaidAssignment
 };
