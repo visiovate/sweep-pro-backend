@@ -85,8 +85,18 @@ class SubscriptionBufferService {
         throw new Error('Subscription not found');
       }
 
+      // Check if plan supports buffer system
+      if (!subscription.plan.hasBufferSystem) {
+        throw new Error('This plan does not support buffer system. Only SweepPro Lux plans have buffer functionality.');
+      }
+
       if (subscription.isInBufferPeriod) {
         throw new Error('Subscription is already in buffer period');
+      }
+
+      // Check if buffer days are available
+      if (subscription.bufferDaysCount === 0 || subscription.bufferDaysUsed >= subscription.bufferDaysCount) {
+        throw new Error('No buffer days available for this subscription');
       }
 
       const now = new Date();
@@ -525,7 +535,10 @@ class SubscriptionBufferService {
           bufferDaysCount: subscription.bufferDaysCount,
           bufferDaysUsed: subscription.bufferDaysUsed,
           totalCycles: subscription.totalCycles,
-          completedCycles: subscription.completedCycles
+          completedCycles: subscription.completedCycles,
+          amount: subscription.amount,
+          nextBillDate: subscription.nextBillDate,
+          autoRenew: subscription.autoRenew
         },
         currentCycle,
         activeBuffer,
