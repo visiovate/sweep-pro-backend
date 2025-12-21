@@ -1,4 +1,5 @@
 const { Queue } = require('bullmq');
+const { PrismaClient } = require('@prisma/client');
 const { createRedisConnection } = require('../config/redis');
 
 /**
@@ -12,6 +13,58 @@ const { createRedisConnection } = require('../config/redis');
 
 // Create Redis connection for queue
 const connection = createRedisConnection();
+const prisma = new PrismaClient();
+
+const buildJobMeta = (jobId, data = {}) => {
+  return `jobId=${jobId} customerId=${data.customerId ?? 'n/a'} maidId=${data.maidId ?? 'n/a'} maidUserId=${data.maidUserId ?? 'n/a'}`;
+};
+
+const validateEntitiesBeforeEnqueue = async (jobId, data = {}) => {
+  const fail = (code, message) => {
+    console.warn(`[JOB NOT ENQUEUED] ${jobId} | ${code} | non-retryable | customerId=${data.customerId} maidId=${data.maidId} maidUserId=${data.maidUserId || 'n/a'}${message ? ` | ${message}` : ''}`);
+    return { ok: false, result: { skipped: true, reason: code, message, customerId: data.customerId, maidId: data.maidId, maidUserId: data.maidUserId } };
+  };
+
+  if (!data.customerId) {
+    return fail('CUSTOMER_ID_MISSING', 'Job payload missing customerId');
+  }
+
+  const customer = await prisma.user.findUnique({ where: { id: data.customerId }, select: { id: true } });
+  if (!customer) {
+    return fail('CUSTOMER_NOT_FOUND', 'Customer does not exist');
+  }
+
+  if (!data.maidId) {
+    return fail('MAID_ID_MISSING', 'Job payload missing maidId');
+  }
+
+  const maidProfile = await prisma.maidProfile.findUnique({
+    where: { id: data.maidId },
+    include: {
+      user: { select: { id: true } }
+    }
+  });
+
+  if (!maidProfile) {
+    return fail('MAID_PROFILE_NOT_FOUND', 'Maid profile does not exist');
+  }
+
+  if (!maidProfile.user) {
+    return fail('MAID_USER_NOT_FOUND', 'Maid profile missing linked user');
+  }
+
+  if (data.maidUserId) {
+    const maidUser = await prisma.user.findUnique({ where: { id: data.maidUserId }, select: { id: true } });
+    if (!maidUser) {
+      return fail('MAID_USER_NOT_FOUND', 'Maid user does not exist');
+    }
+  }
+
+  return {
+    ok: true,
+    normalizedData: { ...data, maidUserId: data.maidUserId || maidProfile.user.id }
+  };
+};
 
 // Assignment Queue with enhanced reliability
 const assignmentQueue = new Queue('maid-assignment', {
@@ -40,6 +93,19 @@ const assignmentQueue = new Queue('maid-assignment', {
   },
 });
 
+let assignmentQueueScheduler = null;
+try {
+  const bullmq = require('bullmq');
+  const CandidateScheduler = bullmq?.QueueScheduler;
+  if (typeof CandidateScheduler === 'function') {
+    assignmentQueueScheduler = new CandidateScheduler('maid-assignment', { connection });
+  } else {
+    console.warn('⚠️ QueueScheduler not available in this BullMQ build; delayed/repeatable job promotion may rely on Redis configuration.');
+  }
+} catch (e) {
+  console.warn('⚠️ Failed to initialize QueueScheduler:', e?.message || e);
+}
+
 // Event listeners for monitoring
 assignmentQueue.on('waiting', (job) => {
   console.log(`📋 Job ${job.id} is waiting in queue`);
@@ -54,7 +120,8 @@ assignmentQueue.on('completed', (job, result) => {
 });
 
 assignmentQueue.on('failed', (job, err) => {
-  console.error(`❌ Job ${job?.id} failed:`, err.message);
+  const retryable = err?.retryable !== false && !err?.nonRetryable;
+  console.error(`❌ ${buildJobMeta(job?.id, job?.data)} | ${retryable ? 'retryable' : 'non-retryable'} failure | ${err.message}`);
 });
 
 assignmentQueue.on('stalled', (job) => {
@@ -84,13 +151,19 @@ const scheduleAssignmentRequest = async (data, scheduledTime) => {
   const jobId = data.bookingId 
     ? `assignment-${data.bookingId}` 
     : `assignment-${data.customerId}-${scheduledTime.getTime()}`;
+
+  const validation = await validateEntitiesBeforeEnqueue(jobId, data);
+  if (!validation.ok) {
+    return validation.result;
+  }
+  const jobData = validation.normalizedData;
   
   if (delay < 0) {
     console.log(`⚠️ Scheduled time is in the past, executing immediately`);
     console.log(`🆔 Job ID: ${jobId}`);
     return await assignmentQueue.add(
       JOB_TYPES.CREATE_ASSIGNMENT_REQUEST,
-      data,
+      jobData,
       { 
         priority: 1, // High priority for immediate jobs
         jobId: jobId
@@ -104,7 +177,7 @@ const scheduleAssignmentRequest = async (data, scheduledTime) => {
   
   return await assignmentQueue.add(
     JOB_TYPES.CREATE_ASSIGNMENT_REQUEST,
-    data,
+    jobData,
     {
       delay, // Delay in milliseconds
       jobId: jobId,
@@ -273,12 +346,16 @@ const resumeQueue = async () => {
  * @returns {Promise<void>}
  */
 const closeQueue = async () => {
+  if (assignmentQueueScheduler?.close) {
+    await assignmentQueueScheduler.close();
+  }
   await assignmentQueue.close();
   console.log('🔌 Assignment queue closed');
 };
 
 module.exports = {
   assignmentQueue,
+  assignmentQueueScheduler,
   JOB_TYPES,
   scheduleAssignmentRequest,
   scheduleAllAssignments,

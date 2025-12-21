@@ -14,6 +14,7 @@ const {
   getAvailableSlots,
   getBookingStats
 } = require('../controllers/bookingController');
+const { customerCompleteBookingWithQR } = require('../controllers/customerBookingCompletionController');
 
 // Customer routes
 router.post('/', authenticateToken, createBooking);
@@ -22,6 +23,7 @@ router.get('/available-slots', authenticateToken, getAvailableSlots);
 router.get('/stats', authenticateToken, getBookingStats);
 router.put('/:id/cancel', authenticateToken, cancelBooking);
 router.post('/complete-payment', authenticateToken, completeBookingPayment);
+router.post('/:bookingId/complete-with-qr', authenticateToken, customerCompleteBookingWithQR);
 
 // Maid routes
 router.get('/my-assignments', authenticateToken, getMaidBookings);

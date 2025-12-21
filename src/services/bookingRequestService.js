@@ -256,6 +256,32 @@ const scheduleBookingRequestForAssignment = async (assignment) => {
     console.log(`   📋 Scheduling job for: ${formatInIST(requestTime)}`);
     const job = await scheduleAssignmentRequest(jobData, requestTime);
 
+    if (job?.skipped) {
+      console.warn(`   [JOB SKIPPED] ${job.reason || 'VALIDATION_FAILED'} | customerId=${customer.id} maidId=${maid.id}`);
+      return {
+        success: true,
+        action: 'skipped',
+        customerId: customer.id,
+        customerName: customer.name,
+        maidId: maid.id,
+        maidName: maid.user.name,
+        reason: job.reason || 'Validation failed',
+        serviceDateTime: serviceDateTime.toISOString(),
+        requestTime: requestTime.toISOString(),
+        jobId: null
+      };
+    }
+
+    if (!job?.id) {
+      return {
+        success: false,
+        action: 'error',
+        customerId: customer.id,
+        customerName: customer.name,
+        error: 'Failed to schedule assignment job'
+      };
+    }
+
     console.log(`   ✅ Job scheduled successfully (Job ID: ${job.id})`);
 
     return {

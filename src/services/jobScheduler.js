@@ -39,6 +39,11 @@ class JobScheduler {
       await this.scheduleAllActiveAssignments();
       console.log('✅ Scheduled jobs for all active assignments');
 
+      // On startup, also trigger immediate processing so customers within the <=20h window
+      // don't wait until the next hourly recurring run.
+      await scheduleAllAssignments();
+      console.log('✅ Triggered immediate processing of assignments on startup');
+
       console.log('🎉 Job Scheduler initialized successfully');
     } catch (error) {
       console.error('❌ Failed to initialize Job Scheduler:', error);
@@ -206,6 +211,24 @@ class JobScheduler {
       };
 
       const job = await scheduleAssignmentRequest(jobData, requestTime);
+
+      if (job?.skipped) {
+        console.warn(`⚠️ Assignment job not enqueued for ${metadata.customerName || customerId}: ${job.reason}`);
+        return {
+          success: false,
+          customerId,
+          reason: job.reason || 'Validation failed',
+          skipped: true
+        };
+      }
+
+      if (!job?.id) {
+        return {
+          success: false,
+          customerId,
+          reason: 'Failed to schedule assignment job'
+        };
+      }
 
       console.log(`✅ Scheduled assignment for ${metadata.customerName || customerId}`);
       console.log(`   Job ID: ${job.id}`);

@@ -28,6 +28,106 @@ const prisma = new PrismaClient();
 // Create Redis connection for worker
 const connection = createRedisConnection();
 
+const formatJobMeta = (job, data = {}) => {
+  return `job=${job?.id ?? 'n/a'} name=${job?.name ?? 'n/a'} customerId=${data.customerId ?? 'n/a'} maidId=${data.maidId ?? 'n/a'} maidUserId=${data.maidUserId ?? 'n/a'}`;
+};
+
+const buildSkipResult = (data, code, message) => ({
+  success: false,
+  customerId: data.customerId,
+  customerName: data.customerName,
+  maidId: data.maidId,
+  maidUserId: data.maidUserId,
+  reason: code,
+  retryable: false,
+  message: message || code
+});
+
+const computeAssignmentRequestExpiry = (serviceDateTime, now = new Date()) => {
+  const latestUsefulExpiry = new Date(serviceDateTime.getTime() - (2 * 60 * 60 * 1000));
+  const defaultExpiry = new Date(now.getTime() + (24 * 60 * 60 * 1000));
+
+  // Prefer a bounded expiry window from "now", but don't exceed close-to-service cutoff.
+  let expiresAt = defaultExpiry;
+  if (expiresAt > latestUsefulExpiry) {
+    expiresAt = latestUsefulExpiry;
+  }
+
+  // If the cutoff is already in the past (worker ran late), still give the maid a short window.
+  if (expiresAt <= now) {
+    expiresAt = new Date(now.getTime() + (30 * 60 * 1000));
+  }
+
+  return expiresAt;
+};
+
+const validationFailure = (job, data, code, message) => {
+  console.warn(`[JOB SKIPPED] ${formatJobMeta(job, data)} | ${code} | non-retryable${message ? ` | ${message}` : ''}`);
+  return { ok: false, result: buildSkipResult(data, code, message) };
+};
+
+const handleNonRetryablePrismaError = (error, job, data, stage) => {
+  if (error?.code === 'P2003') {
+    console.warn(`[JOB SKIPPED] ${formatJobMeta(job, data)} | FK_CONSTRAINT | non-retryable | stage=${stage} | ${error.message}`);
+    return buildSkipResult(data, 'FOREIGN_KEY_CONSTRAINT', error.message);
+  }
+  return null;
+};
+
+const validateJobEntities = async (data, job) => {
+  const { customerId, maidId, maidUserId } = data;
+
+  if (!customerId) {
+    return validationFailure(job, data, 'CUSTOMER_ID_MISSING', 'Job payload missing customerId');
+  }
+
+  const customer = await prisma.user.findUnique({
+    where: { id: customerId },
+    select: { id: true, address: true, name: true }
+  });
+
+  if (!customer) {
+    return validationFailure(job, data, 'CUSTOMER_NOT_FOUND', 'Customer does not exist');
+  }
+
+  if (!maidId) {
+    return validationFailure(job, data, 'MAID_ID_MISSING', 'Job payload missing maidId');
+  }
+
+  const maidProfile = await prisma.maidProfile.findUnique({
+    where: { id: maidId },
+    include: {
+      user: true
+    }
+  });
+
+  if (!maidProfile) {
+    return validationFailure(job, data, 'MAID_PROFILE_NOT_FOUND', 'Maid profile does not exist');
+  }
+
+  if (!maidProfile.user) {
+    return validationFailure(job, data, 'MAID_USER_NOT_FOUND', 'Maid profile missing linked user');
+  }
+
+  if (maidUserId) {
+    const maidUser = await prisma.user.findUnique({
+      where: { id: maidUserId },
+      select: { id: true }
+    });
+
+    if (!maidUser) {
+      return validationFailure(job, data, 'MAID_USER_NOT_FOUND', 'Maid user does not exist');
+    }
+  }
+
+  return {
+    ok: true,
+    customer,
+    maidProfile,
+    maidUserId: maidUserId || maidProfile.user.id
+  };
+};
+
 // Job processor function
 const processJob = async (job) => {
   console.log(`\n🔄 Processing job: ${job.name} (ID: ${job.id})`);
@@ -36,22 +136,26 @@ const processJob = async (job) => {
   try {
     switch (job.name) {
       case JOB_TYPES.CREATE_ASSIGNMENT_REQUEST:
-        return await createAssignmentRequest(job.data);
+        return await createAssignmentRequest(job.data, job);
       
       case JOB_TYPES.PROCESS_ALL_ASSIGNMENTS:
-        return await processAllAssignments(job.data);
+        return await processAllAssignments(job);
       
       case JOB_TYPES.HANDLE_EXPIRED_REQUESTS:
-        return await handleExpiredRequests(job.data);
+        return await handleExpiredRequests(job);
       
       case JOB_TYPES.SEND_REMINDER:
-        return await sendReminder(job.data);
+        return await sendReminder(job);
       
       default:
         throw new Error(`Unknown job type: ${job.name}`);
     }
   } catch (error) {
-    console.error(`❌ Job ${job.id} failed:`, error);
+    const retryable = error?.retryable !== false && !error?.nonRetryable;
+    console.error(`❌ ${formatJobMeta(job, job.data)} | ${retryable ? 'system failure (retryable)' : 'non-retryable failure'} | ${error.message}`);
+    if (!retryable) {
+      return buildSkipResult(job.data || {}, 'NON_RETRYABLE_ERROR', error.message);
+    }
     throw error; // Re-throw to mark job as failed
   }
 };
@@ -59,9 +163,23 @@ const processJob = async (job) => {
 /**
  * Create assignment request for a single customer
  */
-const createAssignmentRequest = async (data) => {
-  const { customerId, maidId, timeSlot, customerName, maidName } = data;
-  
+const createAssignmentRequest = async (data, jobContext = {}) => {
+  const { customerId, maidId, timeSlot } = data;
+
+  if (!timeSlot) {
+    return validationFailure(jobContext, data, 'TIME_SLOT_MISSING', 'Job payload missing timeSlot');
+  }
+
+  const validation = await validateJobEntities(data, jobContext);
+  if (!validation.ok) {
+    return validation.result;
+  }
+
+  const { customer, maidProfile, maidUserId } = validation;
+  const customerName = data.customerName || customer.name || 'Customer';
+  const maidName = data.maidName || maidProfile.user?.name || 'Maid';
+  data.maidUserId = maidUserId;
+
   console.log(`📝 Creating assignment request for customer: ${customerName}`);
 
   // Check if customer is in buffer period
@@ -72,12 +190,14 @@ const createAssignmentRequest = async (data) => {
       success: false,
       customerId,
       customerName,
-      reason: 'Customer in buffer period'
+      reason: 'Customer in buffer period',
+      retryable: false
     };
   }
 
   // Calculate service date and time
   const serviceDateTime = getNextServiceDateTime(timeSlot);
+  const expiresAt = computeAssignmentRequestExpiry(serviceDateTime);
   
   // Check if assignment request already exists for this service time
   const existingRequest = await prisma.assignmentRequest.findFirst({
@@ -100,7 +220,8 @@ const createAssignmentRequest = async (data) => {
       success: false,
       customerId,
       customerName,
-      reason: 'Request already exists'
+      reason: 'Request already exists',
+      retryable: false
     };
   }
 
@@ -122,35 +243,36 @@ const createAssignmentRequest = async (data) => {
     throw new Error('No active service found');
   }
 
-  // Get customer details
-  const customer = await prisma.user.findUnique({
-    where: { id: customerId },
-    select: { address: true }
-  });
-
-  const maidProfile = await prisma.maidProfile.findUnique({ where: { id: maidId }, include: { user: true } });
   const isMaidAvailable = !(
     maidProfile?.availability && maidProfile.availability.isAvailable === false
   );
 
   if (!isMaidAvailable) {
-    const booking = await prisma.booking.create({
-      data: {
-        customerId: customerId,
-        maidId: null,
-        serviceId: defaultService.id,
-        scheduledAt: serviceDateTime,
-        timeSlot: timeSlot,
-        status: 'CANCELLED',
-        assignmentStatus: 'REJECTED',
-        rejectionReason: 'Maid unavailable',
-        totalAmount: defaultService.basePrice,
-        finalAmount: defaultService.basePrice,
-        serviceAddress: customer?.address || 'Customer Address',
-        estimatedDuration: defaultService.baseDuration,
-        specialInstructions: `Automatic booking for ${timeSlot} time slot`
-      }
-    });
+    let booking;
+    try {
+      booking = await prisma.booking.create({
+        data: {
+          customerId: customerId,
+          maidId: null,
+          serviceId: defaultService.id,
+          scheduledAt: serviceDateTime,
+          timeSlot: timeSlot,
+          status: 'CANCELLED',
+          assignmentStatus: 'REJECTED',
+          rejectionReason: 'Maid unavailable',
+          totalAmount: defaultService.basePrice,
+          finalAmount: defaultService.basePrice,
+          serviceAddress: customer?.address || 'Customer Address',
+          estimatedDuration: defaultService.baseDuration,
+          specialInstructions: `Automatic booking for ${timeSlot} time slot`
+        }
+      });
+    } catch (error) {
+      const handled = handleNonRetryablePrismaError(error, jobContext, data, 'booking.create.unavailable');
+      if (handled) return handled;
+      throw error;
+    }
+
     try {
       await queueRejectedAssignment({
         bookingId: booking.id,
@@ -171,31 +293,45 @@ const createAssignmentRequest = async (data) => {
     };
   }
 
-  const booking = await prisma.booking.create({
-    data: {
-      customerId: customerId,
-      maidId: data.maidUserId,
-      serviceId: defaultService.id,
-      scheduledAt: serviceDateTime,
-      timeSlot: timeSlot,
-      status: 'PENDING',
-      assignmentStatus: 'PENDING_ASSIGNMENT',
-      totalAmount: defaultService.basePrice,
-      finalAmount: defaultService.basePrice,
-      serviceAddress: customer?.address || 'Customer Address',
-      estimatedDuration: defaultService.baseDuration,
-      specialInstructions: `Automatic booking for ${timeSlot} time slot`
-    }
-  });
+  let booking;
+  try {
+    booking = await prisma.booking.create({
+      data: {
+        customerId: customerId,
+        maidId: maidUserId,
+        serviceId: defaultService.id,
+        scheduledAt: serviceDateTime,
+        timeSlot: timeSlot,
+        status: 'PENDING',
+        assignmentStatus: 'PENDING_ASSIGNMENT',
+        totalAmount: defaultService.basePrice,
+        finalAmount: defaultService.basePrice,
+        serviceAddress: customer?.address || 'Customer Address',
+        estimatedDuration: defaultService.baseDuration,
+        specialInstructions: `Automatic booking for ${timeSlot} time slot`
+      }
+    });
+  } catch (error) {
+    const handled = handleNonRetryablePrismaError(error, jobContext, data, 'booking.create');
+    if (handled) return handled;
+    throw error;
+  }
 
-  const assignmentRequest = await prisma.assignmentRequest.create({
-    data: {
-      bookingId: booking.id,
-      maidId: maidId,
-      expiresAt: new Date(serviceDateTime.getTime() - (2 * 60 * 60 * 1000)),
-      status: 'pending'
-    }
-  });
+  let assignmentRequest;
+  try {
+    assignmentRequest = await prisma.assignmentRequest.create({
+      data: {
+        bookingId: booking.id,
+        maidId: maidId,
+        expiresAt,
+        status: 'pending'
+      }
+    });
+  } catch (error) {
+    const handled = handleNonRetryablePrismaError(error, jobContext, data, 'assignmentRequest.create');
+    if (handled) return handled;
+    throw error;
+  }
 
   console.log(`✅ Created assignment request for ${customerName} (${timeSlot})`);
   console.log(`   Booking ID: ${booking.id}`);
@@ -206,8 +342,8 @@ const createAssignmentRequest = async (data) => {
   try {
     await prisma.notification.create({
       data: {
-        userId: data.maidUserId,
-        type: 'ASSIGNMENT_REQUEST',
+        userId: maidUserId,
+        type: 'SERVICE_ASSIGNED',
         title: 'New Booking Request',
         message: `You have a new booking request from ${customerName} for ${timeSlot} time slot.`,
         data: {
@@ -240,7 +376,7 @@ const createAssignmentRequest = async (data) => {
 /**
  * Process all active customer assignments
  */
-const processAllAssignments = async (data) => {
+const processAllAssignments = async (job) => {
   console.log(`🔄 Processing all active customer assignments...`);
   
   // Get all active customer assignments
@@ -305,6 +441,9 @@ const processAllAssignments = async (data) => {
         timeSlot,
         customerName: assignment.customer.name,
         maidName: assignment.maid.user.name
+      }, {
+        id: `${job?.id || 'process-all'}:${assignment.customerId}`,
+        name: JOB_TYPES.CREATE_ASSIGNMENT_REQUEST
       });
 
       if (result.success) {
@@ -338,7 +477,7 @@ const processAllAssignments = async (data) => {
 /**
  * Handle expired assignment requests
  */
-const handleExpiredRequests = async (data) => {
+const handleExpiredRequests = async (job) => {
   console.log(`🔄 Checking for expired assignment requests...`);
 
   const now = new Date();
@@ -415,7 +554,7 @@ const handleExpiredRequests = async (data) => {
 /**
  * Send reminder notifications
  */
-const sendReminder = async (data) => {
+const sendReminder = async (job) => {
   console.log(`🔔 Sending reminder notification...`);
   // Implementation for sending reminders (SMS, email, push notification)
   // This can be integrated with notification service
@@ -484,8 +623,9 @@ worker.on('completed', (job, result) => {
 });
 
 worker.on('failed', (job, err) => {
-  console.error(`❌ Job ${job?.id} failed:`, err.message);
-  console.error(`   Attempts: ${job?.attemptsMade}/${job?.opts.attempts}`);
+  const retryable = err?.retryable !== false && !err?.nonRetryable;
+  console.error(`❌ ${formatJobMeta(job, job?.data)} | ${retryable ? 'retryable' : 'non-retryable'} failure | ${err.message}`);
+  console.error(`   Attempts: ${job?.attemptsMade}/${job?.opts?.attempts}`);
 });
 
 worker.on('error', (err) => {
