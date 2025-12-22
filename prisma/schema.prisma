@@ -49,6 +49,9 @@ model User {
   customerAssignments CustomerMaidAssignment[] @relation("CustomerAssignments")
   customerAssignmentRequests CustomerAssignmentRequest[] @relation("CustomerAssignmentRequests")
   adminAssignmentRequests    CustomerAssignmentRequest[] @relation("AdminAssignmentRequests")
+  feedbackAudits      FeedbackAudit[]  @relation("AdminFeedbackAudits")
+  maidRatingHistories MaidRatingHistory[] @relation("MaidRatingHistories")
+  maidMonthlyPerformances MaidMonthlyPerformance[] @relation("MaidMonthlyPerformances")
 
   @@index([email])
   @@index([phone])
@@ -318,13 +321,29 @@ model Feedback {
   wouldRecommend    Boolean?
   adminResponse     String?
   adminResponseAt   DateTime?
+  
+  // New fields for enhanced system
+  status            FeedbackStatus @default(ACTIVE)
+  weight            Float @default(1.0)
+  isWeightAdjusted  Boolean @default(false)
+  disputeReason     String?
+  resolutionNote    String?
+  verificationFlag  Boolean @default(false)
+  isMaidAcknowledged Boolean @default(false)
+  maidAcknowledgedAt DateTime?
+  
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+  
   booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   customer          User      @relation(fields: [customerId], references: [id])
+  auditEntries      FeedbackAudit[]
 
   @@index([customerId])
   @@index([overallRating])
+  @@index([status])
+  @@index([isWeightAdjusted])
+  @@index([verificationFlag])
 }
 
 model Payment {
@@ -918,6 +937,25 @@ enum BufferReason {
   EMERGENCY
 }
 
+enum FeedbackStatus {
+  ACTIVE
+  DISPUTED
+  RESOLVED
+  REMOVED
+  INVALID
+}
+
+enum FeedbackAuditAction {
+  CREATED
+  DISPUTED
+  RESOLVED
+  WEIGHT_ADJUSTED
+  REMOVED
+  RATING_ADJUSTED
+  STATUS_CHANGED
+  ADMIN_RESPONSE_ADDED
+}
+
 enum AssignmentStatus {
   PENDING_ASSIGNMENT
   ASSIGNED_PENDING_RESPONSE
@@ -990,13 +1028,86 @@ model CustomerMaidAssignment {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   
-  customer    User      @relation("CustomerAssignments", fields: [customerId], references: [id], onDelete: Cascade)
-  maid        MaidProfile @relation("MaidAssignments", fields: [maidId], references: [id], onDelete: Cascade)
+  customer        User                @relation("CustomerAssignments", fields: [customerId], references: [id], onDelete: Cascade)
+  maid            MaidProfile         @relation("MaidAssignments", fields: [maidId], references: [id], onDelete: Cascade)
   
   @@unique([customerId, isActive])
   @@index([customerId])
   @@index([maidId])
   @@index([isActive])
+}
+
+// Track all admin actions on feedback
+model FeedbackAudit {
+  id               String   @id @default(uuid())
+  feedbackId       String
+  adminId          String
+  action           FeedbackAuditAction
+  previousValue    Json?    // Store previous state for comparison
+  newValue         Json?    // Store new state for comparison
+  deltaRating      Float?   // Impact on maid's rating
+  note             String?  // Reason for action
+  createdAt        DateTime @default(now())
+  
+  feedback         Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  admin            User     @relation("AdminFeedbackAudits", fields: [adminId], references: [id])
+
+  @@index([feedbackId])
+  @@index([adminId])
+  @@index([createdAt])
+  @@index([action])
+}
+
+// Track daily rating snapshots for trend analysis
+model MaidRatingHistory {
+  id               String   @id @default(uuid())
+  maidId           String
+  date             DateTime // Daily snapshot (date only, no time)
+  rating           Float
+  totalRatings     Int
+  averageQuality   Float?
+  averagePunctuality Float?
+  averageBehavior  Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  maid             User     @relation("MaidRatingHistories", fields: [maidId], references: [id], onDelete: Cascade)
+
+  @@unique([maidId, date])
+  @@index([maidId])
+  @@index([date])
+}
+
+// Track monthly performance metrics
+model MaidMonthlyPerformance {
+  id               String   @id @default(uuid())
+  maidId           String
+  month            Int      // 1-12
+  year             Int
+  
+  totalBookings    Int      @default(0)
+  totalRatings     Int      @default(0)
+  averageRating    Float    @default(0)
+  averageQuality   Float?
+  averagePunctuality Float?
+  averageBehavior  Float?
+  
+  positiveCount    Int      @default(0) // 4-5 stars
+  neutralCount     Int      @default(0) // 3 stars
+  negativeCount    Int      @default(0) // 1-2 stars
+  
+  feedbackCount    Int      @default(0)
+  withCommentsCount Int     @default(0)
+  recommendCount   Int      @default(0)
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  maid             User     @relation("MaidMonthlyPerformances", fields: [maidId], references: [id], onDelete: Cascade)
+
+  @@unique([maidId, month, year])
+  @@index([maidId])
+  @@index([year, month])
 }
 
 
