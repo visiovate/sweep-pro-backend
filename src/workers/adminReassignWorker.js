@@ -70,54 +70,23 @@ const processRejectedAssignment = async (data) => {
       throw new Error(`Booking ${bookingId} not found`);
     }
 
-    // Update assignment request status to rejected
-    await prisma.assignmentRequest.updateMany({
-      where: {
-        bookingId: bookingId,
-        maidId: maidId,
-        status: 'pending'
-      },
-      data: {
-        status: 'rejected',
-        rejectionReason: rejectionReason,
-        respondedAt: new Date()
-      }
-    });
-
-    // Update booking status for reassignment
-    await prisma.booking.update({
-      where: { id: bookingId },
-      data: {
-        assignmentStatus: 'REJECTED',
-        rejectionReason: rejectionReason,
-        reassignmentCount: { increment: 1 },
-        updatedAt: new Date()
-      }
-    });
-
-    if (rejectionReason === 'Maid unavailable') {
-      await notifyAdminReassignment({
-        bookingId,
-        customerId,
-        maidId,
-        reason: rejectionReason
-      });
-    } else {
-      const rejectedMaidIds = booking.assignmentRequests
-        .map(req => req.maidId)
-        .concat(maidId);
-      await findAlternativeMaid({
-        bookingId,
-        excludedMaidIds: rejectedMaidIds,
-        customerId
-      });
-      await notifyAdminReassignment({
-        bookingId,
-        customerId,
-        maidId,
-        reason: rejectionReason
+    if (booking.assignmentStatus !== 'REJECTED') {
+      await prisma.booking.update({
+        where: { id: bookingId },
+        data: {
+          assignmentStatus: 'REJECTED',
+          rejectionReason: rejectionReason,
+          updatedAt: new Date()
+        }
       });
     }
+
+    await notifyAdminReassignment({
+      bookingId,
+      customerId,
+      maidId,
+      reason: rejectionReason
+    });
 
     console.log(`✅ Processed rejected assignment for booking ${bookingId}`);
     
@@ -126,7 +95,7 @@ const processRejectedAssignment = async (data) => {
       bookingId,
       rejectedMaidId: maidId,
       rejectionReason,
-      reassignmentCount: booking.reassignmentCount + 1
+      reassignmentCount: booking.reassignmentCount
     };
 
   } catch (error) {

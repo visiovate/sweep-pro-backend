@@ -524,12 +524,25 @@ const handleExpiredRequests = async (job) => {
       await prisma.booking.update({
         where: { id: request.bookingId },
         data: {
-          assignmentStatus: 'NEEDS_REASSIGNMENT',
+          status: 'CANCELLED',
+          maidId: null,
+          assignmentStatus: 'REJECTED',
+          rejectionReason: 'Assignment request expired',
+          maidResponseAt: now,
           reassignmentCount: {
             increment: 1
           }
         }
       });
+
+      try {
+        await queueRejectedAssignment({
+          bookingId: request.bookingId,
+          maidId: request.maidId,
+          rejectionReason: 'Assignment request expired',
+          customerId: request.booking.customerId
+        });
+      } catch (e) {}
 
       console.log(`✅ Marked request ${request.id} as expired (Booking: ${request.bookingId})`);
 

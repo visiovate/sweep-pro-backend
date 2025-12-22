@@ -1079,7 +1079,7 @@ const getReassignmentBookings = async (req, res) => {
         customer: true,
         maid: true,
         assignmentRequests: {
-          where: { status: 'rejected' },
+          where: { status: { in: ['rejected', 'expired'] } },
           include: {
             maid: { include: { user: true } }
           },
@@ -1108,14 +1108,16 @@ const getReassignmentBookings = async (req, res) => {
     const transformedBookings = bookings.map(booking => {
       const transformed = transformBookingForFrontend(booking);
       
-      // Add rejection details from the most recent rejected assignment request
+      // Add last attempt details from the most recent rejected/expired assignment request
       if (booking.assignmentRequests && booking.assignmentRequests.length > 0) {
-        const rejectedRequest = booking.assignmentRequests[0];
-        transformed.lastRejectedBy = {
-          maidId: rejectedRequest.maidId,
-          maidName: rejectedRequest.maid?.user?.name || 'Unknown',
-          rejectionReason: rejectedRequest.rejectionReason,
-          rejectedAt: rejectedRequest.respondedAt
+        const lastRequest = booking.assignmentRequests[0];
+        transformed.lastAttempt = {
+          maidProfileId: lastRequest.maidId,
+          maidUserId: lastRequest.maid?.user?.id,
+          maidName: lastRequest.maid?.user?.name || 'Unknown',
+          status: lastRequest.status,
+          reason: lastRequest.status === 'expired' ? 'Assignment request expired' : lastRequest.rejectionReason,
+          respondedAt: lastRequest.respondedAt
         };
       }
       
