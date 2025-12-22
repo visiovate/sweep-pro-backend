@@ -736,14 +736,14 @@ async function calculateProfileStats(userId, role) {
             maidId: userId
           }
         },
-        _avg: { rating: true },
-        _count: true
+        _avg: { overallRating: true },
+        _count: { _all: true }
       });
 
       stats.completedBookings = completedBookings;
       stats.totalEarnings = totalEarnings._sum.amount || 0;
-      stats.averageRating = avgRating._avg.rating || 0;
-      stats.totalRatings = avgRating._count;
+      stats.averageRating = avgRating._avg.overallRating || 0;
+      stats.totalRatings = avgRating._count._all;
       stats.totalActivity = completedBookings;
 
       // Update maid profile with stats
@@ -753,8 +753,8 @@ async function calculateProfileStats(userId, role) {
           data: {
             completedBookings,
             totalEarnings: totalEarnings._sum.amount || 0,
-            rating: avgRating._avg.rating || 0,
-            totalRatings: avgRating._count
+            rating: avgRating._avg.overallRating || 0,
+            totalRatings: avgRating._count._all
           }
         });
       }
