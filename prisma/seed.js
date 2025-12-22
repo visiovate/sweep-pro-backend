@@ -13,7 +13,7 @@ async function main() {
       where: { email: 'admin@sweepro.com' },
       update: {},
       create: {
-        email: 'admin@sweepro.com',
+       email: 'admin@sweepro.com',
         name: 'Admin User',
         password: hashedAdminPassword,
         phone: '9876543210',
@@ -1173,6 +1173,144 @@ async function main() {
     console.log('  • 5 CONFIRMED bookings (from previous section)');
     console.log('\n📊 Total: 14 bookings with different statuses for comprehensive testing');
     
+    // Create sample feedback for completed bookings
+    console.log('\n⭐ Creating sample feedback data...');
+    
+    // Get completed bookings
+    const completedBookings = await prisma.booking.findMany({
+      where: {
+        status: 'COMPLETED',
+        maidId: { not: null }
+      },
+      include: {
+        customer: true,
+        maid: true
+      },
+      take: 5
+    });
+
+    const feedbackData = [
+      {
+        overallRating: 5,
+        qualityRating: 5,
+        punctualityRating: 5,
+        behaviorRating: 5,
+        comment: 'Excellent service! The maid was very professional and thorough. Everything was cleaned perfectly.',
+        improvements: null,
+        wouldRecommend: true
+      },
+      {
+        overallRating: 4,
+        qualityRating: 4,
+        punctualityRating: 5,
+        behaviorRating: 4,
+        comment: 'Great service overall. Very punctual and professional. Minor improvements could be made in deep cleaning corners.',
+        improvements: 'Could pay more attention to hard-to-reach areas',
+        wouldRecommend: true
+      },
+      {
+        overallRating: 5,
+        qualityRating: 5,
+        punctualityRating: 4,
+        behaviorRating: 5,
+        comment: 'Outstanding work! Very satisfied with the cleaning quality. Highly recommend.',
+        improvements: null,
+        wouldRecommend: true
+      },
+      {
+        overallRating: 3,
+        qualityRating: 3,
+        punctualityRating: 3,
+        behaviorRating: 4,
+        comment: 'Service was okay but could be better. Some areas were missed during cleaning.',
+        improvements: 'Need more thorough cleaning, especially in bathrooms and kitchen',
+        wouldRecommend: false
+      },
+      {
+        overallRating: 4,
+        qualityRating: 4,
+        punctualityRating: 4,
+        behaviorRating: 4,
+        comment: 'Good service. Professional and courteous. Would use again.',
+        improvements: null,
+        wouldRecommend: true
+      }
+    ];
+
+    for (let i = 0; i < completedBookings.length && i < feedbackData.length; i++) {
+      const booking = completedBookings[i];
+      const feedback = feedbackData[i];
+
+      // Check if feedback already exists
+      const existingFeedback = await prisma.feedback.findUnique({
+        where: { bookingId: booking.id }
+      });
+
+      if (!existingFeedback && booking.maidId) {
+        await prisma.feedback.create({
+          data: {
+            bookingId: booking.id,
+            customerId: booking.customerId,
+            overallRating: feedback.overallRating,
+            qualityRating: feedback.qualityRating,
+            punctualityRating: feedback.punctualityRating,
+            behaviorRating: feedback.behaviorRating,
+            comment: feedback.comment,
+            improvements: feedback.improvements,
+            wouldRecommend: feedback.wouldRecommend
+          }
+        });
+
+        // Update maid profile rating
+        if (booking.maid?.maidProfile) {
+          const maidProfile = await prisma.maidProfile.findUnique({
+            where: { id: booking.maid.maidProfile.id },
+            include: {
+              user: {
+                include: {
+                  maidBookings: {
+                    include: {
+                      feedback: true
+                    }
+                  }
+                }
+              }
+            }
+          });
+
+          if (maidProfile) {
+            // Calculate average rating from all feedback
+            const allFeedbacks = await prisma.feedback.findMany({
+              where: {
+                booking: {
+                  maidId: booking.maidId,
+                  status: 'COMPLETED'
+                }
+              },
+              select: {
+                overallRating: true
+              }
+            });
+
+            if (allFeedbacks.length > 0) {
+              const averageRating = allFeedbacks.reduce((sum, f) => sum + f.overallRating, 0) / allFeedbacks.length;
+              
+              await prisma.maidProfile.update({
+                where: { id: maidProfile.id },
+                data: {
+                  rating: averageRating,
+                  totalRatings: allFeedbacks.length
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`✅ Created ${Math.min(completedBookings.length, feedbackData.length)} feedback entries`);
+    console.log('✅ Updated maid profile ratings based on feedback');
+
     console.log('\n💳 All customers now have active subscriptions and can create bookings!');
     console.log('\n🧪 Test Users Created:');
     console.log('- admin@sweepro.com (password: admin123) - Admin');
