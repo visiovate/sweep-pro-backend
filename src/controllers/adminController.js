@@ -43,10 +43,20 @@ const getActiveCustomers = async (req, res) => {
 // Get pending bookings that need maid assignment
 const getPendingBookings = async (req, res) => {
   try {
+    console.log('🔍 Fetching pending bookings for admin...');
+    
     const bookings = await prisma.booking.findMany({
       where: {
-        status: 'CONFIRMED',
-        maidId: null
+        OR: [
+          {
+            status: 'PENDING',
+            maidId: null
+          },
+          {
+            status: 'CONFIRMED',
+            maidId: null
+          }
+        ]
       },
       include: {
         customer: {
@@ -67,6 +77,8 @@ const getPendingBookings = async (req, res) => {
       }
     });
 
+    console.log(`✅ Found ${bookings.length} pending bookings`);
+    
     res.json({
       success: true,
       data: bookings

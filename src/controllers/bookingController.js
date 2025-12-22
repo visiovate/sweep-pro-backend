@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
+const bookingDeduplicationService = require('../services/bookingDeduplicationService');
 const prisma = new PrismaClient();
 
 const createBooking = async (req, res) => {
@@ -304,38 +305,52 @@ const createBooking = async (req, res) => {
       console.log(`✅ Found assigned maid: ${customerAssignment.maid.user.name}, auto-sending assignment request...`);
       
       try {
-        // Automatically send assignment request to assigned maid
-        const expiresAt = new Date();
-        expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiry
+        // Check for duplicate booking request using Redis
+        const canProceed = await bookingDeduplicationService.checkAndMark(
+          customerId,
+          customerAssignment.maidId,
+          scheduledDate,
+          48 * 60 * 60 // 48 hours TTL
+        );
 
-        await prisma.$transaction(async (tx) => {
-          // Create assignment request
-          await tx.assignmentRequest.create({
-            data: {
-              bookingId: booking.id,
-              maidId: customerAssignment.maidId,
-              status: 'pending',
-              requestedAt: new Date(),
-              expiresAt: expiresAt
-            }
+        if (!canProceed) {
+          console.log(`🚫 Duplicate booking request prevented for customer ${customerId} with maid ${customerAssignment.maidId}`);
+          responseMessage = 'A booking request has already been sent to your assigned maid for this date. Please wait for their response.';
+          assignmentStatus = 'PENDING_ASSIGNMENT';
+        } else {
+          // Automatically send assignment request to assigned maid
+          const expiresAt = new Date();
+          expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiry
+
+          await prisma.$transaction(async (tx) => {
+            // Create assignment request
+            await tx.assignmentRequest.create({
+              data: {
+                bookingId: booking.id,
+                maidId: customerAssignment.maidId,
+                status: 'pending',
+                requestedAt: new Date(),
+                expiresAt: expiresAt
+              }
+            });
+
+            // Update booking status
+            await tx.booking.update({
+              where: { id: booking.id },
+              data: {
+                maidId: customerAssignment.maid.userId, // User ID for booking
+                status: 'ASSIGNED',
+                assignmentStatus: 'ASSIGNED_PENDING_RESPONSE',
+                assignedAt: new Date()
+              }
+            });
           });
 
-          // Update booking status
-          await tx.booking.update({
-            where: { id: booking.id },
-            data: {
-              maidId: customerAssignment.maid.userId, // User ID for booking
-              status: 'ASSIGNED',
-              assignmentStatus: 'ASSIGNED_PENDING_RESPONSE',
-              assignedAt: new Date()
-            }
-          });
-        });
-
-        responseMessage = `Booking request sent to your assigned maid (${customerAssignment.maid.user.name}). You will be notified once they respond.`;
-        assignmentStatus = 'ASSIGNED_PENDING_RESPONSE';
-        
-        console.log(`✅ Assignment request sent automatically to maid: ${customerAssignment.maid.user.name}`);
+          responseMessage = `Booking request sent to your assigned maid (${customerAssignment.maid.user.name}). You will be notified once they respond.`;
+          assignmentStatus = 'ASSIGNED_PENDING_RESPONSE';
+          
+          console.log(`✅ Assignment request sent automatically to maid: ${customerAssignment.maid.user.name}`);
+        }
       } catch (assignmentError) {
         console.error('❌ Failed to auto-assign maid:', assignmentError);
         responseMessage = 'Booking created but failed to auto-assign maid. Admin will assign manually.';
