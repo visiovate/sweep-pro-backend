@@ -49,6 +49,35 @@ const updateMaidProfile = async (req, res) => {
   }
 };
 
+const setMaidAvailability = async (req, res) => {
+  try {
+    const maidUserId = req.user.id;
+    const { isAvailable, note } = req.body;
+    if (typeof isAvailable !== 'boolean') {
+      return res.status(400).json({ error: 'isAvailable must be a boolean' });
+    }
+    const profile = await prisma.maidProfile.findUnique({ where: { userId: maidUserId } });
+    if (!profile) {
+      return res.status(404).json({ error: 'Maid profile not found' });
+    }
+    const currentAvailability = (profile.availability && typeof profile.availability === 'object') ? profile.availability : {};
+    const updatedAvailability = {
+      ...currentAvailability,
+      isAvailable,
+      note: note !== undefined ? note : currentAvailability.note,
+      updatedAt: new Date().toISOString()
+    };
+    const updated = await prisma.maidProfile.update({
+      where: { userId: maidUserId },
+      data: { availability: updatedAvailability }
+    });
+    res.json({ success: true, data: { isAvailable: !(updated.availability && updated.availability.isAvailable === false) } });
+  } catch (error) {
+    console.error('Error updating maid availability:', error);
+    res.status(500).json({ error: 'Failed to update availability' });
+  }
+};
+
 // Update maid status (admin only)
 const updateMaidStatus = async (req, res) => {
   try {
@@ -207,7 +236,7 @@ const completeService = async (req, res) => {
   }
 };
 
-// Get maid's assigned bookings
+
 const getMaidAssignments = async (req, res) => {
   try {
     const maidId = req.user.id;
@@ -351,6 +380,7 @@ module.exports = {
   getAllMaids,
   getMaidById,
   updateMaidProfile,
+  setMaidAvailability,
   updateMaidStatus,
   deleteMaid,
   verifyStartOTP,

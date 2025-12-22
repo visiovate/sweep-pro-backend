@@ -6,7 +6,11 @@ const {
   getMonthlyServiceCalendar,
   getBufferPeriodHistory,
   getSubscriptionCycleHistory,
-  getServicePreferences
+  getServicePreferences,
+  getDashboardRecentBookings,
+  getDashboardRecentNotifications,
+  getDashboardRecentPayments,
+  getDashboardStats
 } = require('../controllers/userDashboardController');
 
 // All routes require authentication
@@ -14,9 +18,15 @@ router.use(authenticateToken);
 
 // Dashboard routes
 router.get('/dashboard', getSubscriptionDashboard);
+router.get('/stats', getDashboardStats);
 router.get('/calendar', getMonthlyServiceCalendar);
 router.get('/buffer-history', getBufferPeriodHistory);
 router.get('/cycle-history', getSubscriptionCycleHistory);
 router.get('/preferences', getServicePreferences);
+
+// Instagram-style recent lists (cursor-based pagination)
+router.get('/recent/bookings', getDashboardRecentBookings);
+router.get('/recent/notifications', getDashboardRecentNotifications);
+router.get('/recent/payments', getDashboardRecentPayments);
 
 module.exports = router;

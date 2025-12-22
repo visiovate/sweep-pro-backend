@@ -140,6 +140,106 @@ async function main() {
       }
     });
 
+    // Create maid-to-customer assignments for the first 5 customers
+    console.log('\n🔗 Creating maid-to-customer assignments...');
+    
+    // Assign maid@sweepro.com to customer@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: customer.id,
+          maidId: maid.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: customer.id,
+        maidId: maid.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer@sweepro.com'
+      }
+    });
+    
+    // Assign maid2@sweepro.com to customer2@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: user2.id,
+          maidId: maid2.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: user2.id,
+        maidId: maid2.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer2@sweepro.com'
+      }
+    });
+    
+    // Assign maid3@sweepro.com to customer3@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: user3.id,
+          maidId: maid3.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: user3.id,
+        maidId: maid3.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer3@sweepro.com'
+      }
+    });
+    
+    // Assign maid4@sweepro.com to customer4@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: user4.id,
+          maidId: maid4.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: user4.id,
+        maidId: maid4.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer4@sweepro.com'
+      }
+    });
+    
+    // Assign maid5@sweepro.com to customer5@sweepro.com
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId_maidId: {
+          customerId: user5.id,
+          maidId: maid5.id
+        }
+      },
+      update: {},
+      create: {
+        customerId: user5.id,
+        maidId: maid5.id,
+        isActive: true,
+        assignedAt: new Date(),
+        assignedBy: admin.id,
+        notes: 'Initial assignment for customer5@sweepro.com'
+      }
+    });
+    
+    console.log('✅ Created maid-to-customer assignments for all 5 customers');
+
     // Create services
     const dailyCleaningService = await prisma.service.upsert({
       where: { id: 'daily-cleaning-service' },
@@ -153,7 +253,8 @@ async function main() {
         basePrice: 200.0,
         isActive: true,
         bufferTime: 30,
-        maxDailyBookings: 20
+        maxDailyBookings: 20,
+        isSubscriptionService: true // Mark as subscription service for automatic assignments
       }
     });
 
@@ -189,44 +290,102 @@ async function main() {
       }
     });
 
-    // Create subscription plans
-    const basicPlan = await prisma.servicePlan.upsert({
-      where: { id: 'basic-plan' },
+    // Create subscription plans - SweepPro Touch and SweepPro Lux
+    const sweepProTouchPlan = await prisma.servicePlan.upsert({
+      where: { id: 'sweepro-touch-plan' },
       update: {},
       create: {
+        id: 'sweepro-touch-plan',
+        name: 'SweepPro Touch',
+        description: 'Premium silver plan for medium-sized homes. Enjoy enhanced cleaning and priority service.',
+        serviceId: dailyCleaningService.id,
+
+        sessionsPerWeek: 7,
+        sessionsPerMonth: 30,
+        duration: 1, // 1 month
+        basePrice: 4500.0,
+        discountPercent: 10.0,
+        finalPrice: 4050.0, // 10% discount
+        isActive: true,
+        isPopular: false,
+        bufferDaysAllowed: 0, // No buffer system for Touch
+        hasBufferSystem: false
+      }
+    });
+
+    const sweepProLuxPlan = await prisma.servicePlan.upsert({
+      where: { id: 'sweepro-lux-plan' },
+      update: {
+        hasBufferSystem: true,
+        bufferDaysAllowed: 3
+      },
+      create: {
+        id: 'sweepro-lux-plan',
+        name: 'Sweepro Lux',
+        description: 'Ultimate cleaning experience for large homes and villas with luxury service.',
+        serviceId: deepCleaningService.id,
+
+        sessionsPerWeek: 4,
+        sessionsPerMonth: 16,
+        duration: 1, // 1 month
+        basePrice: 2499.0,
+        discountPercent: 20.0,
+        finalPrice: 1999.0, // 20% discount
+        isActive: true,
+        isPopular: true,
+        bufferDaysAllowed: 3, // Lux has 3 buffer days
+        hasBufferSystem: true
+      }
+    });
+
+    // Keep legacy plans for existing subscriptions
+    const basicPlan = await prisma.servicePlan.upsert({
+      where: { id: 'basic-plan' },
+      update: {
+        hasBufferSystem: false,
+        bufferDaysAllowed: 0
+      },
+      create: {
         id: 'basic-plan',
-        name: 'Basic Daily Cleaning',
+        name: 'Basic Daily Cleaning (Legacy)',
         description: 'Daily house cleaning service - Perfect for small homes',
         serviceId: dailyCleaningService.id,
+
         sessionsPerWeek: 7,
         sessionsPerMonth: 30,
         duration: 1, // 1 month
         basePrice: 6000.0,
         discountPercent: 10.0,
         finalPrice: 5400.0, // 10% discount
-        isActive: true,
+        isActive: false, // Deactivated - legacy only
         isPopular: false,
-        bufferDaysAllowed: 3
+        bufferDaysAllowed: 0, // No buffer days for legacy basic plan
+        hasBufferSystem: false // No buffer system for legacy basic plan
       }
     });
 
     const premiumPlan = await prisma.servicePlan.upsert({
       where: { id: 'premium-plan' },
-      update: {},
+      update: {
+        hasBufferSystem: false,
+        bufferDaysAllowed: 0
+      },
       create: {
         id: 'premium-plan',
-        name: 'Premium Deep Cleaning',
+        name: 'Premium Deep Cleaning (Legacy)',
         description: 'Deep cleaning service 3 times a week - For thorough cleanliness',
         serviceId: deepCleaningService.id,
+
         sessionsPerWeek: 3,
         sessionsPerMonth: 12,
         duration: 1, // 1 month
         basePrice: 7000.0,
         discountPercent: 15.0,
         finalPrice: 5950.0, // 15% discount
-        isActive: true,
-        isPopular: true,
-        bufferDaysAllowed: 3
+        isActive: false, // Deactivated - legacy only
+        isPopular: false,
+        bufferDaysAllowed: 0, // No buffer days for legacy premium plan
+        hasBufferSystem: false // No buffer system for legacy premium plan
       }
     });
 
@@ -235,18 +394,20 @@ async function main() {
       update: {},
       create: {
         id: 'standard-plan',
-        name: 'Standard Maintenance',
+        name: 'Standard Maintenance (Legacy)',
         description: 'Home maintenance service twice a week - Keep your home organized',
         serviceId: maintenanceService.id,
+
         sessionsPerWeek: 2,
         sessionsPerMonth: 8,
         duration: 1, // 1 month
         basePrice: 3500.0,
         discountPercent: 5.0,
         finalPrice: 3325.0, // 5% discount
-        isActive: true,
+        isActive: false, // Deactivated - legacy only
         isPopular: false,
-        bufferDaysAllowed: 3
+        bufferDaysAllowed: 3,
+        hasBufferSystem: false
       }
     });
 
@@ -257,12 +418,13 @@ async function main() {
     console.log('- Maid user: maid@sweepro.com (password: maid123)');
     console.log('- 3 Services: Daily Cleaning, Deep Cleaning, Maintenance');
 
-    console.log('- 3 Subscription Plans: Basic, Premium, Standard');
+    console.log('- 2 Active Subscription Plans: SweepPro Touch (₹4,050/month), SweepPro Lux (₹6,800/month)');
+    console.log('- 3 Legacy Subscription Plans: Basic, Premium, Standard (Inactive)');
 
     // Create subscriptions for all customers
     console.log('\n📋 Creating subscriptions and payments for customers...');
     
-    // Subscribe customer1 to basic plan
+    // Subscribe customer1 to SweepPro Touch plan
     const customer1Profile = await prisma.customerProfile.findUnique({
       where: { userId: customer.id }
     });
@@ -272,16 +434,16 @@ async function main() {
       update: {},
       create: {
         customerId: customer1Profile.id,
-        planId: basicPlan.id,
+        planId: sweepProTouchPlan.id,
         status: 'ACTIVE',
         startDate: new Date(),
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         billingCycle: 'MONTHLY',
-        amount: basicPlan.finalPrice,
-        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
         autoRenew: true,
         nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        bufferDaysCount: 3,
+        bufferDaysCount: 0,
         currentCycleStart: new Date(),
         currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
@@ -292,19 +454,38 @@ async function main() {
       data: {
         subscriptionId: subscription1.id,
         customerId: customer.id,
-        amount: basicPlan.finalPrice,
-        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
         tax: 0,
-        finalAmount: basicPlan.finalPrice,
+        finalAmount: sweepProTouchPlan.finalPrice,
         paymentMethod: 'UPI',
         status: 'COMPLETED',
         paymentType: 'SUBSCRIPTION',
         gateway: 'razorpay',
-        transactionId: 'txn_basic_' + Date.now()
+        transactionId: 'txn_touch_' + Date.now()
       }
     });
     
-    console.log('✅ Created subscription and payment for customer@sweepro.com (Basic Plan)');
+    console.log('✅ Created subscription and payment for customer@sweepro.com (SweepPro Touch Plan)');
+
+    // Get maid profile for assignment
+    const maidProfile = await prisma.maidProfile.findUnique({
+      where: { userId: maid.id }
+    });
+
+    // Create maid assignment for customer
+    const maidAssignment = await prisma.customerMaidAssignment.upsert({
+      where: { customerId_isActive: { customerId: customer.id, isActive: true } },
+      update: {},
+      create: {
+        customerId: customer.id,
+        maidId: maidProfile.id,
+        isActive: true,
+        notes: 'Assigned for SweepPro Touch subscription'
+      }
+    });
+
+    console.log('✅ Created maid assignment for customer@sweepro.com (Assigned to: Sarah Maid)');
 
     // Create 5 CONFIRMED bookings with maidId: null for admin pending bookings endpoint
     await prisma.booking.create({
@@ -352,28 +533,50 @@ async function main() {
       update: {},
       create: {
         email: 'maid2@sweepro.com',
-        name: 'Priya Maid',
+        name: 'Priya Sharma',
         password: await bcrypt.hash('maid2123', 10),
         phone: '9123456783',
         role: 'MAID',
         address: '789 Service Lane, Worker Area',
+        addressLine: 'Apartment 305, Service Complex',
+        locality: 'Worker Area',
+        city: 'Bangalore',
+        state: 'Karnataka',
+        pincode: '560003',
         latitude: 12.9718,
         longitude: 77.5948,
+        profileImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
+        bio: 'Expert in deep cleaning and specialized services. 4+ years experience with premium homes.',
+        gender: 'Female',
+        isProfilePublic: true,
         maidProfile: {
           create: {
-            skills: ['window_cleaning'],
-            languages: ['English'],
-            availability: { sunday: { start: '10:00', end: '16:00' } },
-            rating: 4.0,
-            totalRatings: 5,
+            skills: ['house_cleaning', 'deep_cleaning', 'kitchen_cleaning'],
+            languages: ['English', 'Hindi', 'Kannada'],
+            availability: {
+              monday: { start: '08:00', end: '18:00' },
+              tuesday: { start: '08:00', end: '18:00' },
+              wednesday: { start: '08:00', end: '18:00' },
+              thursday: { start: '08:00', end: '18:00' },
+              friday: { start: '08:00', end: '18:00' },
+              saturday: { start: '10:00', end: '16:00' }
+            },
+            rating: 4.8,
+            totalRatings: 25,
             status: 'ACTIVE',
-            hourlyRate: 120.0,
-            serviceRadius: 3.0
+            hourlyRate: 180.0,
+            serviceRadius: 8.0,
+            experienceYears: 4,
+            certifications: ['Advanced Cleaning Techniques', 'Customer Service Excellence'],
+            achievements: ['Top performer for 2 consecutive months', '50+ satisfied customers', 'Specialized in luxury homes'],
+            specializations: ['Deep Cleaning', 'Luxury Home Cleaning', 'Eco-friendly Services'],
+            isVerified: true,
+            verificationDate: new Date()
           }
         }
       }
     });
-    // Subscribe customer2 to premium plan
+    // Subscribe customer2 to SweepPro Lux plan
     const customer2Profile = await prisma.customerProfile.findUnique({
       where: { userId: user2.id }
     });
@@ -383,16 +586,16 @@ async function main() {
       update: {},
       create: {
         customerId: customer2Profile.id,
-        planId: premiumPlan.id,
+        planId: sweepProLuxPlan.id,
         status: 'ACTIVE',
         startDate: new Date(),
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         billingCycle: 'MONTHLY',
-        amount: premiumPlan.finalPrice,
-        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         autoRenew: true,
         nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        bufferDaysCount: 3,
+        bufferDaysCount: 5,
         currentCycleStart: new Date(),
         currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
@@ -403,19 +606,38 @@ async function main() {
       data: {
         subscriptionId: subscription2.id,
         customerId: user2.id,
-        amount: premiumPlan.finalPrice,
-        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         tax: 0,
-        finalAmount: premiumPlan.finalPrice,
+        finalAmount: sweepProLuxPlan.finalPrice,
         paymentMethod: 'CARD',
         status: 'COMPLETED',
         paymentType: 'SUBSCRIPTION',
         gateway: 'stripe',
-        transactionId: 'txn_premium_' + Date.now()
+        transactionId: 'txn_lux_' + Date.now()
       }
     });
     
-    console.log('✅ Created subscription and payment for customer2@sweepro.com (Premium Plan)');
+    console.log('✅ Created subscription and payment for customer2@sweepro.com (SweepPro Lux Plan)');
+
+    // Get maid2 profile and assign to customer2
+    const maid2Profile = await prisma.maidProfile.findUnique({
+      where: { userId: maid2.id }
+    });
+
+    // Create maid assignment for customer2
+    await prisma.customerMaidAssignment.upsert({
+      where: { customerId_isActive: { customerId: user2.id, isActive: true } },
+      update: {},
+      create: {
+        customerId: user2.id,
+        maidId: maid2Profile.id,
+        isActive: true,
+        notes: 'Assigned for SweepPro Lux subscription'
+      }
+    });
+
+    console.log('✅ Created maid assignment for customer2@sweepro.com (Assigned to: Priya Maid)');
 
     await prisma.booking.create({
       data: {
@@ -1648,14 +1870,442 @@ async function main() {
     
     console.log('✅ Created automatically scheduled daily services for demonstration');
     
+    // Create new customers with SweepPro Touch and SweepPro Lux plans
+    console.log('\n🆕 Creating customers with new SweepPro Touch and SweepPro Lux plans...');
+    
+    // Customer with SweepPro Touch plan - 2BHK Apartment
+    const touchCustomer = await prisma.user.upsert({
+      where: { email: 'touch@sweepro.com' },
+      update: {},
+      create: {
+        email: 'touch@sweepro.com',
+        name: 'Touch Plan Customer',
+        password: await bcrypt.hash('touch123', 10),
+        phone: '9123456794',
+        role: 'CUSTOMER',
+        address: '600 Touch Avenue, Apartment 2B, Test City',
+        latitude: 12.9730,
+        longitude: 77.5960,
+        timeSlot: '09:00-12:00',
+        customerProfile: {
+          create: {
+            preferences: { preferredTime: 'morning', cleaningIntensity: 'regular' },
+            emergencyContact: '9876543294',
+
+
+
+          }
+        }
+      }
+    });
+    
+    const touchCustomerProfile = await prisma.customerProfile.findUnique({
+      where: { userId: touchCustomer.id }
+    });
+    
+    const touchSubscription = await prisma.subscription.upsert({
+      where: { customerId: touchCustomerProfile.id },
+      update: {},
+      create: {
+        customerId: touchCustomerProfile.id,
+        planId: sweepProTouchPlan.id,
+        status: 'ACTIVE',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        billingCycle: 'MONTHLY',
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
+        autoRenew: true,
+        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        bufferDaysCount: 0, // No buffer for Touch
+        currentCycleStart: new Date(),
+        currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      }
+    });
+    
+    await prisma.payment.create({
+      data: {
+        subscriptionId: touchSubscription.id,
+        customerId: touchCustomer.id,
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
+        tax: 0,
+        finalAmount: sweepProTouchPlan.finalPrice,
+        paymentMethod: 'UPI',
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'razorpay',
+        transactionId: 'txn_touch_' + Date.now()
+      }
+    });
+    
+    console.log('✅ Created SweepPro Touch subscription for touch@sweepro.com (₹4,050/month - No Buffer System)');
+    
+    // Customer with SweepPro Lux plan - 4BHK Bungalow
+    const luxCustomer = await prisma.user.upsert({
+      where: { email: 'lux@sweepro.com' },
+      update: {},
+      create: {
+        email: 'lux@sweepro.com',
+        name: 'Lux Plan Customer',
+        password: await bcrypt.hash('lux123', 10),
+        phone: '9123456795',
+        role: 'CUSTOMER',
+        address: '700 Luxury Villa, Premium District',
+        latitude: 12.9731,
+        longitude: 77.5961,
+        timeSlot: '14:00-17:00',
+        customerProfile: {
+          create: {
+            preferences: { preferredTime: 'afternoon', cleaningIntensity: 'deep' },
+            emergencyContact: '9876543295',
+
+
+
+          }
+        }
+      }
+    });
+    
+    const luxCustomerProfile = await prisma.customerProfile.findUnique({
+      where: { userId: luxCustomer.id }
+    });
+    
+    const luxSubscription = await prisma.subscription.upsert({
+      where: { customerId: luxCustomerProfile.id },
+      update: {},
+      create: {
+        customerId: luxCustomerProfile.id,
+        planId: sweepProLuxPlan.id,
+        status: 'ACTIVE',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        billingCycle: 'MONTHLY',
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
+        autoRenew: true,
+        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        bufferDaysCount: 5, // Lux has 5 buffer days
+        bufferDaysUsed: 0,
+        currentCycleStart: new Date(),
+        currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      }
+    });
+    
+    await prisma.payment.create({
+      data: {
+        subscriptionId: luxSubscription.id,
+        customerId: luxCustomer.id,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
+        tax: 0,
+        finalAmount: sweepProLuxPlan.finalPrice,
+        paymentMethod: 'CARD',
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'stripe',
+        transactionId: 'txn_lux_' + Date.now()
+      }
+    });
+    
+    console.log('✅ Created SweepPro Lux subscription for lux@sweepro.com (₹6,800/month - 5 Buffer Days)');
+    
+    // Create more diverse test users with different house types
+    console.log('\n🏠 Creating diverse customers with various property types...');
+    
+    // 1BHK Apartment - Touch Plan
+    const touch1bhk = await prisma.user.upsert({
+      where: { email: 'touch.1bhk@sweepro.com' },
+      update: {},
+      create: {
+        email: 'touch.1bhk@sweepro.com',
+        name: 'Rajesh Kumar',
+        password: await bcrypt.hash('touch123', 10),
+        phone: '9123456796',
+        role: 'CUSTOMER',
+        address: '101 Compact Homes, Whitefield, Bangalore',
+        latitude: 12.9698,
+        longitude: 77.7500,
+        timeSlot: '08:00-11:00',
+        customerProfile: {
+          create: {
+            preferences: { preferredTime: 'morning', cleaningIntensity: 'regular' },
+            emergencyContact: '9876543296',
+
+
+
+          }
+        }
+      }
+    });
+    
+    const touch1bhkProfile = await prisma.customerProfile.findUnique({
+      where: { userId: touch1bhk.id }
+    });
+    
+    await prisma.subscription.upsert({
+      where: { customerId: touch1bhkProfile.id },
+      update: {},
+      create: {
+        customerId: touch1bhkProfile.id,
+        planId: sweepProTouchPlan.id,
+        status: 'ACTIVE',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        billingCycle: 'MONTHLY',
+        amount: 3500.0, // Lower price for 1BHK
+        discount: 450.0,
+        autoRenew: true,
+        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        bufferDaysCount: 0,
+        currentCycleStart: new Date(),
+        currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      }
+    });
+    
+    // 3BHK Apartment - Lux Plan
+    const lux3bhk = await prisma.user.upsert({
+      where: { email: 'lux.3bhk@sweepro.com' },
+      update: {},
+      create: {
+        email: 'lux.3bhk@sweepro.com',
+        name: 'Priya Sharma',
+        password: await bcrypt.hash('lux123', 10),
+        phone: '9123456797',
+        role: 'CUSTOMER',
+        address: '305 Prestige Towers, Koramangala, Bangalore',
+        latitude: 12.9352,
+        longitude: 77.6245,
+        timeSlot: '10:00-13:00',
+        customerProfile: {
+          create: {
+            preferences: { preferredTime: 'morning', cleaningIntensity: 'deep' },
+            emergencyContact: '9876543297',
+
+
+
+          }
+        }
+      }
+    });
+    
+    const lux3bhkProfile = await prisma.customerProfile.findUnique({
+      where: { userId: lux3bhk.id }
+    });
+    
+    // Create active Lux subscription for lux.3bhk and keep reference for payments/bookings
+    const lux3Subscription = await prisma.subscription.upsert({
+      where: { customerId: lux3bhkProfile.id },
+      update: {},
+      create: {
+        customerId: lux3bhkProfile.id,
+        planId: sweepProLuxPlan.id,
+        status: 'ACTIVE',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        billingCycle: 'MONTHLY',
+        amount: 5800.0, // Mid-range price for 3BHK
+        discount: 1200.0,
+        autoRenew: true,
+        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        bufferDaysCount: 5,
+        bufferDaysUsed: 1,
+        currentCycleStart: new Date(),
+        currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      }
+    });
+
+    // Create a completed payment for Lux 3BHK subscription (dummy now; gateway integration later)
+    await prisma.payment.create({
+      data: {
+        subscriptionId: lux3Subscription.id,
+        customerId: lux3bhk.id,
+        amount: 5800.0,
+        discount: 0,
+        tax: 0,
+        finalAmount: 5800.0,
+        paymentMethod: 'CARD',
+        status: 'COMPLETED',
+        paymentType: 'SUBSCRIPTION',
+        gateway: 'razorpay',
+        transactionId: 'txn_lux3bhk_' + Date.now()
+      }
+    });
+
+    // Create sample bookings for Lux 3BHK user: 1 completed past, 1 upcoming confirmed, 1 assigned
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { id: lux3bhk.id } },
+        maid: undefined,
+        service: { connect: { id: deepCleaningService.id } },
+        status: 'COMPLETED',
+        priority: 'NORMAL',
+        scheduledAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+        estimatedDuration: 240,
+        serviceAddress: '305 Prestige Towers, Koramangala, Bangalore',
+        serviceLatitude: 12.9352,
+        serviceLongitude: 77.6245,
+        totalAmount: 500.0,
+        discount: 0,
+        finalAmount: 500.0
+      }
+    });
+
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { id: lux3bhk.id } },
+        maid: undefined,
+        service: { connect: { id: deepCleaningService.id } },
+        status: 'CONFIRMED',
+        priority: 'HIGH',
+        scheduledAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+        estimatedDuration: 240,
+        serviceAddress: '305 Prestige Towers, Koramangala, Bangalore',
+        serviceLatitude: 12.9352,
+        serviceLongitude: 77.6245,
+        totalAmount: 500.0,
+        discount: 0,
+        finalAmount: 500.0
+      }
+    });
+
+    await prisma.booking.create({
+      data: {
+        customer: { connect: { id: lux3bhk.id } },
+        maid: undefined,
+        service: { connect: { id: dailyCleaningService.id } },
+        status: 'ASSIGNED',
+        priority: 'NORMAL',
+        scheduledAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+        estimatedDuration: 120,
+        serviceAddress: '305 Prestige Towers, Koramangala, Bangalore',
+        serviceLatitude: 12.9352,
+        serviceLongitude: 77.6245,
+        totalAmount: 200.0,
+        discount: 0,
+        finalAmount: 200.0
+      }
+    });
+    
+    // 2BHK Bungalow - Lux Plan
+    const luxBungalow = await prisma.user.upsert({
+      where: { email: 'lux.bungalow@sweepro.com' },
+      update: {},
+      create: {
+        email: 'lux.bungalow@sweepro.com',
+        name: 'Amit Patel',
+        password: await bcrypt.hash('lux123', 10),
+        phone: '9123456798',
+        role: 'CUSTOMER',
+        address: 'Villa 12, Green Valley Estate, Sarjapur Road',
+        latitude: 12.9010,
+        longitude: 77.7330,
+        timeSlot: '15:00-18:00',
+        customerProfile: {
+          create: {
+            preferences: { preferredTime: 'afternoon', cleaningIntensity: 'deep' },
+            emergencyContact: '9876543298',
+
+
+
+          }
+        }
+      }
+    });
+    
+    const luxBungalowProfile = await prisma.customerProfile.findUnique({
+      where: { userId: luxBungalow.id }
+    });
+    
+    await prisma.subscription.upsert({
+      where: { customerId: luxBungalowProfile.id },
+      update: {},
+      create: {
+        customerId: luxBungalowProfile.id,
+        planId: sweepProLuxPlan.id,
+        status: 'ACTIVE',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        billingCycle: 'MONTHLY',
+        amount: 6200.0, // Higher price for bungalow
+        discount: 1300.0,
+        autoRenew: true,
+        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        bufferDaysCount: 5,
+        bufferDaysUsed: 0,
+        currentCycleStart: new Date(),
+        currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      }
+    });
+    
+    // 3BHK Bungalow - Lux Plan (Premium)
+    const luxPremiumBungalow = await prisma.user.upsert({
+      where: { email: 'lux.premium@sweepro.com' },
+      update: {},
+      create: {
+        email: 'lux.premium@sweepro.com',
+        name: 'Sunita Reddy',
+        password: await bcrypt.hash('lux123', 10),
+        phone: '9123456799',
+        role: 'CUSTOMER',
+        address: 'Bungalow 7, Palm Meadows, Whitefield',
+        latitude: 12.9850,
+        longitude: 77.7490,
+        timeSlot: '09:00-12:00',
+        customerProfile: {
+          create: {
+            preferences: { preferredTime: 'morning', cleaningIntensity: 'deep' },
+            emergencyContact: '9876543299',
+
+
+
+          }
+        }
+      }
+    });
+    
+    const luxPremiumProfile = await prisma.customerProfile.findUnique({
+      where: { userId: luxPremiumBungalow.id }
+    });
+    
+    await prisma.subscription.upsert({
+      where: { customerId: luxPremiumProfile.id },
+      update: {},
+      create: {
+        customerId: luxPremiumProfile.id,
+        planId: sweepProLuxPlan.id,
+        status: 'ACTIVE',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        billingCycle: 'MONTHLY',
+        amount: 7500.0, // Premium price for large bungalow
+        discount: 1500.0,
+        autoRenew: true,
+        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        bufferDaysCount: 5,
+        bufferDaysUsed: 2,
+        currentCycleStart: new Date(),
+        currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      }
+    });
+    
+    console.log('✅ Created 4 additional diverse customers:');
+    console.log('  • touch.1bhk@sweepro.com - 1BHK Apartment, 650 sqft (₹3,500/month)');
+    console.log('  • lux.3bhk@sweepro.com - 3BHK Apartment, 1800 sqft (₹5,800/month + Buffer)');
+    console.log('  • lux.bungalow@sweepro.com - 2BHK Bungalow, 2200 sqft (₹6,200/month + Buffer)');
+    console.log('  • lux.premium@sweepro.com - 3BHK Bungalow, 3000 sqft (₹7,500/month + Buffer)');
+    
     console.log('\n✅ Comprehensive seed data created successfully!');
     console.log('\n🧪 Test Scenarios Available:');
-    console.log('\n📋 SUBSCRIPTION STATUSES:');
-    console.log('- customer@sweepro.com: ACTIVE subscription (Basic Plan)');
-    console.log('- customer2@sweepro.com: ACTIVE subscription (Premium Plan)');
-    console.log('- customer3@sweepro.com: ACTIVE subscription (Standard Plan)');
-    console.log('- customer4@sweepro.com: ACTIVE subscription (Basic Plan)');
-    console.log('- customer5@sweepro.com: ACTIVE subscription (Premium Plan)');
+    console.log('\n📋 NEW SUBSCRIPTION PLANS:');
+    console.log('- touch@sweepro.com: SweepPro Touch (₹4,050/month - NO BUFFER SYSTEM)');
+    console.log('- lux@sweepro.com: SweepPro Lux (₹6,800/month - 5 BUFFER DAYS)');
+    console.log('\n📋 LEGACY SUBSCRIPTION STATUSES:');
+    console.log('- customer@sweepro.com: ACTIVE subscription (Basic Plan - Legacy)');
+    console.log('- customer2@sweepro.com: ACTIVE subscription (Premium Plan - Legacy)');
+    console.log('- customer3@sweepro.com: ACTIVE subscription (Standard Plan - Legacy)');
+    console.log('- customer4@sweepro.com: ACTIVE subscription (Basic Plan - Legacy)');
+    console.log('- customer5@sweepro.com: ACTIVE subscription (Premium Plan - Legacy)');
     console.log('- buffer@sweepro.com: ACTIVE subscription with ACTIVE buffer period');
     console.log('- expired@sweepro.com: EXPIRED subscription');
     console.log('- cancelled@sweepro.com: CANCELLED subscription');

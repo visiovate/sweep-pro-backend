@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
+const bookingDeduplicationService = require('../services/bookingDeduplicationService');
 const prisma = new PrismaClient();
 
 const createBooking = async (req, res) => {
@@ -304,38 +305,52 @@ const createBooking = async (req, res) => {
       console.log(`✅ Found assigned maid: ${customerAssignment.maid.user.name}, auto-sending assignment request...`);
       
       try {
-        // Automatically send assignment request to assigned maid
-        const expiresAt = new Date();
-        expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiry
+        // Check for duplicate booking request using Redis
+        const canProceed = await bookingDeduplicationService.checkAndMark(
+          customerId,
+          customerAssignment.maidId,
+          scheduledDate,
+          48 * 60 * 60 // 48 hours TTL
+        );
 
-        await prisma.$transaction(async (tx) => {
-          // Create assignment request
-          await tx.assignmentRequest.create({
-            data: {
-              bookingId: booking.id,
-              maidId: customerAssignment.maidId,
-              status: 'pending',
-              requestedAt: new Date(),
-              expiresAt: expiresAt
-            }
+        if (!canProceed) {
+          console.log(`🚫 Duplicate booking request prevented for customer ${customerId} with maid ${customerAssignment.maidId}`);
+          responseMessage = 'A booking request has already been sent to your assigned maid for this date. Please wait for their response.';
+          assignmentStatus = 'PENDING_ASSIGNMENT';
+        } else {
+          // Automatically send assignment request to assigned maid
+          const expiresAt = new Date();
+          expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour expiry
+
+          await prisma.$transaction(async (tx) => {
+            // Create assignment request
+            await tx.assignmentRequest.create({
+              data: {
+                bookingId: booking.id,
+                maidId: customerAssignment.maidId,
+                status: 'pending',
+                requestedAt: new Date(),
+                expiresAt: expiresAt
+              }
+            });
+
+            // Update booking status
+            await tx.booking.update({
+              where: { id: booking.id },
+              data: {
+                maidId: customerAssignment.maid.userId, // User ID for booking
+                status: 'ASSIGNED',
+                assignmentStatus: 'ASSIGNED_PENDING_RESPONSE',
+                assignedAt: new Date()
+              }
+            });
           });
 
-          // Update booking status
-          await tx.booking.update({
-            where: { id: booking.id },
-            data: {
-              maidId: customerAssignment.maid.userId, // User ID for booking
-              status: 'ASSIGNED',
-              assignmentStatus: 'ASSIGNED_PENDING_RESPONSE',
-              assignedAt: new Date()
-            }
-          });
-        });
-
-        responseMessage = `Booking request sent to your assigned maid (${customerAssignment.maid.user.name}). You will be notified once they respond.`;
-        assignmentStatus = 'ASSIGNED_PENDING_RESPONSE';
-        
-        console.log(`✅ Assignment request sent automatically to maid: ${customerAssignment.maid.user.name}`);
+          responseMessage = `Booking request sent to your assigned maid (${customerAssignment.maid.user.name}). You will be notified once they respond.`;
+          assignmentStatus = 'ASSIGNED_PENDING_RESPONSE';
+          
+          console.log(`✅ Assignment request sent automatically to maid: ${customerAssignment.maid.user.name}`);
+        }
       } catch (assignmentError) {
         console.error('❌ Failed to auto-assign maid:', assignmentError);
         responseMessage = 'Booking created but failed to auto-assign maid. Admin will assign manually.';
@@ -506,13 +521,13 @@ const getBookingById = async (req, res) => {
 const getUserBookings = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { status } = req.query;
-    
+    const { status, cursor, limit = 10 } = req.query;
+
     // Build where clause based on status filter
     let whereClause = {
       customerId: userId
     };
-    
+
     // Apply status filtering based on frontend requirements
     if (status) {
       switch (status.toLowerCase()) {
@@ -532,8 +547,11 @@ const getUserBookings = async (req, res) => {
           break;
       }
     }
-    
-    const bookings = await prisma.booking.findMany({
+
+    // Allow larger limits for dashboard needs but cap at reasonable number
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 10, 100));
+
+    const findArgs = {
       where: whereClause,
       include: {
         service: true,
@@ -546,19 +564,60 @@ const getUserBookings = async (req, res) => {
           }
         }
       },
-      orderBy: {
-        scheduledAt: 'desc' // Most recent first
-      }
-    });
-    
-    res.json({
-      success: true,
-      data: bookings,
-      filters: {
-        applied: status || 'all',
-        available: ['all', 'scheduled', 'completed', 'cancelled']
-      }
-    });
+      orderBy: { id: 'desc' },
+      take: pageSize + 1
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    try {
+      const results = await prisma.booking.findMany(findArgs);
+      const hasNextPage = results.length > pageSize;
+      const items = hasNextPage ? results.slice(0, pageSize) : results;
+      const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+      return res.json({
+        success: true,
+        data: items,
+        pageInfo: {
+          nextCursor,
+          hasNextPage,
+          pageSize
+        },
+        filters: {
+          applied: status || 'all',
+          available: ['all', 'scheduled', 'completed', 'cancelled']
+        }
+      });
+    } catch (cursorError) {
+      console.error('Cursor pagination failed, falling back to offset:', cursorError?.message || cursorError);
+      // Fallback: offset pagination (first page only) to avoid hard failure
+      const offsetResults = await prisma.booking.findMany({
+        where: whereClause,
+        include: findArgs.include,
+        orderBy: { createdAt: 'desc' },
+        take: pageSize,
+        skip: 0,
+      });
+      const hasNextPage = offsetResults.length === pageSize; // best-effort
+      const nextCursor = hasNextPage ? offsetResults[offsetResults.length - 1]?.id || null : null;
+      return res.json({
+        success: true,
+        data: offsetResults,
+        pageInfo: {
+          nextCursor,
+          hasNextPage,
+          pageSize
+        },
+        filters: {
+          applied: status || 'all',
+          available: ['all', 'scheduled', 'completed', 'cancelled']
+        }
+      });
+    }
   } catch (error) {
     console.error('Error fetching user bookings:', error);
     res.status(500).json({ 
@@ -571,13 +630,13 @@ const getUserBookings = async (req, res) => {
 const getMaidBookings = async (req, res) => {
   try {
     const maidId = req.user.id;
-    const { status } = req.query;
-    
+    const { status, cursor, limit = 10 } = req.query;
+
     // Build where clause based on status filter
     let whereClause = {
       maidId: maidId
     };
-    
+
     // Apply status filtering based on frontend requirements
     if (status) {
       switch (status.toLowerCase()) {
@@ -597,8 +656,10 @@ const getMaidBookings = async (req, res) => {
           break;
       }
     }
-    
-    const bookings = await prisma.booking.findMany({
+
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 10, 50));
+
+    const findArgs = {
       where: whereClause,
       include: {
         service: true,
@@ -611,14 +672,28 @@ const getMaidBookings = async (req, res) => {
           }
         }
       },
-      orderBy: {
-        scheduledAt: 'desc' // Most recent first
-      }
-    });
-    
+      orderBy: { id: 'desc' },
+      take: pageSize + 1
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.booking.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
     res.json({
       success: true,
-      data: bookings,
+      data: items,
+      pageInfo: {
+        nextCursor,
+        hasNextPage,
+        pageSize
+      },
       filters: {
         applied: status || 'all',
         available: ['all', 'scheduled', 'completed', 'cancelled']

@@ -428,6 +428,21 @@ const rejectAssignment = async (req, res) => {
       return updatedAssignment;
     });
 
+    // Queue rejected assignment for admin reassignment
+    try {
+      const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
+      await queueRejectedAssignment({
+        bookingId: assignment.bookingId,
+        maidId: maidId,
+        rejectionReason: rejectionReason.trim(),
+        customerId: assignment.booking.customerId
+      });
+      console.log(`📋 Queued rejected assignment for admin reassignment: ${assignment.bookingId}`);
+    } catch (queueError) {
+      console.error('❌ Failed to queue rejected assignment:', queueError);
+      // Don't fail the request if queueing fails
+    }
+
     console.log(`✅ Assignment ${assignmentId} rejected successfully, booking ${assignment.bookingId} moved to reassignment queue`);
 
     res.json({
@@ -852,20 +867,25 @@ const getAvailableMaids = async (req, res) => {
 
     console.log(`✅ Found ${maids.length} active maids`);
 
-    // Transform maid data for frontend
-    const availableMaids = maids.map(maid => ({
-      id: maid.user.id, // Use User.id instead of MaidProfile.id
-      maidProfileId: maid.id, // Keep MaidProfile.id for reference
-      name: maid.user.name,
-      email: maid.user.email,
-      phone: maid.user.phone,
-      rating: maid.rating,
-      completedBookings: maid.completedBookings,
-      skills: maid.skills,
-      isAvailable: maid.assignmentRequests.length < (maid.maxDailyBookings || 5),
-      currentAssignments: maid.assignmentRequests.length,
-      maxDailyBookings: maid.maxDailyBookings || 5
-    }));
+    const availableMaids = maids
+      .filter(maid => (maid.availability && maid.availability.isAvailable === false) ? false : true)
+      .map(maid => {
+        const capacityAvailable = maid.assignmentRequests.length < (maid.maxDailyBookings || 5);
+        const availabilityFlag = (maid.availability && maid.availability.isAvailable === false) ? false : true;
+        return {
+          id: maid.user.id,
+          maidProfileId: maid.id,
+          name: maid.user.name,
+          email: maid.user.email,
+          phone: maid.user.phone,
+          rating: maid.rating,
+          completedBookings: maid.completedBookings,
+          skills: maid.skills,
+          isAvailable: availabilityFlag && capacityAvailable,
+          currentAssignments: maid.assignmentRequests.length,
+          maxDailyBookings: maid.maxDailyBookings || 5
+        };
+      });
 
     console.log(`✅ Transformed ${availableMaids.length} available maids for frontend`);
 
@@ -958,6 +978,17 @@ const sendAssignmentRequest = async (req, res) => {
 
     console.log(`✅ Found maid: ${user.name}, Status: ${user.maidProfile.status}`);
 
+    const isMaidAvailable = !(
+      user.maidProfile.availability && user.maidProfile.availability.isAvailable === false
+    );
+    if (!isMaidAvailable) {
+      console.log(`❌ Maid is marked unavailable: ${maidId}`);
+      return res.status(400).json({
+        success: false,
+        message: 'Maid is currently unavailable'
+      });
+    }
+
     // Create assignment request and update booking in a transaction
     console.log('🔍 Creating assignment request and updating booking...');
     const result = await prisma.$transaction(async (tx) => {
@@ -1033,63 +1064,30 @@ const getReassignmentBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching reassignment bookings...');
     
-    // First, let's see all bookings with rejected assignment requests
-    const allBookingsWithRejectedRequests = await prisma.booking.findMany({
-      include: {
-        assignmentRequests: {
-          where: {
-            status: 'rejected'
-          }
-        }
-      }
-    });
-    
-    console.log(`📊 Total bookings with rejected requests: ${allBookingsWithRejectedRequests.filter(b => b.assignmentRequests.length > 0).length}`);
-    
-    // Get bookings that need reassignment - focus on assignmentStatus
+    // Only include bookings where assignmentStatus is 'REJECTED' and booking.status is not 'CONFIRMED' or 'ASSIGNED' or 'ACCEPTED'.
     const bookings = await prisma.booking.findMany({
       where: {
-        OR: [
-          {
-            // Bookings with assignment status indicating reassignment needed
-            assignmentStatus: 'REJECTED'
-          },
-          {
-            // Bookings marked for reassignment
-            assignmentStatus: 'REASSIGNED'
-          },
-          {
-            // Legacy: Bookings rejected by maid (old flow)
-            status: 'CANCELLED',
-            rejectionReason: { not: null },
-            maidId: null
+        assignmentStatus: 'REJECTED',
+        NOT: {
+          status: {
+            in: ['CONFIRMED', 'ASSIGNED', 'ACCEPTED']
           }
-        ]
+        }
       },
       include: {
         service: true,
         customer: true,
         maid: true,
         assignmentRequests: {
-          where: {
-            status: 'rejected'
-          },
+          where: { status: { in: ['rejected', 'expired'] } },
           include: {
-            maid: {
-              include: {
-                user: true
-              }
-            }
+            maid: { include: { user: true } }
           },
-          orderBy: {
-            respondedAt: 'desc'
-          },
-          take: 1 // Get the most recent rejection
+          orderBy: { respondedAt: 'desc' },
+          take: 1
         }
       },
-      orderBy: {
-        updatedAt: 'desc'
-      }
+      orderBy: { updatedAt: 'desc' }
     });
 
     console.log(`✅ Found ${bookings.length} reassignment bookings`);
@@ -1099,37 +1097,31 @@ const getReassignmentBookings = async (req, res) => {
       console.log(`📋 Reassignment Booking ${index + 1}:`, {
         id: booking.id,
         status: booking.status,
+        assignmentStatus: booking.assignmentStatus,
         rejectionReason: booking.rejectionReason,
         maidId: booking.maidId,
-        customerName: booking.customer?.name
+        customerName: booking.customer?.name,
+        rejectedRequests: booking.assignmentRequests?.length || 0
       });
     });
     
     const transformedBookings = bookings.map(booking => {
       const transformed = transformBookingForFrontend(booking);
       
-      // Add rejection details from the most recent rejected assignment request
+      // Add last attempt details from the most recent rejected/expired assignment request
       if (booking.assignmentRequests && booking.assignmentRequests.length > 0) {
-        const rejectedRequest = booking.assignmentRequests[0];
-        transformed.lastRejectedBy = {
-          maidId: rejectedRequest.maidId,
-          maidName: rejectedRequest.maid?.user?.name || 'Unknown',
-          rejectionReason: rejectedRequest.rejectionReason,
-          rejectedAt: rejectedRequest.respondedAt
+        const lastRequest = booking.assignmentRequests[0];
+        transformed.lastAttempt = {
+          maidProfileId: lastRequest.maidId,
+          maidUserId: lastRequest.maid?.user?.id,
+          maidName: lastRequest.maid?.user?.name || 'Unknown',
+          status: lastRequest.status,
+          reason: lastRequest.status === 'expired' ? 'Assignment request expired' : lastRequest.rejectionReason,
+          respondedAt: lastRequest.respondedAt
         };
       }
       
       return transformed;
-    });
-
-    // Debug: Log transformed bookings
-    transformedBookings.forEach((booking, index) => {
-      console.log(`🔄 Transformed Booking ${index + 1}:`, {
-        id: booking.id,
-        status: booking.status,
-        assignmentStatus: booking.assignmentStatus,
-        rejectionReason: booking.rejectionReason
-      });
     });
 
     console.log('✅ Successfully transformed reassignment bookings for frontend');
@@ -1148,6 +1140,48 @@ const getReassignmentBookings = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch reassignment bookings',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Admin: Get all truly pending assignment requests (for pending bookings section)
+const getAllPendingAssignmentRequests = async (req, res) => {
+  try {
+    // All assignment requests that are pending and not expired
+    const requests = await prisma.assignmentRequest.findMany({
+      where: {
+        status: 'pending',
+        expiresAt: {
+          gt: new Date()
+        }
+      },
+      include: {
+        booking: {
+          include: {
+            service: true,
+            customer: true
+          }
+        },
+        maid: {
+          include: {
+            user: true
+          }
+        }
+      },
+      orderBy: {
+        requestedAt: 'asc'
+      }
+    });
+    res.json({
+      success: true,
+      data: requests
+    });
+  } catch (error) {
+    console.error('❌ Error fetching all pending assignment requests:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -1172,5 +1206,6 @@ module.exports = {
   getAssignedBookings,
   getReassignmentBookings,
   getAvailableMaids,
-  sendAssignmentRequest
+  sendAssignmentRequest,
+  getAllPendingAssignmentRequests
 };

@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
+const { authenticateToken, authorizeAdmin, authorizeMaid } = require('../middleware/auth');
 const {
   getAllMaids,
   getMaidById,
   updateMaidProfile,
+  setMaidAvailability,
   updateMaidStatus,
   deleteMaid,
   verifyStartOTP,
@@ -16,6 +17,7 @@ const {
 // Maid service workflow routes (put specific routes first)
 router.get('/my-assignments', authenticateToken, getMaidAssignments);
 router.put('/profile', authenticateToken, updateMaidProfile);
+router.put('/availability', authenticateToken, authorizeMaid, setMaidAvailability);
 router.post('/verify-start-otp', authenticateToken, verifyStartOTP);
 router.post('/generate-end-otp', authenticateToken, generateEndOTP);
 router.post('/complete-service', authenticateToken, completeService);

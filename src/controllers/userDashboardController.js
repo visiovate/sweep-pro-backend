@@ -537,10 +537,242 @@ const getServicePreferences = async (req, res) => {
   }
 };
 
+/**
+ * Get dashboard recent bookings (cursor-based for Instagram-style loading)
+ */
+const getDashboardRecentBookings = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { cursor, limit = 5 } = req.query;
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 5, 20));
+
+    const findArgs = {
+      where: { customerId: userId },
+      orderBy: { createdAt: 'desc' },
+      take: pageSize + 1,
+      select: {
+        id: true,
+        status: true,
+        scheduledAt: true,
+        serviceAddress: true,
+        finalAmount: true,
+        createdAt: true,
+        service: { select: { name: true } },
+      },
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.booking.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+    return res.json({
+      success: true,
+      data: items,
+      pageInfo: { nextCursor, hasNextPage, pageSize },
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard recent bookings:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch recent bookings' });
+  }
+};
+
+/**
+ * Get dashboard recent notifications (cursor-based for Instagram-style loading)
+ */
+const getDashboardRecentNotifications = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { cursor, limit = 5 } = req.query;
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 5, 20));
+
+    const findArgs = {
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: pageSize + 1,
+      select: {
+        id: true,
+        type: true,
+        title: true,
+        message: true,
+        read: true,
+        createdAt: true,
+      },
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.notification.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+    return res.json({
+      success: true,
+      data: items,
+      pageInfo: { nextCursor, hasNextPage, pageSize },
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard recent notifications:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch recent notifications' });
+  }
+};
+
+/**
+ * Get dashboard recent payments (cursor-based for Instagram-style loading)
+ */
+const getDashboardRecentPayments = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { cursor, limit = 5 } = req.query;
+    const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 5, 20));
+
+    const findArgs = {
+      where: { customerId: userId },
+      orderBy: { createdAt: 'desc' },
+      take: pageSize + 1,
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        paymentMethod: true,
+        amount: true,
+        description: true,
+        bookingId: true,
+        subscriptionId: true,
+      },
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const results = await prisma.payment.findMany(findArgs);
+    const hasNextPage = results.length > pageSize;
+    const items = hasNextPage ? results.slice(0, pageSize) : results;
+    const nextCursor = hasNextPage ? items[items.length - 1].id : null;
+
+    return res.json({
+      success: true,
+      data: items,
+      pageInfo: { nextCursor, hasNextPage, pageSize },
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard recent payments:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch recent payments' });
+  }
+};
+
+/**
+ * Get dashboard stats for the redesigned dashboard
+ */
+const getDashboardStats = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    const monthStart = new Date(currentYear, currentMonth, 1);
+    const monthEnd = new Date(currentYear, currentMonth + 1, 0);
+
+    // Get customer profile
+    const customerProfile = await prisma.customerProfile.findUnique({
+      where: { userId }
+    });
+
+    // Get bookings this month
+    const bookingsThisMonth = await prisma.booking.count({
+      where: {
+        customerId: userId,
+        scheduledAt: {
+          gte: monthStart,
+          lte: monthEnd
+        }
+      }
+    });
+
+    // Get subscription info
+    let subscription = null;
+    let activeSubscription = {
+      isActive: false,
+      planName: null,
+      planType: null,
+      hasBufferSystem: false
+    };
+
+    if (customerProfile) {
+      subscription = await prisma.subscription.findFirst({
+        where: {
+          customerId: customerProfile.id,
+          status: 'ACTIVE',
+          endDate: { gte: new Date() }
+        },
+        include: {
+          plan: true
+        }
+      });
+
+      if (subscription) {
+        activeSubscription = {
+          isActive: true,
+          planName: subscription.plan.name,
+          planType: subscription.plan.planType || 'TOUCH',
+          hasBufferSystem: subscription.plan.hasBufferSystem || false
+        };
+      }
+    }
+
+    // Get recent bookings
+    const recentBookings = await prisma.booking.findMany({
+      where: { customerId: userId },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        status: true,
+        scheduledAt: true,
+        serviceAddress: true,
+        finalAmount: true,
+        service: { select: { name: true } }
+      }
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        totalBookingsThisMonth: bookingsThisMonth,
+        activeSubscription,
+        nextBillingDate: subscription?.nextBillDate || null,
+        recentBookings
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching dashboard stats:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch dashboard stats',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getSubscriptionDashboard,
   getMonthlyServiceCalendar,
   getBufferPeriodHistory,
   getSubscriptionCycleHistory,
-  getServicePreferences
+  getServicePreferences,
+  getDashboardRecentBookings,
+  getDashboardRecentNotifications,
+  getDashboardRecentPayments,
+  getDashboardStats
 };

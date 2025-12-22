@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
+const checkBufferEligibility = require('../middleware/bufferEligibility');
 const {
   getSubscriptionPlans,
   subscribeToPlan,
@@ -18,7 +19,8 @@ const {
   getBufferPeriods,
   adminStartBufferPeriod,
   adminEndBufferPeriod,
-  getSubscriptionAnalytics
+  getSubscriptionAnalytics,
+  getUpcomingServices
 } = require('../controllers/subscriptionController');
 
 // Public routes
@@ -30,10 +32,12 @@ router.post('/subscribe', authenticateToken, subscribeToPlan);
 router.get('/my-subscription', authenticateToken, getUserSubscription);
 router.get('/status', authenticateToken, checkSubscriptionStatus);
 router.get('/monthly-status', authenticateToken, getMonthlySubscriptionStatus);
-router.post('/buffer/start', authenticateToken, startBufferPeriod);
-router.post('/buffer/end', authenticateToken, endBufferPeriod);
+// Buffer routes with eligibility check - only for SweePro Lux users
+router.post('/buffer/start', authenticateToken, checkBufferEligibility, startBufferPeriod);
+router.post('/buffer/end', authenticateToken, checkBufferEligibility, endBufferPeriod);
 router.post('/complete-payment', authenticateToken, completeSubscriptionPayment);
 router.post('/cancel', authenticateToken, cancelSubscription);
+router.get('/upcoming-services', authenticateToken, getUpcomingServices);
 
 // Admin routes
 router.get('/admin/analytics', authenticateToken, getSubscriptionAnalytics);
