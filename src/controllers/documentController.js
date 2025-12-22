@@ -1027,7 +1027,11 @@ const updateMaidStatusBasedOnDocuments = async (maidProfileId) => {
     if (allRequiredVerified && maidProfile.status === 'PENDING_VERIFICATION') {
       await prisma.maidProfile.update({
         where: { id: maidProfileId },
-        data: { status: 'ACTIVE' }
+        data: { 
+          status: 'ACTIVE',
+          isVerified: true,
+          verificationDate: new Date()
+        }
       });
 
       // Create notification for maid

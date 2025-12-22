@@ -1,17 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { registerValidation, loginValidation } = require('../middleware/validation');
 const { authenticateToken } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
-
-const prisma = new PrismaClient();
+const { initializePrisma } = require('../utils/database');
 
 router.post('/register', registerValidation, async (req, res) => {
   try {
-    const { name, email, phone, role, password,timeSlot, confirmPassword, address } = req.body;
+    const prisma = await initializePrisma();
+    const { name, email, phone, role, password, timeSlot, confirmPassword, address, serviceArea, pincode } = req.body;
     
     // Check if user already exists by email
     const existingUserByEmail = await prisma.user.findUnique({
@@ -42,36 +41,45 @@ router.post('/register', registerValidation, async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user with transaction to ensure consistency
-    const result = await prisma.$transaction(async (tx) => {
-      // Create the main user
-      const user = await tx.user.create({
-        data: {
-          name,
-          email,
-          phone,
-          role,
-          timeSlot,
-          password: hashedPassword,
-          address,
-          status: 'ACTIVE'
-        }
+    const userData = {
+      name,
+      email,
+      phone,
+      role,
+      timeSlot,
+      password: hashedPassword,
+      address,
+      status: 'ACTIVE'
+    };
+
+    if (serviceArea) {
+      userData.locality = serviceArea;
+    }
+
+    if (pincode) {
+      userData.pincode = pincode;
+    }
+
+    let createdUser;
+
+    try {
+      createdUser = await prisma.user.create({
+        data: userData
       });
 
-      // Create role-specific profile based on user role
       if (role === 'CUSTOMER') {
-        await tx.customerProfile.create({
+        await prisma.customerProfile.create({
           data: {
-            userId: user.id,
+            userId: createdUser.id,
             preferences: {},
             emergencyContact: null,
             specialInstructions: null
           }
         });
       } else if (role === 'MAID') {
-        await tx.maidProfile.create({
+        await prisma.maidProfile.create({
           data: {
-            userId: user.id,
+            userId: createdUser.id,
             skills: [],
             languages: ['English'],
             availability: {
@@ -97,16 +105,19 @@ router.post('/register', registerValidation, async (req, res) => {
           }
         });
       }
-
-      return user;
-    });
+    } catch (creationError) {
+      if (createdUser) {
+        await prisma.user.delete({ where: { id: createdUser.id } }).catch(() => undefined);
+      }
+      throw creationError;
+    }
 
     // Generate JWT token
     const token = jwt.sign(
       { 
-        userId: result.id,
-        id: result.id,
-        role: result.role
+        userId: createdUser.id,
+        id: createdUser.id,
+        role: createdUser.role
       },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
@@ -114,7 +125,7 @@ router.post('/register', registerValidation, async (req, res) => {
 
     // Send notification about new user registration
     try {
-      await notificationService.notifyUserRegistration(result);
+      await notificationService.notifyUserRegistration(createdUser);
     } catch (notificationError) {
       console.error('Failed to send registration notification:', notificationError);
       // Don't fail the registration if notification fails
@@ -122,15 +133,17 @@ router.post('/register', registerValidation, async (req, res) => {
 
     // Prepare response without sensitive data
     const userResponse = {
-      id: result.id,
-      name: result.name,
-      email: result.email,
-      phone: result.phone,
-      timeSlot: result.timeSlot,
-      address: result.address,
-      role: result.role,
-      status: result.status,
-      createdAt: result.createdAt
+      id: createdUser.id,
+      name: createdUser.name,
+      email: createdUser.email,
+      phone: createdUser.phone,
+      timeSlot: createdUser.timeSlot,
+      address: createdUser.address,
+      role: createdUser.role,
+      status: createdUser.status,
+      locality: createdUser.locality,
+      pincode: createdUser.pincode,
+      createdAt: createdUser.createdAt
     };
 
     res.status(201).json({
@@ -174,6 +187,7 @@ router.post('/register', registerValidation, async (req, res) => {
 // Login route
 router.post('/login', loginValidation, async (req, res) => {
   try {
+    const prisma = await initializePrisma();
     const { email, password } = req.body;
 
     // Find user with profiles
@@ -264,6 +278,7 @@ router.post('/login', loginValidation, async (req, res) => {
 // Get current user information
 router.get('/me', authenticateToken, async (req, res) => {
   try {
+    const prisma = await initializePrisma();
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       include: {

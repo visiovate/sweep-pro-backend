@@ -44,7 +44,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 // Import database utility
-const { initializePrisma } = require('./utils/database');
+const { initializePrisma, disconnectDatabase } = require('./utils/database');
 
 // Import notification service
 const notificationService = require('./services/notificationService');
@@ -224,13 +224,48 @@ if (process.env.NODE_ENV !== 'test') {
 
 module.exports = app;
 
-// Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Closing HTTP server, Redis, and Prisma Client...');
-  const { closeRedisConnection } = require('./config/redis');
-  const { closeQueue } = require('./queues/assignmentQueue');
-  await closeQueue();
-  await closeRedisConnection();
-  await disconnectDatabase();
-  process.exit(0);
-});
+let isShuttingDown = false;
+
+const shutdown = async (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  try {
+    console.log(`${signal} received. Closing HTTP server, queues, Redis, and Prisma Client...`);
+
+    await new Promise((resolve) => {
+      server.close(() => resolve());
+      setTimeout(() => resolve(), 3000);
+    });
+
+    try {
+      const { closeQueue } = require('./queues/assignmentQueue');
+      await closeQueue();
+    } catch (e) {
+      console.warn('⚠️ Failed to close BullMQ queue:', e?.message || e);
+    }
+
+    try {
+      const { closeRedisConnection } = require('./config/redis');
+      await closeRedisConnection();
+    } catch (e) {
+      console.warn('⚠️ Failed to close Redis connection:', e?.message || e);
+    }
+
+    try {
+      await disconnectDatabase();
+    } catch (e) {
+      console.warn('⚠️ Failed to disconnect database:', e?.message || e);
+    }
+  } finally {
+    if (signal === 'SIGUSR2') {
+      process.kill(process.pid, 'SIGUSR2');
+    } else {
+      process.exit(0);
+    }
+  }
+};
+
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGUSR2', () => shutdown('SIGUSR2'));

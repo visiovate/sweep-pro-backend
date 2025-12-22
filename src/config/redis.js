@@ -32,7 +32,6 @@ const createRedisConnection = () => {
     
     // Additional reliability options
     lazyConnect: true,
-    maxRetriesPerRequest: 3, // Allow retries for failed requests
     retryDelayOnFailover: 100,
     enableOfflineQueue: true, // Enable offline queue to buffer commands when Redis is down
     reconnectOnError: (err) => {
