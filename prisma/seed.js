@@ -140,106 +140,6 @@ async function main() {
       }
     });
 
-    // Create maid-to-customer assignments for the first 5 customers
-    console.log('\n🔗 Creating maid-to-customer assignments...');
-    
-    // Assign maid@sweepro.com to customer@sweepro.com
-    await prisma.customerMaidAssignment.upsert({
-      where: {
-        customerId_maidId: {
-          customerId: customer.id,
-          maidId: maid.id
-        }
-      },
-      update: {},
-      create: {
-        customerId: customer.id,
-        maidId: maid.id,
-        isActive: true,
-        assignedAt: new Date(),
-        assignedBy: admin.id,
-        notes: 'Initial assignment for customer@sweepro.com'
-      }
-    });
-    
-    // Assign maid2@sweepro.com to customer2@sweepro.com
-    await prisma.customerMaidAssignment.upsert({
-      where: {
-        customerId_maidId: {
-          customerId: user2.id,
-          maidId: maid2.id
-        }
-      },
-      update: {},
-      create: {
-        customerId: user2.id,
-        maidId: maid2.id,
-        isActive: true,
-        assignedAt: new Date(),
-        assignedBy: admin.id,
-        notes: 'Initial assignment for customer2@sweepro.com'
-      }
-    });
-    
-    // Assign maid3@sweepro.com to customer3@sweepro.com
-    await prisma.customerMaidAssignment.upsert({
-      where: {
-        customerId_maidId: {
-          customerId: user3.id,
-          maidId: maid3.id
-        }
-      },
-      update: {},
-      create: {
-        customerId: user3.id,
-        maidId: maid3.id,
-        isActive: true,
-        assignedAt: new Date(),
-        assignedBy: admin.id,
-        notes: 'Initial assignment for customer3@sweepro.com'
-      }
-    });
-    
-    // Assign maid4@sweepro.com to customer4@sweepro.com
-    await prisma.customerMaidAssignment.upsert({
-      where: {
-        customerId_maidId: {
-          customerId: user4.id,
-          maidId: maid4.id
-        }
-      },
-      update: {},
-      create: {
-        customerId: user4.id,
-        maidId: maid4.id,
-        isActive: true,
-        assignedAt: new Date(),
-        assignedBy: admin.id,
-        notes: 'Initial assignment for customer4@sweepro.com'
-      }
-    });
-    
-    // Assign maid5@sweepro.com to customer5@sweepro.com
-    await prisma.customerMaidAssignment.upsert({
-      where: {
-        customerId_maidId: {
-          customerId: user5.id,
-          maidId: maid5.id
-        }
-      },
-      update: {},
-      create: {
-        customerId: user5.id,
-        maidId: maid5.id,
-        isActive: true,
-        assignedAt: new Date(),
-        assignedBy: admin.id,
-        notes: 'Initial assignment for customer5@sweepro.com'
-      }
-    });
-    
-    console.log('✅ Created maid-to-customer assignments for all 5 customers');
-
     // Create services
     const dailyCleaningService = await prisma.service.upsert({
       where: { id: 'daily-cleaning-service' },
@@ -338,78 +238,7 @@ async function main() {
       }
     });
 
-    // Keep legacy plans for existing subscriptions
-    const basicPlan = await prisma.servicePlan.upsert({
-      where: { id: 'basic-plan' },
-      update: {
-        hasBufferSystem: false,
-        bufferDaysAllowed: 0
-      },
-      create: {
-        id: 'basic-plan',
-        name: 'Basic Daily Cleaning (Legacy)',
-        description: 'Daily house cleaning service - Perfect for small homes',
-        serviceId: dailyCleaningService.id,
-
-        sessionsPerWeek: 7,
-        sessionsPerMonth: 30,
-        duration: 1, // 1 month
-        basePrice: 6000.0,
-        discountPercent: 10.0,
-        finalPrice: 5400.0, // 10% discount
-        isActive: false, // Deactivated - legacy only
-        isPopular: false,
-        bufferDaysAllowed: 0, // No buffer days for legacy basic plan
-        hasBufferSystem: false // No buffer system for legacy basic plan
-      }
-    });
-
-    const premiumPlan = await prisma.servicePlan.upsert({
-      where: { id: 'premium-plan' },
-      update: {
-        hasBufferSystem: false,
-        bufferDaysAllowed: 0
-      },
-      create: {
-        id: 'premium-plan',
-        name: 'Premium Deep Cleaning (Legacy)',
-        description: 'Deep cleaning service 3 times a week - For thorough cleanliness',
-        serviceId: deepCleaningService.id,
-
-        sessionsPerWeek: 3,
-        sessionsPerMonth: 12,
-        duration: 1, // 1 month
-        basePrice: 7000.0,
-        discountPercent: 15.0,
-        finalPrice: 5950.0, // 15% discount
-        isActive: false, // Deactivated - legacy only
-        isPopular: false,
-        bufferDaysAllowed: 0, // No buffer days for legacy premium plan
-        hasBufferSystem: false // No buffer system for legacy premium plan
-      }
-    });
-
-    const standardPlan = await prisma.servicePlan.upsert({
-      where: { id: 'standard-plan' },
-      update: {},
-      create: {
-        id: 'standard-plan',
-        name: 'Standard Maintenance (Legacy)',
-        description: 'Home maintenance service twice a week - Keep your home organized',
-        serviceId: maintenanceService.id,
-
-        sessionsPerWeek: 2,
-        sessionsPerMonth: 8,
-        duration: 1, // 1 month
-        basePrice: 3500.0,
-        discountPercent: 5.0,
-        finalPrice: 3325.0, // 5% discount
-        isActive: false, // Deactivated - legacy only
-        isPopular: false,
-        bufferDaysAllowed: 3,
-        hasBufferSystem: false
-      }
-    });
+    // Only SweepPro Touch and SweepPro Lux plans are kept
 
     console.log('✅ Database seeded successfully!');
     console.log('📄 Created:');
@@ -419,7 +248,6 @@ async function main() {
     console.log('- 3 Services: Daily Cleaning, Deep Cleaning, Maintenance');
 
     console.log('- 2 Active Subscription Plans: SweepPro Touch (₹4,050/month), SweepPro Lux (₹6,800/month)');
-    console.log('- 3 Legacy Subscription Plans: Basic, Premium, Standard (Inactive)');
 
     // Create subscriptions for all customers
     console.log('\n📋 Creating subscriptions and payments for customers...');
@@ -705,7 +533,7 @@ async function main() {
         }
       }
     });
-    // Subscribe customer3 to standard plan
+    // Subscribe customer3 to SweepPro Touch plan
     const customer3Profile = await prisma.customerProfile.findUnique({
       where: { userId: user3.id }
     });
@@ -715,13 +543,13 @@ async function main() {
       update: {},
       create: {
         customerId: customer3Profile.id,
-        planId: standardPlan.id,
+        planId: sweepProTouchPlan.id,
         status: 'ACTIVE',
         startDate: new Date(),
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         billingCycle: 'MONTHLY',
-        amount: standardPlan.finalPrice,
-        discount: standardPlan.basePrice - standardPlan.finalPrice,
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
         autoRenew: true,
         nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
@@ -732,10 +560,10 @@ async function main() {
       data: {
         subscriptionId: subscription3.id,
         customerId: user3.id,
-        amount: standardPlan.finalPrice,
-        discount: standardPlan.basePrice - standardPlan.finalPrice,
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
         tax: 0,
-        finalAmount: standardPlan.finalPrice,
+        finalAmount: sweepProTouchPlan.finalPrice,
         paymentMethod: 'NET_BANKING',
         status: 'COMPLETED',
         paymentType: 'SUBSCRIPTION',
@@ -744,7 +572,7 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription and payment for customer3@sweepro.com (Standard Plan)');
+    console.log('✅ Created subscription and payment for customer3@sweepro.com (SweepPro Touch Plan)');
 
     await prisma.booking.create({
       data: {
@@ -812,7 +640,7 @@ async function main() {
         }
       }
     });
-    // Subscribe customer4 to basic plan
+    // Subscribe customer4 to SweepPro Touch plan
     const customer4Profile = await prisma.customerProfile.findUnique({
       where: { userId: user4.id }
     });
@@ -822,13 +650,13 @@ async function main() {
       update: {},
       create: {
         customerId: customer4Profile.id,
-        planId: basicPlan.id,
+        planId: sweepProTouchPlan.id,
         status: 'ACTIVE',
         startDate: new Date(),
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         billingCycle: 'MONTHLY',
-        amount: basicPlan.finalPrice,
-        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
         autoRenew: true,
         nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
@@ -839,10 +667,10 @@ async function main() {
       data: {
         subscriptionId: subscription4.id,
         customerId: user4.id,
-        amount: basicPlan.finalPrice,
-        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
         tax: 0,
-        finalAmount: basicPlan.finalPrice,
+        finalAmount: sweepProTouchPlan.finalPrice,
         paymentMethod: 'WALLET',
         status: 'COMPLETED',
         paymentType: 'SUBSCRIPTION',
@@ -851,7 +679,7 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription and payment for customer4@sweepro.com (Basic Plan)');
+    console.log('✅ Created subscription and payment for customer4@sweepro.com (SweepPro Touch Plan)');
 
     await prisma.booking.create({
       data: {
@@ -919,7 +747,7 @@ async function main() {
         }
       }
     });
-    // Subscribe customer5 to premium plan
+    // Subscribe customer5 to SweepPro Lux plan
     const customer5Profile = await prisma.customerProfile.findUnique({
       where: { userId: user5.id }
     });
@@ -929,13 +757,13 @@ async function main() {
       update: {},
       create: {
         customerId: customer5Profile.id,
-        planId: premiumPlan.id,
+        planId: sweepProLuxPlan.id,
         status: 'ACTIVE',
         startDate: new Date(),
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         billingCycle: 'MONTHLY',
-        amount: premiumPlan.finalPrice,
-        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         autoRenew: true,
         nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
@@ -946,10 +774,10 @@ async function main() {
       data: {
         subscriptionId: subscription5.id,
         customerId: user5.id,
-        amount: premiumPlan.finalPrice,
-        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         tax: 0,
-        finalAmount: premiumPlan.finalPrice,
+        finalAmount: sweepProLuxPlan.finalPrice,
         paymentMethod: 'UPI',
         status: 'COMPLETED',
         paymentType: 'SUBSCRIPTION',
@@ -958,7 +786,7 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription and payment for customer5@sweepro.com (Premium Plan)');
+    console.log('✅ Created subscription and payment for customer5@sweepro.com (SweepPro Lux Plan)');
 
     await prisma.booking.create({
       data: {
@@ -979,11 +807,11 @@ async function main() {
     });
     console.log('- 5 Pending Bookings created for 5 different customers and maids.');
     console.log('- 5 Active Subscriptions created for all customers:');
-    console.log('  • customer@sweepro.com: Basic Plan (₹5,400/month)');
-    console.log('  • customer2@sweepro.com: Premium Plan (₹5,950/month)');
-    console.log('  • customer3@sweepro.com: Standard Plan (₹3,325/month)');
-    console.log('  • customer4@sweepro.com: Basic Plan (₹5,400/month)');
-    console.log('  • customer5@sweepro.com: Premium Plan (₹5,950/month)');
+    console.log('  • customer@sweepro.com: SweepPro Touch Plan');
+    console.log('  • customer2@sweepro.com: SweepPro Lux Plan');
+    console.log('  • customer3@sweepro.com: SweepPro Touch Plan');
+    console.log('  • customer4@sweepro.com: SweepPro Touch Plan');
+    console.log('  • customer5@sweepro.com: SweepPro Lux Plan');
     
     // Create additional test users for comprehensive testing
     console.log('\n🔄 Creating additional test data...');
@@ -1021,13 +849,13 @@ async function main() {
       update: {},
       create: {
         customerId: pendingCustomerProfile.id,
-        planId: premiumPlan.id,
+        planId: sweepProLuxPlan.id,
         status: 'PENDING_PAYMENT',
         startDate: new Date(),
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         billingCycle: 'MONTHLY',
-        amount: premiumPlan.finalPrice,
-        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         autoRenew: true,
         nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
@@ -1038,10 +866,10 @@ async function main() {
       data: {
         subscriptionId: pendingSubscription.id,
         customerId: customerPending.id,
-        amount: premiumPlan.finalPrice,
-        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         tax: 0,
-        finalAmount: premiumPlan.finalPrice,
+        finalAmount: sweepProLuxPlan.finalPrice,
         paymentMethod: 'CARD',
         status: 'PENDING',
         paymentType: 'SUBSCRIPTION',
@@ -1054,10 +882,10 @@ async function main() {
       data: {
         subscriptionId: subscription1.id,
         customerId: customer.id,
-        amount: basicPlan.finalPrice,
+        amount: sweepProTouchPlan.finalPrice,
         discount: 0,
         tax: 0,
-        finalAmount: basicPlan.finalPrice,
+        finalAmount: sweepProTouchPlan.finalPrice,
         paymentMethod: 'CARD',
         status: 'FAILED',
         paymentType: 'RENEWAL',
@@ -1070,16 +898,16 @@ async function main() {
       data: {
         subscriptionId: subscription2.id,
         customerId: user2.id,
-        amount: premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
         discount: 0,
         tax: 18.0, // GST
-        finalAmount: premiumPlan.finalPrice + 18.0,
+        finalAmount: sweepProLuxPlan.finalPrice + 18.0,
         paymentMethod: 'UPI',
         status: 'REFUNDED',
         paymentType: 'SUBSCRIPTION',
         gateway: 'razorpay',
         transactionId: 'txn_refunded_' + Date.now(),
-        refundAmount: premiumPlan.finalPrice + 18.0,
+        refundAmount: sweepProLuxPlan.finalPrice + 18.0,
         refundReason: 'Customer request',
         refundedAt: new Date()
       }
@@ -1273,15 +1101,154 @@ async function main() {
     console.log('  • 1 NO_SHOW booking');
     console.log('  • 5 CONFIRMED bookings (from previous section)');
     console.log('\n📊 Total: 14 bookings with different statuses for comprehensive testing');
+
+    console.log('\n⭐ Creating sample feedback data...');
+
+    const completedBookings = await prisma.booking.findMany({
+      where: {
+        status: 'COMPLETED',
+        maidId: { not: null }
+      },
+      include: {
+        customer: true,
+        maid: true
+      },
+      take: 5
+    });
+
+    const feedbackData = [
+      {
+        overallRating: 5,
+        qualityRating: 5,
+        punctualityRating: 5,
+        behaviorRating: 5,
+        comment: 'Excellent service! The maid was very professional and thorough. Everything was cleaned perfectly.',
+        improvements: null,
+        wouldRecommend: true
+      },
+      {
+        overallRating: 4,
+        qualityRating: 4,
+        punctualityRating: 5,
+        behaviorRating: 4,
+        comment: 'Great service overall. Very punctual and professional. Minor improvements could be made in deep cleaning corners.',
+        improvements: 'Could pay more attention to hard-to-reach areas',
+        wouldRecommend: true
+      },
+      {
+        overallRating: 5,
+        qualityRating: 5,
+        punctualityRating: 4,
+        behaviorRating: 5,
+        comment: 'Outstanding work! Very satisfied with the cleaning quality. Highly recommend.',
+        improvements: null,
+        wouldRecommend: true
+      },
+      {
+        overallRating: 3,
+        qualityRating: 3,
+        punctualityRating: 3,
+        behaviorRating: 4,
+        comment: 'Service was okay but could be better. Some areas were missed during cleaning.',
+        improvements: 'Need more thorough cleaning, especially in bathrooms and kitchen',
+        wouldRecommend: false
+      },
+      {
+        overallRating: 4,
+        qualityRating: 4,
+        punctualityRating: 4,
+        behaviorRating: 4,
+        comment: 'Good service. Professional and courteous. Would use again.',
+        improvements: null,
+        wouldRecommend: true
+      }
+    ];
+
+    let createdFeedbackCount = 0;
+
+    for (let i = 0; i < completedBookings.length && i < feedbackData.length; i++) {
+      const booking = completedBookings[i];
+      const feedback = feedbackData[i];
+
+      const existingFeedback = await prisma.feedback.findUnique({
+        where: { bookingId: booking.id }
+      });
+
+      if (!existingFeedback && booking.maidId) {
+        await prisma.feedback.create({
+          data: {
+            bookingId: booking.id,
+            customerId: booking.customerId,
+            overallRating: feedback.overallRating,
+            qualityRating: feedback.qualityRating,
+            punctualityRating: feedback.punctualityRating,
+            behaviorRating: feedback.behaviorRating,
+            comment: feedback.comment,
+            improvements: feedback.improvements,
+            wouldRecommend: feedback.wouldRecommend
+          }
+        });
+
+        createdFeedbackCount++;
+      }
+    }
+
+    const maidsWithCompletedBookings = await prisma.user.findMany({
+      where: {
+        role: 'MAID',
+        maidBookings: {
+          some: {
+            status: 'COMPLETED'
+          }
+        }
+      },
+      select: {
+        id: true,
+        maidProfile: {
+          select: { id: true }
+        }
+      }
+    });
+
+    for (const m of maidsWithCompletedBookings) {
+      if (!m.maidProfile?.id) continue;
+
+      const allFeedbacks = await prisma.feedback.findMany({
+        where: {
+          booking: {
+            maidId: m.id,
+            status: 'COMPLETED'
+          }
+        },
+        select: {
+          overallRating: true
+        }
+      });
+
+      if (allFeedbacks.length === 0) continue;
+
+      const averageRating = allFeedbacks.reduce((sum, f) => sum + f.overallRating, 0) / allFeedbacks.length;
+
+      await prisma.maidProfile.update({
+        where: { id: m.maidProfile.id },
+        data: {
+          rating: averageRating,
+          totalRatings: allFeedbacks.length
+        }
+      });
+    }
+
+    console.log(`✅ Created ${createdFeedbackCount} feedback entries`);
+    console.log('✅ Updated maid profile ratings based on feedback');
     
     console.log('\n💳 All customers now have active subscriptions and can create bookings!');
     console.log('\n🧪 Test Users Created:');
     console.log('- admin@sweepro.com (password: admin123) - Admin');
-    console.log('- customer@sweepro.com (password: customer123) - Customer with Basic Plan');
-    console.log('- customer2@sweepro.com (password: customer2123) - Customer with Premium Plan');
-    console.log('- customer3@sweepro.com (password: customer3123) - Customer with Standard Plan');
-    console.log('- customer4@sweepro.com (password: customer4123) - Customer with Basic Plan');
-    console.log('- customer5@sweepro.com (password: customer5123) - Customer with Premium Plan');
+    console.log('- customer@sweepro.com (password: customer123) - Customer with SweepPro Touch Plan');
+    console.log('- customer2@sweepro.com (password: customer2123) - Customer with SweepPro Lux Plan');
+    console.log('- customer3@sweepro.com (password: customer3123) - Customer with SweepPro Touch Plan');
+    console.log('- customer4@sweepro.com (password: customer4123) - Customer with SweepPro Touch Plan');
+    console.log('- customer5@sweepro.com (password: customer5123) - Customer with SweepPro Lux Plan');
     console.log('- pending@sweepro.com (password: pending123) - Customer with Pending Payment');
     console.log('- maid@sweepro.com (password: maid123) - Maid');
     console.log('- maid2@sweepro.com (password: maid2123) - Maid');
@@ -1362,13 +1329,13 @@ async function main() {
       update: {},
       create: {
         customerId: bufferCustomerProfile.id,
-        planId: basicPlan.id,
+        planId: sweepProLuxPlan.id,
         status: 'ACTIVE',
         startDate: monthStart,
         endDate: nextMonthStart,
         billingCycle: 'MONTHLY',
-        amount: basicPlan.finalPrice,
-        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         autoRenew: true,
         nextBillDate: nextMonthStart,
         bufferDaysCount: 3,
@@ -1406,7 +1373,7 @@ async function main() {
         bufferStartDate: new Date(monthEnd.getTime() - 2 * 24 * 60 * 60 * 1000),
         bufferEndDate: new Date(nextMonthStart.getTime() + 1 * 24 * 60 * 60 * 1000),
         paymentStatus: 'COMPLETED',
-        amount: basicPlan.finalPrice
+        amount: sweepProLuxPlan.finalPrice
       }
     });
     
@@ -1495,13 +1462,13 @@ async function main() {
       update: {},
       create: {
         customerId: expiredCustomerProfile.id,
-        planId: premiumPlan.id,
+        planId: sweepProLuxPlan.id,
         status: 'EXPIRED',
         startDate: new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000),
         endDate: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000), // Expired 5 days ago
         billingCycle: 'MONTHLY',
-        amount: premiumPlan.finalPrice,
-        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         autoRenew: false, // Auto-renewal disabled
         nextBillDate: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000),
         bufferDaysCount: 3,
@@ -1545,13 +1512,13 @@ async function main() {
       update: {},
       create: {
         customerId: cancelledCustomerProfile.id,
-        planId: standardPlan.id,
+        planId: sweepProLuxPlan.id,
         status: 'CANCELLED',
         startDate: new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000),
         endDate: new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000),
         billingCycle: 'MONTHLY',
-        amount: standardPlan.finalPrice,
-        discount: standardPlan.basePrice - standardPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         autoRenew: true,
         nextBillDate: new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000),
         bufferDaysCount: 3,
@@ -1612,13 +1579,13 @@ async function main() {
       update: {},
       create: {
         customerId: pausedCustomerProfile.id,
-        planId: basicPlan.id,
+        planId: sweepProLuxPlan.id,
         status: 'SUSPENDED',
         startDate: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000),
         endDate: new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000),
         billingCycle: 'MONTHLY',
-        amount: basicPlan.finalPrice,
-        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         autoRenew: true,
         nextBillDate: new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000),
         bufferDaysCount: 3,
@@ -1719,10 +1686,10 @@ async function main() {
       data: {
         subscriptionId: bufferSubscription.id,
         customerId: bufferCustomer.id,
-        amount: basicPlan.finalPrice,
-        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         tax: 0,
-        finalAmount: basicPlan.finalPrice,
+        finalAmount: sweepProLuxPlan.finalPrice,
         paymentMethod: 'UPI',
         status: 'COMPLETED',
         paymentType: 'SUBSCRIPTION',
@@ -1736,10 +1703,10 @@ async function main() {
       data: {
         subscriptionId: expiredSubscription.id,
         customerId: expiredCustomer.id,
-        amount: premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
         discount: 0,
         tax: 0,
-        finalAmount: premiumPlan.finalPrice,
+        finalAmount: sweepProLuxPlan.finalPrice,
         paymentMethod: 'CARD',
         status: 'FAILED',
         paymentType: 'RENEWAL',
@@ -1753,10 +1720,10 @@ async function main() {
       data: {
         subscriptionId: expiredSubscription.id,
         customerId: expiredCustomer.id,
-        amount: premiumPlan.finalPrice,
-        discount: premiumPlan.basePrice - premiumPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         tax: 0,
-        finalAmount: premiumPlan.finalPrice,
+        finalAmount: sweepProLuxPlan.finalPrice,
         paymentMethod: 'UPI',
         status: 'COMPLETED',
         paymentType: 'SUBSCRIPTION',
@@ -1770,16 +1737,16 @@ async function main() {
       data: {
         subscriptionId: cancelledSubscription.id,
         customerId: cancelledCustomer.id,
-        amount: standardPlan.finalPrice,
-        discount: standardPlan.basePrice - standardPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         tax: 0,
-        finalAmount: standardPlan.finalPrice,
+        finalAmount: sweepProLuxPlan.finalPrice,
         paymentMethod: 'CARD',
         status: 'REFUNDED',
         paymentType: 'SUBSCRIPTION',
         gateway: 'stripe',
         transactionId: 'txn_cancelled_refund_' + Date.now(),
-        refundAmount: standardPlan.finalPrice,
+        refundAmount: sweepProLuxPlan.finalPrice,
         refundReason: 'Subscription cancelled by customer',
         refundedAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000)
       }
@@ -1790,10 +1757,10 @@ async function main() {
       data: {
         subscriptionId: pausedSubscription.id,
         customerId: pausedCustomer.id,
-        amount: basicPlan.finalPrice,
-        discount: basicPlan.basePrice - basicPlan.finalPrice,
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         tax: 0,
-        finalAmount: basicPlan.finalPrice,
+        finalAmount: sweepProLuxPlan.finalPrice,
         paymentMethod: 'NET_BANKING',
         status: 'PENDING',
         paymentType: 'SUBSCRIPTION',
@@ -2300,12 +2267,12 @@ async function main() {
     console.log('\n📋 NEW SUBSCRIPTION PLANS:');
     console.log('- touch@sweepro.com: SweepPro Touch (₹4,050/month - NO BUFFER SYSTEM)');
     console.log('- lux@sweepro.com: SweepPro Lux (₹6,800/month - 5 BUFFER DAYS)');
-    console.log('\n📋 LEGACY SUBSCRIPTION STATUSES:');
-    console.log('- customer@sweepro.com: ACTIVE subscription (Basic Plan - Legacy)');
-    console.log('- customer2@sweepro.com: ACTIVE subscription (Premium Plan - Legacy)');
-    console.log('- customer3@sweepro.com: ACTIVE subscription (Standard Plan - Legacy)');
-    console.log('- customer4@sweepro.com: ACTIVE subscription (Basic Plan - Legacy)');
-    console.log('- customer5@sweepro.com: ACTIVE subscription (Premium Plan - Legacy)');
+    console.log('\n📋 SUBSCRIPTION STATUSES:');
+    console.log('- customer@sweepro.com: ACTIVE subscription (SweepPro Touch)');
+    console.log('- customer2@sweepro.com: ACTIVE subscription (SweepPro Lux)');
+    console.log('- customer3@sweepro.com: ACTIVE subscription (SweepPro Touch)');
+    console.log('- customer4@sweepro.com: ACTIVE subscription (SweepPro Touch)');
+    console.log('- customer5@sweepro.com: ACTIVE subscription (SweepPro Lux)');
     console.log('- buffer@sweepro.com: ACTIVE subscription with ACTIVE buffer period');
     console.log('- expired@sweepro.com: EXPIRED subscription');
     console.log('- cancelled@sweepro.com: CANCELLED subscription');
@@ -2376,8 +2343,8 @@ async function main() {
         userId: customer.id,
         type: 'PAYMENT_SUCCESS',
         title: 'Payment Received',
-        message: 'Payment of ₹5,400 received successfully for Basic Plan',
-        data: { amount: 5400, planName: 'Basic Daily Cleaning' },
+        message: 'Payment received successfully for SweepPro Touch Plan',
+        data: { planName: 'SweepPro Touch' },
         read: true,
         readAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
         delivered: true,
@@ -2387,8 +2354,8 @@ async function main() {
         userId: customer.id,
         type: 'SUBSCRIPTION_RENEWED',
         title: 'Subscription Activated',
-        message: 'Your Basic Daily Cleaning subscription is now active',
-        data: { planName: 'Basic Daily Cleaning' },
+        message: 'Your SweepPro Touch subscription is now active',
+        data: { planName: 'SweepPro Touch' },
         read: true,
         readAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
         delivered: true,
@@ -2441,8 +2408,8 @@ async function main() {
         userId: admin.id,
         type: 'PAYMENT_SUCCESS',
         title: 'Payment Confirmation',
-        message: 'Payment of ₹5,400 received from customer',
-        data: { amount: 5400, customerName: 'John Customer' },
+        message: 'Payment received from customer',
+        data: { customerName: 'John Customer' },
         read: false,
         delivered: true,
         deliveredAt: new Date()
@@ -2451,8 +2418,8 @@ async function main() {
         userId: admin.id,
         type: 'SUBSCRIPTION_RENEWED',
         title: 'New Subscription',
-        message: 'New subscription created: Basic Daily Cleaning',
-        data: { planName: 'Basic Daily Cleaning', customerName: 'John Customer' },
+        message: 'New subscription created: SweepPro Touch',
+        data: { planName: 'SweepPro Touch', customerName: 'John Customer' },
         read: true,
         readAt: new Date(Date.now() - 1 * 60 * 60 * 1000),
         delivered: true,

@@ -137,7 +137,6 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/maids', maidRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/admin', adminRoutes);
 app.use('/api/test', testRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/documents', documentRoutes);
@@ -145,6 +144,7 @@ app.use('/api/dashboard', userDashboardRoutes);
 app.use('/api/buffer', bufferRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/admin/customer-assignments', customerAssignmentRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/automatic-bookings', automaticBookingRoutes);
 app.use('/api/automatic-assignments', automaticAssignmentRoutes);
 

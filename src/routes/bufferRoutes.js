@@ -22,6 +22,13 @@ router.get(
   bufferController.getRemainingBufferDays
 );
 
+router.get(
+  '/remaining/:subscriptionId',
+  authenticateToken,
+  checkBufferEligibility,
+  bufferController.getRemainingBufferDays
+);
+
 /**
  * @route   POST /api/buffer/subscription/:subscriptionId/request
  * @desc    Request buffer days (customer)
@@ -52,6 +59,31 @@ router.post(
   bufferController.requestBufferDays
 );
 
+router.post(
+  '/request/:subscriptionId',
+  authenticateToken,
+  checkBufferEligibility,
+  [
+    body('daysCount')
+      .isInt({ min: 1, max: 7 })
+      .withMessage('Days count must be between 1 and 7'),
+    body('startDate')
+      .isISO8601()
+      .toDate()
+      .withMessage('Valid start date is required'),
+    body('reason')
+      .trim()
+      .isLength({ min: 3, max: 200 })
+      .withMessage('Reason must be between 3 and 200 characters'),
+    body('notes')
+      .optional()
+      .trim()
+      .isLength({ max: 500 })
+      .withMessage('Notes must not exceed 500 characters')
+  ],
+  bufferController.requestBufferDays
+);
+
 /**
  * @route   GET /api/buffer/subscription/:subscriptionId/history
  * @desc    Get customer's buffer history (customer)
@@ -59,6 +91,13 @@ router.post(
  */
 router.get(
   '/subscription/:subscriptionId/history',
+  authenticateToken,
+  checkBufferEligibility,
+  bufferController.getCustomerBufferHistory
+);
+
+router.get(
+  '/history/:subscriptionId',
   authenticateToken,
   checkBufferEligibility,
   bufferController.getCustomerBufferHistory
@@ -95,6 +134,20 @@ router.post(
   bufferController.approveBufferRequest
 );
 
+router.post(
+  '/admin/approve/:bufferPeriodId',
+  authenticateToken,
+  authorizeAdmin,
+  [
+    body('adminNotes')
+      .optional()
+      .trim()
+      .isLength({ max: 500 })
+      .withMessage('Admin notes must not exceed 500 characters')
+  ],
+  bufferController.approveBufferRequest
+);
+
 /**
  * @route   POST /api/buffer/admin/:bufferPeriodId/reject
  * @desc    Reject buffer request (admin)
@@ -102,6 +155,19 @@ router.post(
  */
 router.post(
   '/admin/:bufferPeriodId/reject',
+  authenticateToken,
+  authorizeAdmin,
+  [
+    body('rejectionReason')
+      .trim()
+      .isLength({ min: 3, max: 300 })
+      .withMessage('Rejection reason must be between 3 and 300 characters')
+  ],
+  bufferController.rejectBufferRequest
+);
+
+router.post(
+  '/admin/reject/:bufferPeriodId',
   authenticateToken,
   authorizeAdmin,
   [

@@ -243,14 +243,17 @@ class BufferDayService {
         subscriptionId: bufferPeriod.subscriptionId
       });
 
+      // Idempotency: if already approved, return success (prevents double-click/double-request errors)
+      if (bufferPeriod.status === 'ACTIVE' && bufferPeriod.notes?.includes('STATUS: APPROVED')) {
+        return {
+          success: true,
+          message: 'Buffer period already approved and active'
+        };
+      }
+
       // Check if this is a pending approval request
       if (bufferPeriod.status !== 'ACTIVE' || !bufferPeriod.notes?.includes('PENDING_APPROVAL')) {
         throw new Error('Buffer period request is not pending approval');
-      }
-
-      // Check if already approved (prevent double approval)
-      if (bufferPeriod.notes?.includes('STATUS: APPROVED')) {
-        throw new Error('Buffer period request has already been approved');
       }
 
       console.log(`🔄 Step 1: Updating buffer period status...`);
@@ -434,14 +437,6 @@ class BufferDayService {
         data: {
           status: 'CANCELLED',
           notes: updatedNotes
-        }
-      });
-
-      // Restore buffer days to customer
-      await this.prisma.subscription.update({
-        where: { id: bufferPeriod.subscriptionId },
-        data: {
-          bufferDaysUsed: bufferPeriod.subscription.bufferDaysUsed - bufferPeriod.daysCount
         }
       });
 
@@ -657,7 +652,7 @@ class BufferDayService {
         data: {
           status: 'CANCELLED',
           isBufferSkipped: true,
-          notes: `${booking.notes || ''}\nCancelled due to approved buffer period`
+          specialInstructions: `${booking.specialInstructions || ''}\nCancelled due to approved buffer period`
         }
       });
 
@@ -770,7 +765,7 @@ class BufferDayService {
         await this.prisma.notification.create({
           data: {
             userId: bufferPeriod.subscription.customer.user.id,
-            type: 'BUFFER_COMPLETED',
+            type: 'BUFFER_ENDED',
             title: 'Buffer Period Completed',
             message: `Your buffer period has ended. Your cleaning services have been automatically resumed. You can now book new services.`,
             data: {

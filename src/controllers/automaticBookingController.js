@@ -66,45 +66,56 @@ const createAutomaticBooking = async (req, res) => {
       });
     }
 
-    // Check if customer is in buffer period
-    const activeBuffer = await prisma.bufferPeriod.findFirst({
+    // Check if customer is in buffer period (Lux plan only)
+    const subscription = await prisma.subscription.findFirst({
       where: {
-        subscription: {
-          customer: {
-            userId: customerId
-          }
-        },
         status: 'ACTIVE',
-        endDate: {
-          gte: new Date()
+        customer: {
+          userId: customerId
         }
       },
       include: {
-        subscription: {
-          include: {
-            customer: {
-              include: {
-                user: {
-                  select: {
-                    name: true
-                  }
-                }
-              }
-            }
+        plan: {
+          select: {
+            hasBufferSystem: true
           }
         }
       }
     });
 
-    if (activeBuffer) {
-      return res.status(409).json({
-        success: false,
-        message: 'Customer is in buffer period. Automatic bookings are paused.',
-        bufferInfo: {
-          reason: activeBuffer.reason,
-          endDate: activeBuffer.endDate
+    if (subscription?.plan?.hasBufferSystem) {
+      const now = new Date();
+      const activeBuffer = await prisma.bufferPeriod.findFirst({
+        where: {
+          subscription: {
+            customer: {
+              userId: customerId
+            }
+          },
+          status: 'ACTIVE',
+          startDate: { lte: now },
+          endDate: { gte: now },
+          OR: [
+            { isAutomatic: true },
+            {
+              notes: {
+                contains: 'STATUS: APPROVED'
+              }
+            }
+          ]
         }
       });
+
+      if (activeBuffer) {
+        return res.status(409).json({
+          success: false,
+          message: 'Customer is in buffer period. Automatic bookings are paused.',
+          bufferInfo: {
+            reason: activeBuffer.reason,
+            endDate: activeBuffer.endDate
+          }
+        });
+      }
     }
 
     const maidUnavailable = customerAssignment.maid?.availability && customerAssignment.maid.availability.isAvailable === false;
@@ -121,7 +132,7 @@ const createAutomaticBooking = async (req, res) => {
           assignmentStatus: 'REJECTED',
           rejectionReason: 'Maid unavailable',
           totalAmount: service.basePrice,
-          notes: notes || `Automatic booking for ${service.name}`,
+          specialInstructions: notes || `Automatic booking for ${service.name}`,
           isAutomatic: true
         },
         include: {
@@ -166,7 +177,7 @@ const createAutomaticBooking = async (req, res) => {
           status: 'PENDING',
           assignmentStatus: 'PENDING_ASSIGNMENT',
           totalAmount: service.basePrice,
-          notes: notes || `Automatic booking for ${service.name}`,
+          specialInstructions: notes || `Automatic booking for ${service.name}`,
           isAutomatic: true
         },
         include: {
