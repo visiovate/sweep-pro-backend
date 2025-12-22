@@ -51,7 +51,7 @@ const registerValidation = [
     .trim()
     .isLength({ min: 10, max: 500 })
     .withMessage('Address must be between 10 and 500 characters long')
-    .matches(/^[a-zA-Z0-9\s,.'#()\/\-]+$/)
+    .matches(/^[a-zA-Z0-9\s,.'#()\/\-\:]+$/)
     .withMessage('Address contains invalid characters'),
   validate
 ];

@@ -22,7 +22,7 @@ const getSubscriptionPlans = async (req, res) => {
 // Subscribe user to a plan
 const subscribeToPlan = async (req, res) => {
   try {
-    const { planId } = req.body;
+    const { planId, finalAmount } = req.body;
     const userId = req.user.id;
 
     // Get or create customer profile
@@ -76,6 +76,13 @@ const subscribeToPlan = async (req, res) => {
     const endDate = new Date();
     endDate.setMonth(startDate.getMonth() + plan.duration);
 
+    // Use front-end calculated final amount (including GST/property config)
+    // when available; otherwise fall back to plan.finalPrice.
+    const billedAmount =
+      typeof finalAmount === 'number' && finalAmount > 0
+        ? finalAmount
+        : plan.finalPrice;
+
     // Create subscription (initially pending payment)
     // Buffer configuration depends on plan type
     const subscription = await prisma.subscription.create({
@@ -86,8 +93,8 @@ const subscribeToPlan = async (req, res) => {
         startDate,
         endDate,
         billingCycle: 'MONTHLY',
-        amount: plan.finalPrice,
-        discount: plan.basePrice - plan.finalPrice,
+        amount: billedAmount,
+        discount: plan.basePrice - billedAmount,
         autoRenew: true,
         nextBillDate: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
         bufferDaysCount: plan.hasBufferSystem ? (plan.bufferDaysAllowed || 0) : 0,
@@ -104,20 +111,9 @@ const subscribeToPlan = async (req, res) => {
       }
     });
 
-    // Create payment for subscription
-    const payment = await prisma.payment.create({
-      data: {
-        subscriptionId: subscription.id,
-        customerId: userId,
-        amount: plan.finalPrice,
-        discount: plan.basePrice - plan.finalPrice,
-        tax: 0,
-        finalAmount: plan.finalPrice,
-        paymentMethod: 'CARD', // Default, should be updated when actual payment is made
-        status: 'PENDING',
-        paymentType: 'SUBSCRIPTION'
-      }
-    });
+    // NOTE: We no longer create an initial PENDING payment here.
+    // Razorpay flows create payment records via razorpayService when
+    // an order is created and later mark them COMPLETED on verification.
 
     res.status(201).json({
       success: true,
