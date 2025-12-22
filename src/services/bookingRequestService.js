@@ -314,6 +314,35 @@ const scheduleBookingRequestForAssignment = async (assignment) => {
  */
 const checkCustomerBufferStatus = async (customerId) => {
   try {
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        status: 'ACTIVE',
+        customer: {
+          userId: customerId
+        }
+      },
+      include: {
+        plan: {
+          select: {
+            hasBufferSystem: true
+          }
+        }
+      }
+    });
+
+    if (!subscription || !subscription.plan?.hasBufferSystem) {
+      return false;
+    }
+
+    const now = new Date();
+
+    if (subscription.isInBufferPeriod && subscription.bufferStartDate && subscription.bufferEndDate) {
+      if (now >= subscription.bufferStartDate && now <= subscription.bufferEndDate) {
+        console.log(`   ⏸️  Customer is in buffer period until ${formatInIST(subscription.bufferEndDate)}`);
+        return true;
+      }
+    }
+
     const activeBuffer = await prisma.bufferPeriod.findFirst({
       where: {
         subscription: {
@@ -322,9 +351,16 @@ const checkCustomerBufferStatus = async (customerId) => {
           }
         },
         status: 'ACTIVE',
-        endDate: {
-          gte: new Date()
-        }
+        startDate: { lte: now },
+        endDate: { gte: now },
+        OR: [
+          { isAutomatic: true },
+          {
+            notes: {
+              contains: 'STATUS: APPROVED'
+            }
+          }
+        ]
       }
     });
 
@@ -332,7 +368,7 @@ const checkCustomerBufferStatus = async (customerId) => {
       console.log(`   ⏸️  Customer is in buffer period until ${formatInIST(activeBuffer.endDate)}`);
     }
 
-    return !!activeBuffer;
+    return Boolean(activeBuffer);
   } catch (error) {
     console.error('   ⚠️  Error checking buffer status:', error.message);
     return false; // Don't block on error

@@ -1064,15 +1064,11 @@ const getReassignmentBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching reassignment bookings...');
     
-    // Only include bookings where assignmentStatus is 'REJECTED' and booking.status is not 'CONFIRMED' or 'ASSIGNED' or 'ACCEPTED'.
+    // Only include bookings where assignmentStatus is 'REJECTED' and booking is cancelled for reassignment.
     const bookings = await prisma.booking.findMany({
       where: {
         assignmentStatus: 'REJECTED',
-        NOT: {
-          status: {
-            in: ['CONFIRMED', 'ASSIGNED', 'ACCEPTED']
-          }
-        }
+        status: 'CANCELLED'
       },
       include: {
         service: true,

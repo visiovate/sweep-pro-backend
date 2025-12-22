@@ -340,6 +340,34 @@ class JobScheduler {
    */
   static async checkCustomerBufferStatus(customerId) {
     try {
+      const subscription = await prisma.subscription.findFirst({
+        where: {
+          status: 'ACTIVE',
+          customer: {
+            userId: customerId
+          }
+        },
+        include: {
+          plan: {
+            select: {
+              hasBufferSystem: true
+            }
+          }
+        }
+      });
+
+      if (!subscription || !subscription.plan?.hasBufferSystem) {
+        return false;
+      }
+
+      const now = new Date();
+
+      if (subscription.isInBufferPeriod && subscription.bufferStartDate && subscription.bufferEndDate) {
+        if (now >= subscription.bufferStartDate && now <= subscription.bufferEndDate) {
+          return true;
+        }
+      }
+
       const activeBuffer = await prisma.bufferPeriod.findFirst({
         where: {
           subscription: {
@@ -348,13 +376,20 @@ class JobScheduler {
             }
           },
           status: 'ACTIVE',
-          endDate: {
-            gte: new Date()
-          }
+          startDate: { lte: now },
+          endDate: { gte: now },
+          OR: [
+            { isAutomatic: true },
+            {
+              notes: {
+                contains: 'STATUS: APPROVED'
+              }
+            }
+          ]
         }
       });
 
-      return !!activeBuffer;
+      return Boolean(activeBuffer);
     } catch (error) {
       console.error('Error checking buffer status:', error);
       return false;
