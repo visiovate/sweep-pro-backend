@@ -82,7 +82,8 @@ app.use(cors({
     'http://127.0.0.1:3001',
     // Production frontend URLs
     'https://sweep-pro-frontend.vercel.app',
-    'https://www.sweep-pro-frontend.vercel.app'
+    'https://www.sweep-pro-frontend.vercel.app',
+    'https://sweep-pro-frontend-bk1k88riv-visiovate-techs-projects.vercel.app'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
