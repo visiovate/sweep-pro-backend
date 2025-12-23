@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
-const {
+ const {
   assignMaidToCustomer,
   getCustomerAssignment,
   updateCustomerAssignment,
@@ -18,6 +18,10 @@ const {
   getMyMaidAssignment
 } = require('../controllers/customerAssignmentController');
 
+ // Customer routes (for customers to check their own status)
+ router.get('/my-status', authenticateToken, getMyCustomerStatus);
+ router.get('/my-assignment', authenticateToken, getMyMaidAssignment);
+
 // Admin routes for customer-maid assignments
 router.post('/assign', authenticateToken, authorizeAdmin, assignMaidToCustomer);
 router.get('/status/:customerId', authenticateToken, authorizeAdmin, getCustomerStatus);
@@ -25,12 +29,6 @@ router.get('/:customerId', authenticateToken, authorizeAdmin, getCustomerAssignm
 router.patch('/:customerId/update', authenticateToken, authorizeAdmin, updateCustomerAssignment);
 router.get('/', authenticateToken, authorizeAdmin, getAllCustomerAssignments);
 router.delete('/:customerId', authenticateToken, authorizeAdmin, removeCustomerAssignment);
-
-// Customer routes (for customers to check their own status)
-router.get('/my-status', authenticateToken, getMyCustomerStatus);
-// Customer routes
-router.get('/my-assignment', authenticateToken, getMyMaidAssignment);
-router.get('/status/:customerId', authenticateToken, authorizeAdmin, getCustomerStatus);
 
 // Assignment request routes for maids
 router.get('/requests/maid', authenticateToken, getMaidAssignmentRequests);

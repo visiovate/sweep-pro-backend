@@ -67,24 +67,39 @@ const automaticScheduler = new AutomaticServiceScheduler();
 const bufferPeriodScheduler = require('./scheduler/bufferPeriodScheduler');
 
 // Middleware
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173', 
+  'http://localhost:8080',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:8080',
+  'http://localhost:4173',
+  'http://localhost:3001',
+  'http://127.0.0.1:4173',
+  'http://127.0.0.1:3001',
+  'https://sweep-pro-frontend.vercel.app',
+  'https://www.sweep-pro-frontend.vercel.app'
+];
+
+const allowedOriginRegexes = [
+  /^https:\/\/sweep-pro-frontend(-testing)?\.vercel\.app$/i,
+  /^https:\/\/sweep-pro-frontend(-testing)?-[a-z0-9]+-visiovate-techs-projects\.vercel\.app$/i
+];
+
+function isOriginAllowed(origin) {
+  return Boolean(
+    origin &&
+    (allowedOrigins.includes(origin) || allowedOriginRegexes.some((re) => re.test(origin)))
+  );
+}
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:5173', 
-    'http://localhost:8080',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:8080',
-    // Add additional common development ports
-    'http://localhost:4173',
-    'http://localhost:3001',
-    'http://127.0.0.1:4173',
-    'http://127.0.0.1:3001',
-    // Production frontend URLs
-    'https://sweep-pro-frontend.vercel.app',
-    'https://www.sweep-pro-frontend.vercel.app',
-    'https://sweep-pro-frontend-bk1k88riv-visiovate-techs-projects.vercel.app'
-  ],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (isOriginAllowed(origin)) return callback(null, true);
+    return callback(null, false);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cache-Control', 'Pragma'],
@@ -94,10 +109,14 @@ app.use(cors({
 
 // Handle preflight requests explicitly
 app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin);
+  const origin = req.headers.origin;
+  if (isOriginAllowed(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, Pragma');
-  res.header('Access-Control-Allow-Credentials', 'true');
   res.sendStatus(200);
 });
 

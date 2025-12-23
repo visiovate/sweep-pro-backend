@@ -3,6 +3,29 @@ const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
+async function ensureCustomerProfile(userId) {
+  let profile = await prisma.customerProfile.findUnique({ where: { userId } });
+  if (!profile) {
+    profile = await prisma.customerProfile.create({
+      data: {
+        userId,
+        preferences: {},
+        emergencyContact: null,
+        specialInstructions: null
+      }
+    });
+  }
+  return profile;
+}
+
+async function ensureMaidProfile(userId, data) {
+  let profile = await prisma.maidProfile.findUnique({ where: { userId } });
+  if (!profile) {
+    profile = await prisma.maidProfile.create({ data: { userId, ...data } });
+  }
+  return profile;
+}
+
 async function main() {
   console.log('Seeding database...');
 
@@ -140,6 +163,30 @@ async function main() {
       }
     });
 
+    const maidProfile = await ensureMaidProfile(maid.id, {
+      skills: ['house_cleaning', 'kitchen_cleaning', 'bathroom_cleaning'],
+      languages: ['English', 'Hindi'],
+      availability: {
+        monday: { start: '08:00', end: '18:00' },
+        tuesday: { start: '08:00', end: '18:00' },
+        wednesday: { start: '08:00', end: '18:00' },
+        thursday: { start: '08:00', end: '18:00' },
+        friday: { start: '08:00', end: '18:00' },
+        saturday: { start: '09:00', end: '15:00' }
+      },
+      rating: 4.5,
+      totalRatings: 10,
+      status: 'ACTIVE',
+      hourlyRate: 150.0,
+      serviceRadius: 5.0,
+      experienceYears: 5,
+      certifications: ['Professional Cleaning Certificate', 'Safety Training Completion'],
+      achievements: ['Top performer for 3 consecutive months', '100+ satisfied customers', 'Eco-friendly cleaning specialist'],
+      specializations: ['Deep Cleaning', 'Kitchen Cleaning', 'Bathroom Sanitization', 'Eco-friendly Products'],
+      isVerified: true,
+      verificationDate: new Date()
+    });
+
     // Create services
     const dailyCleaningService = await prisma.service.upsert({
       where: { id: 'daily-cleaning-service' },
@@ -253,27 +300,42 @@ async function main() {
     console.log('\n📋 Creating subscriptions and payments for customers...');
     
     // Subscribe customer1 to SweepPro Touch plan
-    const customer1Profile = await prisma.customerProfile.findUnique({
-      where: { userId: customer.id }
-    });
+    const customer1Profile = await ensureCustomerProfile(customer.id);
+    
+    const subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const subscriptionStartDate = new Date();
+    
     
     const subscription1 = await prisma.subscription.upsert({
       where: { customerId: customer1Profile.id },
-      update: {},
-      create: {
-        customerId: customer1Profile.id,
+      update: {
         planId: sweepProTouchPlan.id,
         status: 'ACTIVE',
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        startDate: subscriptionStartDate,
+        endDate: subscriptionEndDate,
         billingCycle: 'MONTHLY',
         amount: sweepProTouchPlan.finalPrice,
         discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
         autoRenew: true,
-        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        nextBillDate: subscriptionEndDate,
         bufferDaysCount: 0,
-        currentCycleStart: new Date(),
-        currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        currentCycleStart: subscriptionStartDate,
+        currentCycleEnd: subscriptionEndDate
+      },
+      create: {
+        customerId: customer1Profile.id,
+        planId: sweepProTouchPlan.id,
+        status: 'ACTIVE',
+        startDate: subscriptionStartDate,
+        endDate: subscriptionEndDate,
+        billingCycle: 'MONTHLY',
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
+        autoRenew: true,
+        nextBillDate: subscriptionEndDate,
+        bufferDaysCount: 0,
+        currentCycleStart: subscriptionStartDate,
+        currentCycleEnd: subscriptionEndDate
       }
     });
     
@@ -297,14 +359,14 @@ async function main() {
     console.log('✅ Created subscription and payment for customer@sweepro.com (SweepPro Touch Plan)');
 
     // Get maid profile for assignment
-    const maidProfile = await prisma.maidProfile.findUnique({
-      where: { userId: maid.id }
-    });
-
     // Create maid assignment for customer
     const maidAssignment = await prisma.customerMaidAssignment.upsert({
       where: { customerId_isActive: { customerId: customer.id, isActive: true } },
-      update: {},
+      update: {
+        maidId: maidProfile.id,
+        isActive: true,
+        notes: 'Assigned for SweepPro Touch subscription'
+      },
       create: {
         customerId: customer.id,
         maidId: maidProfile.id,
@@ -405,27 +467,41 @@ async function main() {
       }
     });
     // Subscribe customer2 to SweepPro Lux plan
-    const customer2Profile = await prisma.customerProfile.findUnique({
-      where: { userId: user2.id }
-    });
+    const customer2Profile = await ensureCustomerProfile(user2.id);
+    
+    const subscription2EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const subscription2StartDate = new Date();
     
     const subscription2 = await prisma.subscription.upsert({
       where: { customerId: customer2Profile.id },
-      update: {},
-      create: {
-        customerId: customer2Profile.id,
+      update: {
         planId: sweepProLuxPlan.id,
         status: 'ACTIVE',
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        startDate: subscription2StartDate,
+        endDate: subscription2EndDate,
         billingCycle: 'MONTHLY',
         amount: sweepProLuxPlan.finalPrice,
         discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         autoRenew: true,
-        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        nextBillDate: subscription2EndDate,
         bufferDaysCount: 5,
-        currentCycleStart: new Date(),
-        currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        currentCycleStart: subscription2StartDate,
+        currentCycleEnd: subscription2EndDate
+      },
+      create: {
+        customerId: customer2Profile.id,
+        planId: sweepProLuxPlan.id,
+        status: 'ACTIVE',
+        startDate: subscription2StartDate,
+        endDate: subscription2EndDate,
+        billingCycle: 'MONTHLY',
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
+        autoRenew: true,
+        nextBillDate: subscription2EndDate,
+        bufferDaysCount: 5,
+        currentCycleStart: subscription2StartDate,
+        currentCycleEnd: subscription2EndDate
       }
     });
     
@@ -449,14 +525,38 @@ async function main() {
     console.log('✅ Created subscription and payment for customer2@sweepro.com (SweepPro Lux Plan)');
 
     // Get maid2 profile and assign to customer2
-    const maid2Profile = await prisma.maidProfile.findUnique({
-      where: { userId: maid2.id }
+    const maid2Profile = await ensureMaidProfile(maid2.id, {
+      skills: ['house_cleaning', 'deep_cleaning', 'kitchen_cleaning'],
+      languages: ['English', 'Hindi', 'Kannada'],
+      availability: {
+        monday: { start: '08:00', end: '18:00' },
+        tuesday: { start: '08:00', end: '18:00' },
+        wednesday: { start: '08:00', end: '18:00' },
+        thursday: { start: '08:00', end: '18:00' },
+        friday: { start: '08:00', end: '18:00' },
+        saturday: { start: '10:00', end: '16:00' }
+      },
+      rating: 4.8,
+      totalRatings: 25,
+      status: 'ACTIVE',
+      hourlyRate: 180.0,
+      serviceRadius: 8.0,
+      experienceYears: 4,
+      certifications: ['Advanced Cleaning Techniques', 'Customer Service Excellence'],
+      achievements: ['Top performer for 2 consecutive months', '50+ satisfied customers', 'Specialized in luxury homes'],
+      specializations: ['Deep Cleaning', 'Luxury Home Cleaning', 'Eco-friendly Services'],
+      isVerified: true,
+      verificationDate: new Date()
     });
 
     // Create maid assignment for customer2
     await prisma.customerMaidAssignment.upsert({
       where: { customerId_isActive: { customerId: user2.id, isActive: true } },
-      update: {},
+      update: {
+        maidId: maid2Profile.id,
+        isActive: true,
+        notes: 'Assigned for SweepPro Lux subscription'
+      },
       create: {
         customerId: user2.id,
         maidId: maid2Profile.id,
@@ -534,24 +634,35 @@ async function main() {
       }
     });
     // Subscribe customer3 to SweepPro Touch plan
-    const customer3Profile = await prisma.customerProfile.findUnique({
-      where: { userId: user3.id }
-    });
+    const customer3Profile = await ensureCustomerProfile(user3.id);
+    
+    const subscription3EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const subscription3StartDate = new Date();
     
     const subscription3 = await prisma.subscription.upsert({
       where: { customerId: customer3Profile.id },
-      update: {},
-      create: {
-        customerId: customer3Profile.id,
+      update: {
         planId: sweepProTouchPlan.id,
         status: 'ACTIVE',
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        startDate: subscription3StartDate,
+        endDate: subscription3EndDate,
         billingCycle: 'MONTHLY',
         amount: sweepProTouchPlan.finalPrice,
         discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
         autoRenew: true,
-        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        nextBillDate: subscription3EndDate
+      },
+      create: {
+        customerId: customer3Profile.id,
+        planId: sweepProTouchPlan.id,
+        status: 'ACTIVE',
+        startDate: subscription3StartDate,
+        endDate: subscription3EndDate,
+        billingCycle: 'MONTHLY',
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
+        autoRenew: true,
+        nextBillDate: subscription3EndDate
       }
     });
     
@@ -641,24 +752,34 @@ async function main() {
       }
     });
     // Subscribe customer4 to SweepPro Touch plan
-    const customer4Profile = await prisma.customerProfile.findUnique({
-      where: { userId: user4.id }
-    });
+    const customer4Profile = await ensureCustomerProfile(user4.id);
     
+    const subscription4EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const subscription4StartDate = new Date();
     const subscription4 = await prisma.subscription.upsert({
       where: { customerId: customer4Profile.id },
-      update: {},
-      create: {
-        customerId: customer4Profile.id,
+      update: {
         planId: sweepProTouchPlan.id,
         status: 'ACTIVE',
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        startDate: subscription4StartDate,
+        endDate: subscription4EndDate,
         billingCycle: 'MONTHLY',
         amount: sweepProTouchPlan.finalPrice,
         discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
         autoRenew: true,
-        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        nextBillDate: subscription4EndDate
+      },
+      create: {
+        customerId: customer4Profile.id,
+        planId: sweepProTouchPlan.id,
+        status: 'ACTIVE',
+        startDate: subscription4StartDate,
+        endDate: subscription4EndDate,
+        billingCycle: 'MONTHLY',
+        amount: sweepProTouchPlan.finalPrice,
+        discount: sweepProTouchPlan.basePrice - sweepProTouchPlan.finalPrice,
+        autoRenew: true,
+        nextBillDate: subscription4EndDate
       }
     });
     
@@ -748,24 +869,34 @@ async function main() {
       }
     });
     // Subscribe customer5 to SweepPro Lux plan
-    const customer5Profile = await prisma.customerProfile.findUnique({
-      where: { userId: user5.id }
-    });
+    const customer5Profile = await ensureCustomerProfile(user5.id);
     
+    const subscription5EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const subscription5StartDate = new Date();
     const subscription5 = await prisma.subscription.upsert({
       where: { customerId: customer5Profile.id },
-      update: {},
-      create: {
-        customerId: customer5Profile.id,
+      update: {
         planId: sweepProLuxPlan.id,
         status: 'ACTIVE',
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        startDate: subscription5StartDate,
+        endDate: subscription5EndDate,
         billingCycle: 'MONTHLY',
         amount: sweepProLuxPlan.finalPrice,
         discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
         autoRenew: true,
-        nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        nextBillDate: subscription5EndDate
+      },
+      create: {
+        customerId: customer5Profile.id,
+        planId: sweepProLuxPlan.id,
+        status: 'ACTIVE',
+        startDate: subscription5StartDate,
+        endDate: subscription5EndDate,
+        billingCycle: 'MONTHLY',
+        amount: sweepProLuxPlan.finalPrice,
+        discount: sweepProLuxPlan.basePrice - sweepProLuxPlan.finalPrice,
+        autoRenew: true,
+        nextBillDate: subscription5EndDate
       }
     });
     
@@ -839,9 +970,7 @@ async function main() {
       }
     });
     
-    const pendingCustomerProfile = await prisma.customerProfile.findUnique({
-      where: { userId: customerPending.id }
-    });
+    const pendingCustomerProfile = await ensureCustomerProfile(customerPending.id);
     
     // Create pending subscription
     const pendingSubscription = await prisma.subscription.upsert({
@@ -1319,9 +1448,7 @@ async function main() {
       }
     });
     
-    const bufferCustomerProfile = await prisma.customerProfile.findUnique({
-      where: { userId: bufferCustomer.id }
-    });
+    const bufferCustomerProfile = await ensureCustomerProfile(bufferCustomer.id);
     
     // Create subscription with current buffer period
     const bufferSubscription = await prisma.subscription.upsert({
@@ -1452,9 +1579,7 @@ async function main() {
       }
     });
     
-    const expiredCustomerProfile = await prisma.customerProfile.findUnique({
-      where: { userId: expiredCustomer.id }
-    });
+    const expiredCustomerProfile = await ensureCustomerProfile(expiredCustomer.id);
     
     // Create expired subscription
     const expiredSubscription = await prisma.subscription.upsert({
@@ -1502,9 +1627,7 @@ async function main() {
       }
     });
     
-    const cancelledCustomerProfile = await prisma.customerProfile.findUnique({
-      where: { userId: cancelledCustomer.id }
-    });
+    const cancelledCustomerProfile = await ensureCustomerProfile(cancelledCustomer.id);
     
     // Create cancelled subscription
     const cancelledSubscription = await prisma.subscription.upsert({
@@ -1569,9 +1692,7 @@ async function main() {
       }
     });
     
-    const pausedCustomerProfile = await prisma.customerProfile.findUnique({
-      where: { userId: pausedCustomer.id }
-    });
+    const pausedCustomerProfile = await ensureCustomerProfile(pausedCustomer.id);
     
     // Create paused subscription
     const pausedSubscription = await prisma.subscription.upsert({
@@ -1866,9 +1987,7 @@ async function main() {
       }
     });
     
-    const touchCustomerProfile = await prisma.customerProfile.findUnique({
-      where: { userId: touchCustomer.id }
-    });
+    const touchCustomerProfile = await ensureCustomerProfile(touchCustomer.id);
     
     const touchSubscription = await prisma.subscription.upsert({
       where: { customerId: touchCustomerProfile.id },
@@ -1934,9 +2053,7 @@ async function main() {
       }
     });
     
-    const luxCustomerProfile = await prisma.customerProfile.findUnique({
-      where: { userId: luxCustomer.id }
-    });
+    const luxCustomerProfile = await ensureCustomerProfile(luxCustomer.id);
     
     const luxSubscription = await prisma.subscription.upsert({
       where: { customerId: luxCustomerProfile.id },
@@ -2006,9 +2123,7 @@ async function main() {
       }
     });
     
-    const touch1bhkProfile = await prisma.customerProfile.findUnique({
-      where: { userId: touch1bhk.id }
-    });
+    const touch1bhkProfile = await ensureCustomerProfile(touch1bhk.id);
     
     await prisma.subscription.upsert({
       where: { customerId: touch1bhkProfile.id },
@@ -2056,9 +2171,7 @@ async function main() {
       }
     });
     
-    const lux3bhkProfile = await prisma.customerProfile.findUnique({
-      where: { userId: lux3bhk.id }
-    });
+    const lux3bhkProfile = await ensureCustomerProfile(lux3bhk.id);
     
     // Create active Lux subscription for lux.3bhk and keep reference for payments/bookings
     const lux3Subscription = await prisma.subscription.upsert({
@@ -2180,9 +2293,7 @@ async function main() {
       }
     });
     
-    const luxBungalowProfile = await prisma.customerProfile.findUnique({
-      where: { userId: luxBungalow.id }
-    });
+    const luxBungalowProfile = await ensureCustomerProfile(luxBungalow.id);
     
     await prisma.subscription.upsert({
       where: { customerId: luxBungalowProfile.id },
@@ -2231,9 +2342,7 @@ async function main() {
       }
     });
     
-    const luxPremiumProfile = await prisma.customerProfile.findUnique({
-      where: { userId: luxPremiumBungalow.id }
-    });
+    const luxPremiumProfile = await ensureCustomerProfile(luxPremiumBungalow.id);
     
     await prisma.subscription.upsert({
       where: { customerId: luxPremiumProfile.id },
