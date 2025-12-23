@@ -108,13 +108,6 @@ const submitFeedback = async (req, res) => {
 
     // Determine which maid to rate (use provided maidId or booking's maidId)
     const targetMaidId = maidId || booking.maidId;
-
-    if (targetMaidId && !booking.maidId) {
-      await prisma.booking.update({
-        where: { id: bookingId },
-        data: { maidId: targetMaidId }
-      });
-    }
     
     // Update maid profile rating if maid is assigned
     if (targetMaidId) {
@@ -248,78 +241,6 @@ const submitFeedback = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to submit feedback',
-      details: error.message
-    });
-  }
-};
-
-/**
- * Get reviews for the currently authenticated maid
- */
-const getMaidReviews = async (req, res) => {
-  try {
-    const maidUserId = req.user.id;
-    const { limit = 20, offset = 0 } = req.query;
-
-    const feedbacks = await prisma.feedback.findMany({
-      where: {
-        booking: {
-          maidId: maidUserId
-        },
-        status: 'ACTIVE'
-      },
-      include: {
-        customer: {
-          select: {
-            name: true,
-            email: true,
-            phone: true,
-            profileImage: true
-          }
-        },
-        booking: {
-          select: {
-            completedAt: true,
-            scheduledAt: true,
-            service: {
-              select: {
-                name: true,
-                description: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      skip: parseInt(offset),
-      take: parseInt(limit)
-    });
-
-    const reviews = feedbacks.map((fb) => ({
-      id: fb.id,
-      rating: fb.overallRating,
-      comment: fb.comment || '',
-      serviceDate: (fb.booking.completedAt || fb.booking.scheduledAt || fb.createdAt).toISOString(),
-      reviewer: {
-        name: fb.customer?.name || 'Customer',
-        email: fb.customer?.email || undefined,
-        phone: fb.customer?.phone || undefined,
-        profileImage: fb.customer?.profileImage || undefined
-      },
-      serviceDetails: fb.booking?.service?.name || fb.booking?.service?.description || ''
-    }));
-
-    res.json({
-      success: true,
-      data: reviews
-    });
-  } catch (error) {
-    console.error('Error fetching maid reviews:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch reviews',
       details: error.message
     });
   }
@@ -794,7 +715,6 @@ module.exports = {
   submitFeedback,
   getFeedbackByBooking,
   getCustomerFeedback,
-  getMaidReviews,
   getAllFeedback,
   getFeedbackStats,
   updateAdminResponse,

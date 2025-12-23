@@ -2,15 +2,13 @@ const express = require('express');
 const router = express.Router();
 const feedbackController = require('../controllers/feedbackController');
 const feedbackAdminController = require('../controllers/feedbackAdminController');
-const { authenticateToken, authorizeAdmin, authorizeMaid } = require('../middleware/auth');
+const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
 
 // Customer routes
 router.post('/', authenticateToken, feedbackController.submitFeedback);
 router.get('/my-feedback', authenticateToken, feedbackController.getCustomerFeedback);
 router.get('/eligible-bookings', authenticateToken, feedbackController.getEligibleBookings);
 router.get('/booking/:bookingId', authenticateToken, feedbackController.getFeedbackByBooking);
-
-router.get('/maid-reviews', authenticateToken, authorizeMaid, feedbackController.getMaidReviews);
 
 // Admin routes - Basic
 router.get('/all', authenticateToken, authorizeAdmin, feedbackController.getAllFeedback);

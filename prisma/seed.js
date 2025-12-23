@@ -20,15 +20,10 @@ async function ensureCustomerProfile(userId) {
 
 async function ensureMaidProfile(userId, data) {
   let profile = await prisma.maidProfile.findUnique({ where: { userId } });
-
   if (!profile) {
-    return await prisma.maidProfile.create({ data: { userId, ...data } });
+    profile = await prisma.maidProfile.create({ data: { userId, ...data } });
   }
-
-  return await prisma.maidProfile.update({
-    where: { userId },
-    data
-  });
+  return profile;
 }
 
 async function main() {

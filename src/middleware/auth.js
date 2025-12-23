@@ -69,7 +69,7 @@ const authorizeAdmin = async (req, res, next) => {
 
 const authorizeMaid = async (req, res, next) => {
   try {
-    if (req.user?.role !== 'MAID' && req.user?.role !== 'FLOATING_MAID') {
+    if (req.user?.role !== 'MAID') {
       throw new Error();
     }
     next();
