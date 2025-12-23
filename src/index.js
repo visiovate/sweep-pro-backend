@@ -79,7 +79,10 @@ app.use(cors({
     'http://localhost:4173',
     'http://localhost:3001',
     'http://127.0.0.1:4173',
-    'http://127.0.0.1:3001'
+    'http://127.0.0.1:3001',
+    // Production frontend URLs
+    'https://sweep-pro-frontend.vercel.app',
+    'https://www.sweep-pro-frontend.vercel.app'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
