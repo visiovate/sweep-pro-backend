@@ -4,9 +4,7 @@ const { authenticateToken } = require('../middleware/auth');
 const checkBufferEligibility = require('../middleware/bufferEligibility');
 const {
   getSubscriptionPlans,
-  validatePricing,
   subscribeToPlan,
-  activateSubscriptionAfterPayment,
   getUserSubscription,
   getMonthlySubscriptionStatus,
   startBufferPeriod,
@@ -27,12 +25,10 @@ const {
 
 // Public routes
 router.get('/plans', getSubscriptionPlans);
-router.post('/validate-pricing', validatePricing);
 
 
 // Protected routes
 router.post('/subscribe', authenticateToken, subscribeToPlan);
-router.post('/activate-after-payment', authenticateToken, activateSubscriptionAfterPayment);
 router.get('/my-subscription', authenticateToken, getUserSubscription);
 router.get('/status', authenticateToken, checkSubscriptionStatus);
 router.get('/monthly-status', authenticateToken, getMonthlySubscriptionStatus);
