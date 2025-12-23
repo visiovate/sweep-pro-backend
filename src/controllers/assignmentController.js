@@ -8,6 +8,42 @@ const getExpiryTime = (hoursFromNow = 24) => {
   return expiry;
 };
 
+const getOrCreateMaidProfile = async (userId) => {
+  const existing = await prisma.maidProfile.findUnique({
+    where: { userId }
+  });
+
+  if (existing) return existing;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true }
+  });
+
+  if (!user || (user.role !== 'MAID' && user.role !== 'FLOATING_MAID')) {
+    return null;
+  }
+
+  return prisma.maidProfile.create({
+    data: {
+      userId,
+      skills: [],
+      languages: ['English'],
+      availability: {
+        monday: { start: '09:00', end: '18:00', available: true },
+        tuesday: { start: '09:00', end: '18:00', available: true },
+        wednesday: { start: '09:00', end: '18:00', available: true },
+        thursday: { start: '09:00', end: '18:00', available: true },
+        friday: { start: '09:00', end: '18:00', available: true },
+        saturday: { start: '09:00', end: '16:00', available: true },
+        sunday: { start: '10:00', end: '16:00', available: false }
+      },
+      status: 'PENDING_VERIFICATION',
+      isFloatingMaid: user.role === 'FLOATING_MAID'
+    }
+  });
+};
+
 // Helper function to transform booking data for frontend
 const transformBookingForFrontend = (booking) => {
   return {
@@ -95,9 +131,7 @@ const transformAssignmentForFrontend = (assignment) => {
 const getPendingAssignments = async (req, res) => {
   try {
     // Find the maid profile for this user
-    const maidProfile = await prisma.maidProfile.findUnique({
-      where: { userId: req.user.id }
-    });
+    const maidProfile = await getOrCreateMaidProfile(req.user.id);
     
     if (!maidProfile) {
       return res.status(400).json({
@@ -148,9 +182,7 @@ const getPendingAssignments = async (req, res) => {
 const getMyAssignments = async (req, res) => {
   try {
     // Find the maid profile for this user
-    const maidProfile = await prisma.maidProfile.findUnique({
-      where: { userId: req.user.id }
-    });
+    const maidProfile = await getOrCreateMaidProfile(req.user.id);
     
     if (!maidProfile) {
       return res.status(400).json({
@@ -201,9 +233,7 @@ const acceptAssignment = async (req, res) => {
     console.log(`🔍 Accepting assignment: ${assignmentId} by user: ${req.user.id}`);
     
     // Find the maid profile for this user
-    const maidProfile = await prisma.maidProfile.findUnique({
-      where: { userId: req.user.id }
-    });
+    const maidProfile = await getOrCreateMaidProfile(req.user.id);
     
     if (!maidProfile) {
       console.log(`❌ Maid profile not found for user: ${req.user.id}`);
@@ -338,9 +368,7 @@ const rejectAssignment = async (req, res) => {
     console.log(`🔍 Rejecting assignment: ${assignmentId}, Reason: ${rejectionReason}`);
     
     // Find the maid profile for this user
-    const maidProfile = await prisma.maidProfile.findUnique({
-      where: { userId: req.user.id }
-    });
+    const maidProfile = await getOrCreateMaidProfile(req.user.id);
     
     if (!maidProfile) {
       return res.status(400).json({

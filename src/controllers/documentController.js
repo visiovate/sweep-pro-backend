@@ -443,18 +443,21 @@ const getMaidVerificationStatus = async (req, res) => {
     const panCard = documents.find(d => d.type === 'PAN_CARD');
     const electricityBill = documents.find(d => d.type === 'ADDRESS_PROOF');
 
-    // Calculate overall verification status based on documents
+    // Calculate overall verification status
+    // If maid is already verified, treat as APPROVED even if documents are not present (e.g. seeded data)
     const requiredDocs = getRequiredDocuments().filter(doc => doc.required);
-    const allRequiredUploaded = requiredDocs.every(reqDoc => 
+    const allRequiredUploaded = requiredDocs.every(reqDoc =>
       documents.some(doc => doc.type === reqDoc.type)
     );
-    const allRequiredApproved = requiredDocs.every(reqDoc => 
+    const allRequiredApproved = requiredDocs.every(reqDoc =>
       documents.some(doc => doc.type === reqDoc.type && doc.verificationStatus === 'APPROVED')
     );
     const anyRejected = documents.some(doc => doc.verificationStatus === 'REJECTED');
-    
+
     let overallStatus = 'NOT_SUBMITTED';
-    if (!allRequiredUploaded) {
+    if (maidProfile.isVerified === true) {
+      overallStatus = 'APPROVED';
+    } else if (!allRequiredUploaded) {
       overallStatus = 'NOT_SUBMITTED';
     } else if (allRequiredApproved) {
       overallStatus = 'APPROVED';
@@ -469,6 +472,8 @@ const getMaidVerificationStatus = async (req, res) => {
       hasDocuments: documents.length > 0,
       overallStatus: overallStatus,
       maidStatus: maidProfile.status,
+      isVerified: maidProfile.isVerified,
+      verificationDate: maidProfile.verificationDate,
       submittedAt: documents.length > 0 ? documents[0].createdAt : null,
       reviewedAt: documents.find(d => d.verifiedAt)?.verifiedAt || null,
       documents: documents,
