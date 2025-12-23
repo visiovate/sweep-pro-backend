@@ -69,14 +69,28 @@ const assignMaidToCustomer = async (req, res) => {
       }
       
       if (!maidAnyStatus) {
+        // If maidId is actually a user id, return an actionable 400 so admins know what to fix
+        const maidUser = await prisma.user.findUnique({
+          where: { id: maidId }
+        });
+
+        if (maidUser && maidUser.role === 'MAID') {
+          return res.status(400).json({
+            success: false,
+            message: `Maid user exists but MaidProfile not found for userId: ${maidId}. Please ensure the maid has completed profile/verification so MaidProfile is created.`,
+            error: 'MAID_PROFILE_NOT_CREATED'
+          });
+        }
+
         return res.status(404).json({
           success: false,
           message: `Maid profile not found with ID: ${maidId} (checked both MaidProfile ID and User ID)`
         });
       } else {
-        return res.status(404).json({
+        return res.status(400).json({
           success: false,
-          message: `Maid found but status is '${maidAnyStatus.status}', not 'ACTIVE'. Maid name: ${maidAnyStatus.user?.name || 'Unknown'}`
+          message: `Maid found but status is '${maidAnyStatus.status}', not 'ACTIVE'. Maid name: ${maidAnyStatus.user?.name || 'Unknown'}`,
+          error: 'MAID_NOT_ACTIVE'
         });
       }
     }

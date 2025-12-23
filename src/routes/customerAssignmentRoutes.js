@@ -21,27 +21,27 @@ const {
 // Admin routes for customer-maid assignments
 router.post('/assign', authenticateToken, authorizeAdmin, assignMaidToCustomer);
 router.get('/status/:customerId', authenticateToken, authorizeAdmin, getCustomerStatus);
-router.get('/:customerId', authenticateToken, authorizeAdmin, getCustomerAssignment);
-router.patch('/:customerId/update', authenticateToken, authorizeAdmin, updateCustomerAssignment);
-router.get('/', authenticateToken, authorizeAdmin, getAllCustomerAssignments);
-router.delete('/:customerId', authenticateToken, authorizeAdmin, removeCustomerAssignment);
 
-// Customer routes (for customers to check their own status)
+// Customer routes (must come BEFORE '/:customerId' or they'll be shadowed)
 router.get('/my-status', authenticateToken, getMyCustomerStatus);
-// Customer routes
 router.get('/my-assignment', authenticateToken, getMyMaidAssignment);
-router.get('/status/:customerId', authenticateToken, authorizeAdmin, getCustomerStatus);
 
-// Assignment request routes for maids
+// Assignment request routes for maids (must come BEFORE '/:customerId' or they'll be shadowed)
 router.get('/requests/maid', authenticateToken, getMaidAssignmentRequests);
 router.post('/requests/:requestId/accept', authenticateToken, acceptAssignmentRequest);
 router.post('/requests/:requestId/reject', authenticateToken, rejectAssignmentRequest);
 
-// Assignment request routes for admins
+// Assignment request routes for admins (must come BEFORE '/:customerId' or they'll be shadowed)
 router.get('/requests/all', authenticateToken, authorizeAdmin, getAllAssignmentRequests);
 
-// Debug routes
+// Debug routes (must come BEFORE '/:customerId' or they'll be shadowed)
 router.get('/debug/maid/:maidId', authenticateToken, authorizeAdmin, checkMaidStatus);
 router.post('/test/create-request', authenticateToken, authorizeAdmin, testCreateAssignmentRequest);
+
+// Admin CRUD routes with dynamic :customerId (must come after static routes)
+router.get('/:customerId', authenticateToken, authorizeAdmin, getCustomerAssignment);
+router.patch('/:customerId/update', authenticateToken, authorizeAdmin, updateCustomerAssignment);
+router.get('/', authenticateToken, authorizeAdmin, getAllCustomerAssignments);
+router.delete('/:customerId', authenticateToken, authorizeAdmin, removeCustomerAssignment);
 
 module.exports = router;

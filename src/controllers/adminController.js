@@ -421,7 +421,6 @@ const getAllSubscriptions = async (req, res) => {
                 email: true,
                 phone: true,
                 address: true,
-                timeSlot: true
               }
             }
           }

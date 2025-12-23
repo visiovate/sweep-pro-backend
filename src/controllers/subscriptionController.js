@@ -43,21 +43,6 @@ const subscribeToPlan = async (req, res) => {
 
     const customerId = customerProfile.id;
 
-    // Check if user already has an active subscription
-    const existingSubscription = await prisma.subscription.findFirst({
-      where: {
-        customerId,
-        status: 'ACTIVE',
-        endDate: { gte: new Date() }
-      }
-    });
-
-    if (existingSubscription) {
-      return res.status(400).json({
-        message: 'You already have an active subscription'
-      });
-    }
-
     // Get the plan details
     const plan = await prisma.servicePlan.findUnique({
       where: { id: planId }
@@ -82,6 +67,104 @@ const subscribeToPlan = async (req, res) => {
       typeof finalAmount === 'number' && finalAmount > 0
         ? finalAmount
         : plan.finalPrice;
+
+    const existingSubscription = await prisma.subscription.findUnique({
+      where: { customerId },
+      include: {
+        plan: {
+          include: {
+            service: true
+          }
+        }
+      }
+    });
+
+    if (existingSubscription) {
+      if (existingSubscription.status === 'ACTIVE' && existingSubscription.endDate >= new Date()) {
+        return res.status(400).json({
+          message: 'You already have an active subscription'
+        });
+      }
+
+      if (existingSubscription.status === 'PENDING_PAYMENT') {
+        if (existingSubscription.planId !== planId) {
+          return res.status(409).json({
+            message: 'You already have a subscription pending payment. Please complete payment before changing plans.',
+            data: existingSubscription
+          });
+        }
+
+        const updatedSubscription = await prisma.subscription.update({
+          where: { id: existingSubscription.id },
+          data: {
+            startDate,
+            endDate,
+            amount: billedAmount,
+            discount: plan.basePrice - billedAmount,
+            nextBillDate: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000),
+            bufferDaysCount: plan.hasBufferSystem ? (plan.bufferDaysAllowed || 0) : 0,
+            bufferDaysUsed: 0,
+            currentCycleStart: startDate,
+            currentCycleEnd: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+          },
+          include: {
+            plan: {
+              include: {
+                service: true
+              }
+            }
+          }
+        });
+
+        return res.status(200).json({
+          success: true,
+          data: updatedSubscription,
+          message: 'Subscription is pending payment'
+        });
+      }
+
+      const updatedSubscription = await prisma.subscription.update({
+        where: { id: existingSubscription.id },
+        data: {
+          planId,
+          status: 'PENDING_PAYMENT',
+          startDate,
+          endDate,
+          billingCycle: 'MONTHLY',
+          amount: billedAmount,
+          discount: plan.basePrice - billedAmount,
+          autoRenew: true,
+          nextBillDate: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000),
+          bufferDaysCount: plan.hasBufferSystem ? (plan.bufferDaysAllowed || 0) : 0,
+          bufferDaysUsed: 0,
+          isInBufferPeriod: false,
+          bufferStartDate: null,
+          bufferEndDate: null,
+          isPaused: false,
+          pausedAt: null,
+          resumeAt: null,
+          pauseReason: null,
+          totalCycles: 0,
+          completedCycles: 0,
+          lastRenewalDate: null,
+          currentCycleStart: startDate,
+          currentCycleEnd: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+        },
+        include: {
+          plan: {
+            include: {
+              service: true
+            }
+          }
+        }
+      });
+
+      return res.status(201).json({
+        success: true,
+        data: updatedSubscription,
+        message: 'Successfully subscribed to plan'
+      });
+    }
 
     // Create subscription (initially pending payment)
     // Buffer configuration depends on plan type
@@ -393,6 +476,10 @@ const endBufferPeriod = async (req, res) => {
 // Complete subscription payment and activate subscription
 const completeSubscriptionPayment = async (req, res) => {
   try {
+    return res.status(410).json({
+      error: 'This endpoint is deprecated. Use /api/payments/razorpay/verify to verify payment and activate subscription.'
+    });
+
     const { subscriptionId, paymentId, transactionId, gateway, gatewayResponse } = req.body;
     const userId = req.user.id;
 

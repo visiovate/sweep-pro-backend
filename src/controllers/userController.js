@@ -161,7 +161,6 @@ const getAllUsers = async (req, res) => {
         email: true,
         phone: true,
         address: true,
-        timeSlot: true,
         role: true,
         status: true,
         createdAt: true,

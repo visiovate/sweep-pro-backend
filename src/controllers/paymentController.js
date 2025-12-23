@@ -1,7 +1,8 @@
 const { PrismaClient } = require('@prisma/client');
-const razorpayService = require('../services/razorpayService');
-const notificationService = require('../services/notificationService');
 const crypto = require('crypto');
+const razorpayService = require('../services/razorpayService');
+const { razorpayKeyId } = require('../utils/razorpay-credintials');
+const notificationService = require('../services/notificationService');
 const prisma = new PrismaClient();
 
 const createPayment = async (req, res) => {
@@ -426,7 +427,7 @@ const createRazorpayBookingOrder = async (req, res) => {
       success: true,
       order: result.order,
       booking: result.booking,
-      key: process.env.RAZORPAY_TEST_KEY_ID
+      key: razorpayKeyId
     });
 
   } catch (error) {
@@ -468,6 +469,12 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       return res.status(404).json({ error: 'Subscription not found or unauthorized' });
     }
 
+    if (subscription.status !== 'PENDING_PAYMENT') {
+      return res.status(409).json({
+        error: 'Subscription is not pending payment'
+      });
+    }
+
     // Create Razorpay order
     const result = await razorpayService.createSubscriptionOrder(subscriptionId, amount, currency);
 
@@ -475,7 +482,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       success: true,
       order: result.order,
       subscription: result.subscription,
-      key: process.env.RAZORPAY_TEST_KEY_ID
+      key: razorpayKeyId
     });
 
   } catch (error) {
@@ -516,6 +523,16 @@ const verifyRazorpayPayment = async (req, res) => {
 
   } catch (error) {
     console.error('Error verifying Razorpay payment:', error);
+    const message = error?.message || 'Failed to verify payment';
+
+    if (message.toLowerCase().includes('invalid payment signature')) {
+      return res.status(400).json({ error: message });
+    }
+
+    if (message.toLowerCase().includes('razorpay key secret not configured')) {
+      return res.status(500).json({ error: message });
+    }
+
     res.status(500).json({ error: 'Failed to verify payment' });
   }
 };
@@ -660,6 +677,19 @@ const handlePaymentCaptured = async (paymentEntity) => {
         updatedAt: new Date()
       }
     });
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        transactionId: paymentEntity.order_id,
+        status: 'COMPLETED'
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 3
+    });
+
+    for (const payment of payments) {
+      await razorpayService.ensurePostPaymentEffects(payment);
+    }
 
     console.log(`Payment captured: ${paymentEntity.id}`);
   } catch (error) {

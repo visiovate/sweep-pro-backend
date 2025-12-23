@@ -1,6 +1,8 @@
-const { razorpay } = require('../utils/razorpay-credintials');
+const { razorpay, razorpayKeySecret } = require('../utils/razorpay-credintials');
 const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
+const subscriptionBufferService = require('./subscriptionBufferService');
+const notificationService = require('./notificationService');
 
 const prisma = new PrismaClient();
 
@@ -81,6 +83,69 @@ class RazorpayService {
     }
   }
 
+  async ensurePostPaymentEffects(paymentRecord) {
+    if (!paymentRecord) return;
+
+    if (paymentRecord.bookingId) {
+      const booking = await prisma.booking.findUnique({
+        where: { id: paymentRecord.bookingId },
+        select: { id: true, status: true }
+      });
+
+      if (booking && booking.status !== 'CONFIRMED') {
+        await prisma.booking.update({
+          where: { id: booking.id },
+          data: { status: 'CONFIRMED' }
+        });
+      }
+    }
+
+    if (paymentRecord.subscriptionId) {
+      const currentSubscription = await prisma.subscription.findUnique({
+        where: { id: paymentRecord.subscriptionId },
+        include: {
+          plan: { include: { service: true } },
+          customer: { include: { user: true } }
+        }
+      });
+
+      if (!currentSubscription) return;
+
+      const wasActive = currentSubscription.status === 'ACTIVE';
+      const shouldActivate = !wasActive;
+
+      const activatedSubscription = shouldActivate
+        ? await prisma.subscription.update({
+            where: { id: currentSubscription.id },
+            data: {
+              status: 'ACTIVE',
+              nextBillDate: this.calculateNextBillDate(currentSubscription)
+            },
+            include: {
+              plan: { include: { service: true } },
+              customer: { include: { user: true } }
+            }
+          })
+        : currentSubscription;
+
+      const existingCycle = await prisma.subscriptionCycle.findFirst({
+        where: {
+          subscriptionId: activatedSubscription.id,
+          startDate: { gte: activatedSubscription.startDate }
+        }
+      });
+
+      if (!existingCycle) {
+        await subscriptionBufferService.initializeSubscriptionCycle(activatedSubscription.id, 1);
+        await subscriptionBufferService.scheduleMonthlyServices(activatedSubscription.id);
+      }
+
+      if (shouldActivate) {
+        await notificationService.notifySubscriptionCreated(activatedSubscription);
+      }
+    }
+  }
+
   /**
    * Create Razorpay order for subscription payment
    */
@@ -118,6 +183,22 @@ class RazorpayService {
       if (!subscription) {
         throw new Error('Subscription not found');
       }
+
+      if (subscription.status !== 'PENDING_PAYMENT') {
+        throw new Error('Subscription is not pending payment');
+      }
+
+      // Cancel any previous pending payments for this subscription (retry safety)
+      await prisma.payment.updateMany({
+        where: {
+          subscriptionId,
+          status: { in: ['PENDING', 'PROCESSING'] }
+        },
+        data: {
+          status: 'CANCELLED',
+          updatedAt: new Date()
+        }
+      });
 
       // Create Razorpay order
       const orderOptions = {
@@ -170,9 +251,13 @@ class RazorpayService {
    */
   verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature) {
     try {
+      if (!razorpayKeySecret) {
+        throw new Error('Razorpay key secret not configured');
+      }
+
       const body = razorpayOrderId + "|" + razorpayPaymentId;
       const expectedSignature = crypto
-        .createHmac('sha256', process.env.RAZORPAY_TEST_KEY_SECRET)
+        .createHmac('sha256', razorpayKeySecret)
         .update(body.toString())
         .digest('hex');
 
@@ -208,10 +293,78 @@ class RazorpayService {
 
       // Fetch payment details from Razorpay
       const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
+
+      const existingPayment = await prisma.payment.findFirst({
+        where: {
+          transactionId: razorpay_order_id,
+          status: { in: ['PENDING', 'PROCESSING'] }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (!existingPayment) {
+        const alreadyProcessed = await prisma.payment.findFirst({
+          where: {
+            transactionId: razorpay_order_id
+          },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            booking: {
+              include: {
+                customer: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true
+                  }
+                },
+                service: true
+              }
+            },
+            subscription: {
+              include: {
+                customer: {
+                  include: {
+                    user: {
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phone: true
+                      }
+                    }
+                  }
+                },
+                plan: {
+                  include: {
+                    service: true
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        if (alreadyProcessed && alreadyProcessed.status === 'COMPLETED') {
+          await this.ensurePostPaymentEffects(alreadyProcessed);
+          return {
+            success: true,
+            payment: alreadyProcessed,
+            razorpayPayment: paymentDetails
+          };
+        }
+
+        if (alreadyProcessed && alreadyProcessed.status === 'FAILED') {
+          throw new Error('Payment already marked as failed');
+        }
+
+        throw new Error('Payment record not found for this order');
+      }
       
       // Update payment record in database
       const updatedPayment = await prisma.payment.update({
-        where: { transactionId: razorpay_order_id },
+        where: { id: existingPayment.id },
         data: {
           status: 'COMPLETED',
           paymentMethod: this.mapRazorpayMethod(payment_method || paymentDetails.method),
@@ -266,13 +419,7 @@ class RazorpayService {
 
       // Update subscription status if it's a subscription payment
       if (updatedPayment.subscriptionId) {
-        await prisma.subscription.update({
-          where: { id: updatedPayment.subscriptionId },
-          data: { 
-            status: 'ACTIVE',
-            nextBillDate: this.calculateNextBillDate(updatedPayment.subscription)
-          }
-        });
+        await this.ensurePostPaymentEffects(updatedPayment);
       }
 
       return {
@@ -294,9 +441,37 @@ class RazorpayService {
     try {
       const { razorpay_order_id, error_code, error_description } = paymentData;
 
+      const existingPayment = await prisma.payment.findFirst({
+        where: {
+          transactionId: razorpay_order_id,
+          status: { in: ['PENDING', 'PROCESSING'] }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (!existingPayment) {
+        const alreadyProcessed = await prisma.payment.findFirst({
+          where: { transactionId: razorpay_order_id },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        if (alreadyProcessed) {
+          return {
+            success: false,
+            payment: alreadyProcessed,
+            error: {
+              code: error_code,
+              description: error_description
+            }
+          };
+        }
+
+        throw new Error('Payment record not found for this order');
+      }
+
       // Update payment record
       const updatedPayment = await prisma.payment.update({
-        where: { transactionId: razorpay_order_id },
+        where: { id: existingPayment.id },
         data: {
           status: 'FAILED',
           gatewayResponse: {
