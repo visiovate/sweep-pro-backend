@@ -248,11 +248,14 @@ const notifyAdminReassignment = async (data) => {
     }
 
     // Create notifications for all admins
+    const isOnLeave = reason === 'MAID_ON_LEAVE';
     const notifications = admins.map(admin => ({
       userId: admin.id,
       type: 'REASSIGNMENT_REQUIRED',
-      title: 'Maid Assignment Rejected',
-      message: `Maid ${maid.user.name} rejected assignment for ${booking.customer.name}. Reason: ${reason}`,
+      title: isOnLeave ? 'Maid On Leave - Reassignment Required' : 'Maid Assignment Rejected',
+      message: isOnLeave
+        ? `Maid ${maid.user.name} is on weekly leave for ${booking.customer.name}. Please reassign this booking.`
+        : `Maid ${maid.user.name} rejected assignment for ${booking.customer.name}. Reason: ${reason}`,
       data: {
         bookingId,
         customerId,

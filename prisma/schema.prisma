@@ -84,6 +84,7 @@ model MaidProfile {
   skills             String[]
   languages          String[]
   availability       Json
+  weeklyOffDay       Weekday?
   rating             Float               @default(0)
   totalRatings       Int                 @default(0)
   status             MaidStatus          @default(PENDING_VERIFICATION)
@@ -809,6 +810,16 @@ enum BillingCycle {
   MONTHLY
   QUARTERLY
   YEARLY
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
 }
 
 enum DocumentType {

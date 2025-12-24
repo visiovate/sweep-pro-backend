@@ -10,9 +10,8 @@ const {
 } = require('../utils/timeSlotUtils');
 const cron = require('node-cron');
 const bookingDeduplicationService = require('./bookingDeduplicationService');
-
-const prisma = new PrismaClient();
 const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
+const { isDateOnWeeklyOff } = require('../utils/weekdayUtils');
 
 /**
  * Create automatic assignment requests for customers based on their time slots
@@ -222,9 +221,11 @@ class AutomaticAssignmentService {
 
       console.log(`✅ Using service: ${defaultService.name} (ID: ${defaultService.id})`);
 
+      const maidOnWeeklyOff = isDateOnWeeklyOff(serviceDateTime, assignment.maid?.weeklyOffDay);
       const maidUnavailable = assignment.maid?.availability && assignment.maid.availability.isAvailable === false;
 
-      if (maidUnavailable) {
+      if (maidOnWeeklyOff || maidUnavailable) {
+        const reason = maidOnWeeklyOff ? 'MAID_ON_LEAVE' : 'Maid unavailable';
         const booking = await prisma.booking.create({
           data: {
             customerId: customer.id,
@@ -238,14 +239,14 @@ class AutomaticAssignmentService {
             finalAmount: defaultService.basePrice,
             specialInstructions: `Automatic booking for ${timeSlot} time slot`,
             isAutomatic: true,
-            rejectionReason: 'Maid unavailable'
+            rejectionReason: reason
           }
         });
 
         await queueRejectedAssignment({
           bookingId: booking.id,
           maidId: maid.id,
-          rejectionReason: 'Maid unavailable',
+          rejectionReason: reason,
           customerId: customer.id
         });
 
@@ -264,7 +265,8 @@ class AutomaticAssignmentService {
           timeSlot: timeSlot,
           serviceDateTime: serviceDateTime.toISOString(),
           bookingId: booking.id,
-          queuedForReassignment: true
+          queuedForReassignment: true,
+          reason
         };
       }
 

@@ -7,6 +7,7 @@ const {
   updateMaidProfile,
   setMaidAvailability,
   updateMaidStatus,
+  updateMaidWeeklyOffDay,
   deleteMaid,
   verifyStartOTP,
   completeService,
@@ -26,6 +27,7 @@ router.post('/complete-service', authenticateToken, completeService);
 router.get('/', authenticateToken, authorizeAdmin, getAllMaids);
 router.get('/:id', authenticateToken, authorizeAdmin, getMaidById);
 router.put('/:id/status', authenticateToken, authorizeAdmin, updateMaidStatus);
+router.put('/:id/weekly-off', authenticateToken, authorizeAdmin, updateMaidWeeklyOffDay);
 router.delete('/:id', authenticateToken, authorizeAdmin, deleteMaid);
 
 module.exports = router;

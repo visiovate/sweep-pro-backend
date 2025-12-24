@@ -2,6 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const bookingDeduplicationService = require('../services/bookingDeduplicationService');
 const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
+const { isDateOnWeeklyOff } = require('../utils/weekdayUtils');
 
 // Create automatic booking for customer
 const createAutomaticBooking = async (req, res) => {
@@ -118,19 +119,22 @@ const createAutomaticBooking = async (req, res) => {
       }
     }
 
+    const bookingDate = new Date(scheduledDate);
+    const maidOnWeeklyOff = isDateOnWeeklyOff(bookingDate, customerAssignment.maid?.weeklyOffDay);
     const maidUnavailable = customerAssignment.maid?.availability && customerAssignment.maid.availability.isAvailable === false;
     let booking;
-    if (maidUnavailable) {
+    if (maidOnWeeklyOff || maidUnavailable) {
+      const reason = maidOnWeeklyOff ? 'MAID_ON_LEAVE' : 'Maid unavailable';
       booking = await prisma.booking.create({
         data: {
           customerId: customerId,
           maidId: null,
           serviceId: serviceId,
-          scheduledAt: new Date(scheduledDate),
+          scheduledAt: bookingDate,
           timeSlot: customerAssignment.customer.timeSlot || 'morning',
           status: 'CANCELLED',
           assignmentStatus: 'REJECTED',
-          rejectionReason: 'Maid unavailable',
+          rejectionReason: reason,
           totalAmount: service.basePrice,
           specialInstructions: notes || `Automatic booking for ${service.name}`,
           isAutomatic: true
@@ -152,7 +156,7 @@ const createAutomaticBooking = async (req, res) => {
       await queueRejectedAssignment({
         bookingId: booking.id,
         maidId: customerAssignment.maidId,
-        rejectionReason: 'Maid unavailable',
+        rejectionReason: reason,
         customerId: customerId
       });
       await bookingDeduplicationService.markAsProcessed(
@@ -163,7 +167,7 @@ const createAutomaticBooking = async (req, res) => {
       );
       return res.status(201).json({
         success: true,
-        message: 'Maid unavailable. Booking queued for admin reassignment',
+        message: maidOnWeeklyOff ? 'Maid is on weekly leave. Booking queued for admin reassignment' : 'Maid unavailable. Booking queued for admin reassignment',
         data: { booking }
       });
     } else {
@@ -363,19 +367,22 @@ const createDailyAutomaticBookings = async (req, res) => {
           continue;
         }
 
+        const bookingDate = new Date(targetDate.setHours(9, 0, 0, 0));
+        const maidOnWeeklyOff = isDateOnWeeklyOff(bookingDate, assignment.maid?.weeklyOffDay);
         const maidUnavailable = assignment.maid?.availability && assignment.maid.availability.isAvailable === false;
         let booking;
-        if (maidUnavailable) {
+        if (maidOnWeeklyOff || maidUnavailable) {
+          const reason = maidOnWeeklyOff ? 'MAID_ON_LEAVE' : 'Maid unavailable';
           booking = await prisma.booking.create({
             data: {
               customerId: assignment.customerId,
               maidId: null,
               serviceId: defaultService.id,
-              scheduledAt: new Date(targetDate.setHours(9, 0, 0, 0)),
+              scheduledAt: bookingDate,
               timeSlot: assignment.customer.timeSlot || 'morning',
               status: 'CANCELLED',
               assignmentStatus: 'REJECTED',
-              rejectionReason: 'Maid unavailable',
+              rejectionReason: reason,
               totalAmount: defaultService.basePrice,
               notes: `Daily automatic booking for ${defaultService.name}`,
               isAutomatic: true
@@ -384,7 +391,7 @@ const createDailyAutomaticBookings = async (req, res) => {
           await queueRejectedAssignment({
             bookingId: booking.id,
             maidId: assignment.maidId,
-            rejectionReason: 'Maid unavailable',
+            rejectionReason: reason,
             customerId: assignment.customerId
           });
         } else {
@@ -393,7 +400,7 @@ const createDailyAutomaticBookings = async (req, res) => {
               customerId: assignment.customerId,
               maidId: assignment.maid.user.id,
               serviceId: defaultService.id,
-              scheduledAt: new Date(targetDate.setHours(9, 0, 0, 0)),
+              scheduledAt: bookingDate,
               timeSlot: assignment.customer.timeSlot || 'morning',
               status: 'PENDING',
               assignmentStatus: 'PENDING_ASSIGNMENT',
@@ -425,7 +432,7 @@ const createDailyAutomaticBookings = async (req, res) => {
           customerName: assignment.customer.name,
           bookingId: booking.id,
           maidName: assignment.maid.user.name,
-          queuedForReassignment: maidUnavailable || false
+          queuedForReassignment: maidOnWeeklyOff || maidUnavailable || false
         });
 
         console.log(`✅ Created automatic booking for ${assignment.customer.name}`);

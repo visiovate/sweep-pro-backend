@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { isDateOnWeeklyOff } = require('../utils/weekdayUtils');
 
 // Helper function to calculate expiry time (24 hours from now)
 const getExpiryTime = (hoursFromNow = 24) => {
@@ -868,7 +869,11 @@ const getAvailableMaids = async (req, res) => {
     console.log(`✅ Found ${maids.length} active maids`);
 
     const availableMaids = maids
-      .filter(maid => (maid.availability && maid.availability.isAvailable === false) ? false : true)
+      .filter(maid => {
+        if (maid.availability && maid.availability.isAvailable === false) return false;
+        if (booking?.scheduledAt && isDateOnWeeklyOff(booking.scheduledAt, maid.weeklyOffDay)) return false;
+        return true;
+      })
       .map(maid => {
         const capacityAvailable = maid.assignmentRequests.length < (maid.maxDailyBookings || 5);
         const availabilityFlag = (maid.availability && maid.availability.isAvailable === false) ? false : true;
@@ -986,6 +991,14 @@ const sendAssignmentRequest = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Maid is currently unavailable'
+      });
+    }
+
+    const scheduledAt = booking.scheduledAt || new Date();
+    if (isDateOnWeeklyOff(scheduledAt, user.maidProfile.weeklyOffDay)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Maid is on weekly leave for this booking date'
       });
     }
 

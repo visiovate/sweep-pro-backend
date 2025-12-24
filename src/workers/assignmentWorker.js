@@ -8,6 +8,7 @@ const {
   calculateRequestTime,
   ASSIGNMENT_REQUEST_HOURS_BEFORE 
 } = require('../utils/timeSlotUtils');
+const { isDateOnWeeklyOff } = require('../utils/weekdayUtils');
 
 /**
  * BullMQ Worker for Processing Maid Assignment Jobs
@@ -246,6 +247,56 @@ const createAssignmentRequest = async (data, jobContext = {}) => {
   const isMaidAvailable = !(
     maidProfile?.availability && maidProfile.availability.isAvailable === false
   );
+
+  const isWeeklyOff = isDateOnWeeklyOff(serviceDateTime, maidProfile?.weeklyOffDay);
+
+  if (isWeeklyOff) {
+    let booking;
+    try {
+      booking = await prisma.booking.create({
+        data: {
+          customerId: customerId,
+          maidId: null,
+          serviceId: defaultService.id,
+          scheduledAt: serviceDateTime,
+          timeSlot: timeSlot,
+          status: 'CANCELLED',
+          assignmentStatus: 'REJECTED',
+          rejectionReason: 'MAID_ON_LEAVE',
+          totalAmount: defaultService.basePrice,
+          finalAmount: defaultService.basePrice,
+          serviceAddress: customer?.address || 'Customer Address',
+          estimatedDuration: defaultService.baseDuration,
+          specialInstructions: `Automatic booking for ${timeSlot} time slot`
+        }
+      });
+    } catch (error) {
+      const handled = handleNonRetryablePrismaError(error, jobContext, data, 'booking.create.weeklyOff');
+      if (handled) return handled;
+      throw error;
+    }
+
+    try {
+      await queueRejectedAssignment({
+        bookingId: booking.id,
+        maidId: maidId,
+        rejectionReason: 'MAID_ON_LEAVE',
+        customerId
+      });
+    } catch (e) {}
+
+    return {
+      success: true,
+      customerId,
+      customerName,
+      maidName,
+      timeSlot,
+      serviceDateTime: serviceDateTime.toISOString(),
+      bookingId: booking.id,
+      queuedForReassignment: true,
+      reason: 'MAID_ON_LEAVE'
+    };
+  }
 
   if (!isMaidAvailable) {
     let booking;

@@ -15,6 +15,77 @@ const getAllMaids = async (req, res) => {
   }
 };
 
+// Update maid weekly off day (admin only)
+const updateMaidWeeklyOffDay = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { weeklyOffDay } = req.body;
+
+    const allowed = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+    const normalizedWeeklyOffDay = weeklyOffDay === undefined || weeklyOffDay === 'NONE' ? null : weeklyOffDay;
+    if (!(normalizedWeeklyOffDay === null || allowed.includes(normalizedWeeklyOffDay))) {
+      return res.status(400).json({ error: 'Invalid weeklyOffDay' });
+    }
+
+    const maidProfile = await prisma.maidProfile.findFirst({
+      where: {
+        OR: [{ userId: id }, { id: id }]
+      },
+      select: { id: true }
+    });
+
+    let profileId = maidProfile?.id;
+
+    if (!profileId) {
+      const maidUser = await prisma.user.findUnique({
+        where: { id },
+        select: { id: true, role: true }
+      });
+
+      if (!maidUser) {
+        return res.status(404).json({ error: 'Maid user not found' });
+      }
+
+      if (maidUser.role !== 'MAID') {
+        return res.status(400).json({ error: 'User is not a maid' });
+      }
+
+      const createdProfile = await prisma.maidProfile.create({
+        data: {
+          userId: maidUser.id,
+          skills: [],
+          languages: [],
+          availability: {
+            isAvailable: true
+          },
+          weeklyOffDay: normalizedWeeklyOffDay
+        },
+        select: { id: true }
+      });
+
+      profileId = createdProfile.id;
+    }
+
+    const updated = await prisma.maidProfile.update({
+      where: { id: profileId },
+      data: { weeklyOffDay: normalizedWeeklyOffDay }
+    });
+
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    console.error('Error updating maid weekly off day:', {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+      stack: error.stack
+    });
+    res.status(500).json({ 
+      error: 'Failed to update maid weekly off day',
+      details: error.message 
+    });
+  }
+};
+
 // Get a maid by ID
 const getMaidById = async (req, res) => {
   try {
@@ -382,6 +453,7 @@ module.exports = {
   updateMaidProfile,
   setMaidAvailability,
   updateMaidStatus,
+  updateMaidWeeklyOffDay,
   deleteMaid,
   verifyStartOTP,
   completeService,
