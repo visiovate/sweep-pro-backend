@@ -7,6 +7,10 @@ echo "🚀 Starting Sweepro Backend in Production Mode..."
 echo "⏳ Waiting for database connection..."
 sleep 10
 
+# Generate Prisma client
+echo "🧩 Generating Prisma Client..."
+npx prisma generate
+
 # Run database migrations
 echo "🔄 Running database migrations..."
 npx prisma db push

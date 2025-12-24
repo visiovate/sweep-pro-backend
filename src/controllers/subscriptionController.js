@@ -216,18 +216,36 @@ const getUserSubscription = async (req, res) => {
     const userId = req.user.id;
 
     // Get customer profile
-    const customerProfile = await prisma.customerProfile.findUnique({
+    let customerProfile = await prisma.customerProfile.findUnique({
       where: { userId }
     });
 
     if (!customerProfile) {
-      return res.status(404).json({ message: 'Customer profile not found' });
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true }
+      });
+
+      if (!user || user.role !== 'CUSTOMER') {
+        return res.status(404).json({ message: 'Customer profile not found' });
+      }
+
+      customerProfile = await prisma.customerProfile.create({
+        data: {
+          userId,
+          preferences: {},
+          emergencyContact: null,
+          specialInstructions: null
+        }
+      });
     }
+
+    const customerIdCandidates = [customerProfile.id, userId];
 
     // First check for active subscription
     let subscription = await prisma.subscription.findFirst({
       where: {
-        customerId: customerProfile.id,
+        customerId: { in: customerIdCandidates },
         status: 'ACTIVE',
         endDate: { gte: new Date() }
       },
@@ -262,7 +280,7 @@ const getUserSubscription = async (req, res) => {
     if (!subscription) {
       subscription = await prisma.subscription.findFirst({
         where: {
-          customerId: customerProfile.id,
+          customerId: { in: customerIdCandidates },
           status: 'PENDING_PAYMENT'
         },
         include: {
@@ -318,18 +336,36 @@ const getMonthlySubscriptionStatus = async (req, res) => {
     const userId = req.user.id;
 
     // Get customer profile
-    const customerProfile = await prisma.customerProfile.findUnique({
+    let customerProfile = await prisma.customerProfile.findUnique({
       where: { userId }
     });
 
     if (!customerProfile) {
-      return res.status(404).json({ message: 'Customer profile not found' });
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true }
+      });
+
+      if (!user || user.role !== 'CUSTOMER') {
+        return res.status(404).json({ message: 'Customer profile not found' });
+      }
+
+      customerProfile = await prisma.customerProfile.create({
+        data: {
+          userId,
+          preferences: {},
+          emergencyContact: null,
+          specialInstructions: null
+        }
+      });
     }
+
+    const customerIdCandidates = [customerProfile.id, userId];
 
     // Get active subscription
     const subscription = await prisma.subscription.findFirst({
       where: {
-        customerId: customerProfile.id,
+        customerId: { in: customerIdCandidates },
         status: 'ACTIVE',
         endDate: { gte: new Date() }
       }

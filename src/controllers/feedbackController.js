@@ -247,6 +247,76 @@ const submitFeedback = async (req, res) => {
 };
 
 /**
+ * Get all reviews for the currently authenticated maid
+ */
+const getMaidReviews = async (req, res) => {
+  try {
+    const maidUserId = req.user.id;
+
+    const feedbacks = await prisma.feedback.findMany({
+      where: {
+        booking: {
+          maidId: maidUserId
+        },
+        status: 'ACTIVE'
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            profileImage: true
+          }
+        },
+        booking: {
+          select: {
+            id: true,
+            completedAt: true,
+            createdAt: true,
+            service: {
+              select: {
+                name: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    const reviews = feedbacks.map((f) => ({
+      id: f.id,
+      rating: f.overallRating,
+      comment: f.comment || '',
+      serviceDate: (f.booking?.completedAt || f.booking?.createdAt || f.createdAt).toISOString(),
+      reviewer: {
+        name: f.customer?.name || 'Customer',
+        email: f.customer?.email || undefined,
+        phone: f.customer?.phone || undefined,
+        profileImage: f.customer?.profileImage || undefined
+      },
+      serviceDetails: f.booking?.service?.name || undefined
+    }));
+
+    res.json({
+      success: true,
+      data: reviews
+    });
+  } catch (error) {
+    console.error('Error fetching maid reviews:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch maid reviews',
+      details: error.message
+    });
+  }
+};
+
+/**
  * Get feedback for a specific booking
  */
 const getFeedbackByBooking = async (req, res) => {
@@ -718,6 +788,7 @@ module.exports = {
   getAllFeedback,
   getFeedbackStats,
   updateAdminResponse,
-  getEligibleBookings
+  getEligibleBookings,
+  getMaidReviews
 };
 

@@ -157,6 +157,13 @@ const uploadMaidVerificationDocuments = async (req, res) => {
       });
     }
 
+    if (maidProfile.isVerified || maidProfile.status === 'ACTIVE') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is already verified. Document re-upload is not allowed.'
+      });
+    }
+
     console.log('Maid profile found:', maidProfile.id);
 
     const uploadedDocs = [];
@@ -410,9 +417,37 @@ const getMaidVerificationStatus = async (req, res) => {
   try {
     const maidId = req.user.id;
 
+    if (req.user.role !== 'MAID') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Maid privileges required.'
+      });
+    }
+
     // Get maid profile
-    const maidProfile = await prisma.maidProfile.findUnique({
+    // Some legacy flows may have created a MAID user without a MaidProfile.
+    // Treat that as "not submitted" and create a default profile on-demand.
+    const maidProfile = await prisma.maidProfile.upsert({
       where: { userId: maidId },
+      update: {},
+      create: {
+        userId: maidId,
+        skills: [],
+        languages: ['English'],
+        availability: {
+          monday: { start: '09:00', end: '18:00', available: true },
+          tuesday: { start: '09:00', end: '18:00', available: true },
+          wednesday: { start: '09:00', end: '18:00', available: true },
+          thursday: { start: '09:00', end: '18:00', available: true },
+          friday: { start: '09:00', end: '18:00', available: true },
+          saturday: { start: '09:00', end: '16:00', available: true },
+          sunday: { start: '10:00', end: '16:00', available: false }
+        },
+        status: 'PENDING_VERIFICATION',
+        isFloatingMaid: false,
+        maxDailyBookings: 3,
+        serviceRadius: 2.0
+      },
       include: {
         documents: {
           select: {
@@ -429,13 +464,6 @@ const getMaidVerificationStatus = async (req, res) => {
         }
       }
     });
-
-    if (!maidProfile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Maid profile not found'
-      });
-    }
 
     // Map documents to frontend format
     const documents = maidProfile.documents;
@@ -454,7 +482,9 @@ const getMaidVerificationStatus = async (req, res) => {
     const anyRejected = documents.some(doc => doc.verificationStatus === 'REJECTED');
     
     let overallStatus = 'NOT_SUBMITTED';
-    if (!allRequiredUploaded) {
+    if (maidProfile.isVerified || maidProfile.status === 'ACTIVE') {
+      overallStatus = 'APPROVED';
+    } else if (documents.length === 0) {
       overallStatus = 'NOT_SUBMITTED';
     } else if (allRequiredApproved) {
       overallStatus = 'APPROVED';
@@ -465,10 +495,12 @@ const getMaidVerificationStatus = async (req, res) => {
     }
 
     // Build verification status
+    const overallRejectionReason = documents.find(d => d.verificationStatus === 'REJECTED')?.rejectionReason || null;
     const verificationStatus = {
       hasDocuments: documents.length > 0,
       overallStatus: overallStatus,
       maidStatus: maidProfile.status,
+      rejectionReason: overallRejectionReason,
       submittedAt: documents.length > 0 ? documents[0].createdAt : null,
       reviewedAt: documents.find(d => d.verifiedAt)?.verifiedAt || null,
       documents: documents,
@@ -835,7 +867,7 @@ const approveVerification = async (req, res) => {
     }
 
     // Get required document types
-    const requiredTypes = ['AADHAR_CARD', 'POLICE_VERIFICATION', 'PHOTO'];
+    const requiredTypes = ['AADHAR_CARD', 'PAN_CARD', 'ADDRESS_PROOF'];
     
     // Approve all uploaded required documents
     const documentsToUpdate = maidProfile.documents.filter(doc => 
@@ -939,7 +971,7 @@ const rejectVerification = async (req, res) => {
     }
 
     // Get required document types
-    const requiredTypes = ['AADHAR_CARD', 'POLICE_VERIFICATION', 'PHOTO'];
+    const requiredTypes = ['AADHAR_CARD', 'PAN_CARD', 'ADDRESS_PROOF'];
     
     // Reject all uploaded required documents that are pending
     const documentsToUpdate = maidProfile.documents.filter(doc => 

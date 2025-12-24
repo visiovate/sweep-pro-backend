@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
-const {
+ const {
   assignMaidToCustomer,
   getCustomerAssignment,
   updateCustomerAssignment,
@@ -18,13 +18,17 @@ const {
   getMyMaidAssignment
 } = require('../controllers/customerAssignmentController');
 
+ // Customer routes (for customers to check their own status)
+ router.get('/my-status', authenticateToken, getMyCustomerStatus);
+ router.get('/my-assignment', authenticateToken, getMyMaidAssignment);
+
 // Admin routes for customer-maid assignments
 router.post('/assign', authenticateToken, authorizeAdmin, assignMaidToCustomer);
 router.get('/status/:customerId', authenticateToken, authorizeAdmin, getCustomerStatus);
-
-// Customer routes (must come BEFORE '/:customerId' or they'll be shadowed)
-router.get('/my-status', authenticateToken, getMyCustomerStatus);
-router.get('/my-assignment', authenticateToken, getMyMaidAssignment);
+router.get('/:customerId', authenticateToken, authorizeAdmin, getCustomerAssignment);
+router.patch('/:customerId/update', authenticateToken, authorizeAdmin, updateCustomerAssignment);
+router.get('/', authenticateToken, authorizeAdmin, getAllCustomerAssignments);
+router.delete('/:customerId', authenticateToken, authorizeAdmin, removeCustomerAssignment);
 
 // Assignment request routes for maids (must come BEFORE '/:customerId' or they'll be shadowed)
 router.get('/requests/maid', authenticateToken, getMaidAssignmentRequests);
