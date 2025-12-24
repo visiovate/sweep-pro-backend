@@ -84,6 +84,9 @@ const allowedOrigins = [
 
 const allowedOriginRegexes = [
   /^https:\/\/sweep-pro-frontend(-testing)?\.vercel\.app$/i,
+  /^https:\/\/www\.sweep-pro-frontend(-testing)?\.vercel\.app$/i,
+  /^https:\/\/sweep-pro-frontend(-testing)?-[a-z0-9-]+\.vercel\.app$/i,
+  /^https:\/\/sweep-pro-frontend(-testing)?-[a-z0-9-]+-[a-z0-9-]+\.vercel\.app$/i,
   /^https:\/\/sweep-pro-frontend(-testing)?-[a-z0-9]+-visiovate-techs-projects\.vercel\.app$/i
 ];
 
