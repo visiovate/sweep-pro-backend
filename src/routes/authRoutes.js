@@ -188,7 +188,7 @@ router.post('/register', registerValidation, async (req, res) => {
 router.post('/login', loginValidation, async (req, res) => {
   try {
     const prisma = await initializePrisma();
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
 
     // Find user with profiles
     const user = await prisma.user.findUnique({
@@ -235,7 +235,7 @@ router.post('/login', loginValidation, async (req, res) => {
         role: user.role
       },
       process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
+      { expiresIn: rememberMe ? '30d' : '24h' }
     );
 
     // Prepare user response without password

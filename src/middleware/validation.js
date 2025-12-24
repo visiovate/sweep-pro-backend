@@ -65,6 +65,10 @@ const loginValidation = [
   body('password')
     .notEmpty()
     .withMessage('Password is required'),
+  body('rememberMe')
+    .optional()
+    .isBoolean()
+    .withMessage('rememberMe must be a boolean'),
   validate
 ];
 
