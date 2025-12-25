@@ -50,6 +50,14 @@ function getPrismaClient() {
   return prisma;
 }
 
+function requirePrismaClient() {
+  const client = getPrismaClient();
+  if (!client) {
+    throw new Error('Prisma client not initialized');
+  }
+  return client;
+}
+
 /**
  * Check if database is connected
  */
@@ -123,6 +131,7 @@ async function executeWithErrorHandling(operation, operationName = 'Database ope
 module.exports = {
   initializePrisma,
   getPrismaClient,
+  requirePrismaClient,
   isDatabaseConnected,
   disconnectDatabase,
   executeWithErrorHandling

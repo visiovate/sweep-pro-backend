@@ -1,16 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const { PrismaClient } = require('@prisma/client');
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const { v4: uuidv4 } = require('uuid');
 
 // Load environment variables
 dotenv.config();
-
-// Initialize Prisma client
-const prisma = new PrismaClient();
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -21,6 +17,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const issueRoutes = require('./routes/issueRoutes');
 const maidRoutes = require('./routes/maidRoutes');
 const subscriptionRoutes = require('./routes/subscriptionRoutes');
+const bookingCompletionRoutes = require('./routes/bookingCompletionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const testRoutes = require('./routes/testRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
@@ -161,6 +158,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/booking-completion', bookingCompletionRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/maids', maidRoutes);

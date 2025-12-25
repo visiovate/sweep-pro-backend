@@ -1,7 +1,14 @@
-const { PrismaClient } = require('@prisma/client');
+const { requirePrismaClient } = require('../utils/database');
 const notificationService = require('./notificationService');
+const JobScheduler = require('./jobScheduler');
 
-const prisma = new PrismaClient();
+const prisma = new Proxy({}, {
+  get: (_, prop) => {
+    const client = requirePrismaClient();
+    const value = client[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
+  }
+});
 
 class SubscriptionBufferService {
   constructor() {
@@ -248,7 +255,7 @@ class SubscriptionBufferService {
   /**
    * Schedule monthly services for active subscription
    * @param {string} subscriptionId - The subscription ID
-   * @returns {Promise<Array>} Array of created bookings
+   * @returns {Promise<Array>} Array of scheduled assignment jobs (legacy return for compatibility)
    */
   async scheduleMonthlyServices(subscriptionId) {
     try {
@@ -277,56 +284,35 @@ class SubscriptionBufferService {
       const bufferStart = new Date(monthEnd);
       bufferStart.setDate(bufferStart.getDate() - subscription.bufferDaysCount + 1);
 
-      const sessionsPerWeek = subscription.plan.sessionsPerWeek;
-      const totalSessions = subscription.plan.sessionsPerMonth;
-      
-      // Calculate service days (excluding buffer days)
-      const availableDays = Math.floor((bufferStart - monthStart) / (1000 * 60 * 60 * 24));
-      const daysBetweenServices = Math.floor(availableDays / totalSessions);
-
-      const bookings = [];
       const user = subscription.customer.user;
 
-      for (let i = 0; i < totalSessions; i++) {
-        const serviceDate = new Date(monthStart);
-        serviceDate.setDate(serviceDate.getDate() + (i * daysBetweenServices));
-        
-        // Skip if date is in buffer period or past
-        if (serviceDate >= bufferStart || serviceDate < now) {
-          continue;
+      // Check for active maid assignment
+      const activeAssignment = await prisma.customerMaidAssignment.findFirst({
+        where: {
+          customerId: user.id,
+          isActive: true
         }
+      });
 
-        // Set service time (default 9 AM or user's preferred time slot)
-        const serviceTime = user.timeSlot ? 
-          this.parseTimeSlot(user.timeSlot) : { hour: 9, minute: 0 };
-        
-        serviceDate.setHours(serviceTime.hour, serviceTime.minute, 0, 0);
-
-        const booking = await prisma.booking.create({
-          data: {
-            customerId: user.id,
-            serviceId: subscription.plan.serviceId,
-            scheduledAt: serviceDate,
-            serviceAddress: user.address || 'Address not provided',
-            status: 'CONFIRMED',
-            estimatedDuration: subscription.plan.service.baseDuration,
-            totalAmount: subscription.plan.finalPrice / subscription.plan.sessionsPerMonth,
-            finalAmount: subscription.plan.finalPrice / subscription.plan.sessionsPerMonth,
-            discount: 0,
-            isSubscriptionBased: true,
-            specialInstructions: `Monthly subscription service - Cycle ${subscription.completedCycles + 1}`
-          },
-          include: {
-            service: true,
-            customer: true
-          }
-        });
-
-        bookings.push(booking);
+      if (!activeAssignment) {
+        console.log(`Subscription ${subscriptionId} has no active maid assignment. Skipping booking generation.`);
+        return [];
       }
 
-      console.log(`Scheduled ${bookings.length} services for subscription ${subscriptionId}`);
-      return bookings;
+      const scheduledResult = await JobScheduler.scheduleForCustomer(
+        user.id,
+        activeAssignment.maidId,
+        user.timeSlot,
+        {
+          customerName: user.name,
+          maidName: undefined,
+          maidUserId: undefined,
+          source: 'subscription-buffer-service'
+        }
+      );
+
+      console.log(`Queued subscription services for ${subscriptionId} via assignment scheduler.`);
+      return Array.isArray(scheduledResult) ? scheduledResult : [scheduledResult];
     } catch (error) {
       console.error('Error scheduling monthly services:', error);
       throw error;

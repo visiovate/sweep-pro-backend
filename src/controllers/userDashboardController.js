@@ -1,14 +1,15 @@
-const { PrismaClient } = require('@prisma/client');
+const { requirePrismaClient } = require('../utils/database');
 const subscriptionBufferService = require('../services/subscriptionBufferService');
 const maidSchedulingService = require('../services/maidSchedulingService');
 
-const prisma = new PrismaClient();
+const getPrisma = () => requirePrismaClient();
 
 /**
  * Get user's subscription dashboard data
  */
 const getSubscriptionDashboard = async (req, res) => {
   try {
+    const prisma = getPrisma();
     const userId = req.user.id;
 
     // Get customer profile
@@ -120,6 +121,7 @@ const getSubscriptionDashboard = async (req, res) => {
  */
 const getMonthlyServiceCalendar = async (req, res) => {
   try {
+    const prisma = getPrisma();
     const userId = req.user.id;
     const { year, month } = req.query;
 
@@ -266,6 +268,7 @@ const getMonthlyServiceCalendar = async (req, res) => {
  */
 const getBufferPeriodHistory = async (req, res) => {
   try {
+    const prisma = getPrisma();
     const userId = req.user.id;
     const { page = 1, limit = 10 } = req.query;
 
@@ -349,6 +352,7 @@ const getBufferPeriodHistory = async (req, res) => {
  */
 const getSubscriptionCycleHistory = async (req, res) => {
   try {
+    const prisma = getPrisma();
     const userId = req.user.id;
     const { page = 1, limit = 10 } = req.query;
 
@@ -445,6 +449,7 @@ const getSubscriptionCycleHistory = async (req, res) => {
  */
 const getServicePreferences = async (req, res) => {
   try {
+    const prisma = getPrisma();
     const userId = req.user.id;
 
     const user = await prisma.user.findUnique({
@@ -542,6 +547,7 @@ const getServicePreferences = async (req, res) => {
  */
 const getDashboardRecentBookings = async (req, res) => {
   try {
+    const prisma = getPrisma();
     const userId = req.user.id;
     const { cursor, limit = 5 } = req.query;
     const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 5, 20));
@@ -587,6 +593,7 @@ const getDashboardRecentBookings = async (req, res) => {
  */
 const getDashboardRecentNotifications = async (req, res) => {
   try {
+    const prisma = getPrisma();
     const userId = req.user.id;
     const { cursor, limit = 5 } = req.query;
     const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 5, 20));
@@ -631,6 +638,7 @@ const getDashboardRecentNotifications = async (req, res) => {
  */
 const getDashboardRecentPayments = async (req, res) => {
   try {
+    const prisma = getPrisma();
     const userId = req.user.id;
     const { cursor, limit = 5 } = req.query;
     const pageSize = Math.max(1, Math.min(parseInt(limit, 10) || 5, 20));
@@ -677,6 +685,7 @@ const getDashboardRecentPayments = async (req, res) => {
  */
 const getDashboardStats = async (req, res) => {
   try {
+    const prisma = getPrisma();
     const userId = req.user.id;
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
