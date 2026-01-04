@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { getPrismaClient } = require('../utils/database');
+const { getFirebaseAuth } = require('../config/firebase');
 
 const buildAuthSuccessResponse = (decodedPayload, userRecord = null) => {
   const baseClaims = {
@@ -29,6 +30,24 @@ const buildAuthSuccessResponse = (decodedPayload, userRecord = null) => {
   };
 };
 
+const buildFirebaseAuthSuccessResponse = (firebaseDecodedToken, userRecord) => {
+  return {
+    id: userRecord.id,
+    userId: userRecord.id,
+    role: userRecord.role,
+    name: userRecord.name,
+    email: userRecord.email || firebaseDecodedToken.email,
+    status: userRecord.status,
+    phone: userRecord.phone,
+    firebase_uid: userRecord.firebase_uid || firebaseDecodedToken.uid,
+    apartment_id: userRecord.apartment_id,
+    profile_completed: userRecord.profile_completed,
+    customerProfileId: userRecord?.customerProfile?.id,
+    maidProfileId: userRecord?.maidProfile?.id,
+    adminProfileId: userRecord?.adminProfile?.id
+  };
+};
+
 const authenticateToken = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
@@ -37,7 +56,57 @@ const authenticateToken = async (req, res, next) => {
       throw new Error('Token missing');
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    let decoded = null;
+
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    } catch (jwtError) {
+      // Not a valid JWT. Try Firebase ID token (Google sign-in sessions).
+      try {
+        const firebaseAuth = getFirebaseAuth();
+        const firebaseDecodedToken = await firebaseAuth.verifyIdToken(token);
+
+        const prisma = getPrismaClient();
+        if (!prisma) {
+          throw new Error('Database unavailable');
+        }
+
+        const userRecord = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { firebase_uid: firebaseDecodedToken.uid },
+              { email: firebaseDecodedToken.email }
+            ]
+          },
+          include: {
+            customerProfile: true,
+            maidProfile: true,
+            adminProfile: true
+          }
+        });
+
+        if (!userRecord) {
+          throw new Error('User not found');
+        }
+
+        req.firebaseUser = {
+          uid: firebaseDecodedToken.uid,
+          email: firebaseDecodedToken.email,
+          emailVerified: firebaseDecodedToken.email_verified || false,
+          name: firebaseDecodedToken.name || firebaseDecodedToken.display_name || null
+        };
+
+        // If request already has user attached (e.g. previous middleware), skip
+        if (req.user) {
+          return next();
+        }
+
+        req.user = buildFirebaseAuthSuccessResponse(firebaseDecodedToken, userRecord);
+        return next();
+      } catch (firebaseError) {
+        throw firebaseError;
+      }
+    }
 
     if (!decoded?.userId && !decoded?.id) {
       throw new Error('Invalid token payload');

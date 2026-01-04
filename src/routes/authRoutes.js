@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { registerValidation, loginValidation } = require('../middleware/validation');
 const { authenticateToken } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const emailService = require('../services/notification/EmailService');
 const { initializePrisma } = require('../utils/database');
 
 router.post('/register', registerValidation, async (req, res) => {
@@ -49,6 +51,7 @@ router.post('/register', registerValidation, async (req, res) => {
       timeSlot,
       password: hashedPassword,
       address,
+      profile_completed: true,
       status: 'ACTIVE'
     };
 
@@ -136,7 +139,10 @@ router.post('/register', registerValidation, async (req, res) => {
       id: createdUser.id,
       name: createdUser.name,
       email: createdUser.email,
+      firebase_uid: createdUser.firebase_uid,
       phone: createdUser.phone,
+      apartment_id: createdUser.apartment_id,
+      profile_completed: createdUser.profile_completed,
       timeSlot: createdUser.timeSlot,
       address: createdUser.address,
       role: createdUser.role,
@@ -181,6 +187,165 @@ router.post('/register', registerValidation, async (req, res) => {
       message: 'Registration failed. Please try again.',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  }
+});
+
+// Forgot password - send reset link
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const prisma = await initializePrisma();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+
+    // Always return success to avoid account enumeration
+    const genericResponse = {
+      success: true,
+      message: 'If an account exists for that email, a reset link has been sent.'
+    };
+
+    if (!email) {
+      console.log('[forgot-password] Missing email in request');
+      return res.json(genericResponse);
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    // If user doesn't exist or doesn't have a password (OAuth user), still return generic success
+    if (!user || !user.password) {
+      console.log(
+        `[forgot-password] No eligible user for email=${email} found=${Boolean(user)} hasPassword=${Boolean(user?.password)}`
+      );
+      return res.json(genericResponse);
+    }
+
+    // Invalidate existing unused tokens for this user
+    await prisma.passwordResetToken.updateMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() }
+      },
+      data: {
+        usedAt: new Date()
+      }
+    });
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt
+      }
+    });
+
+    const resetUrlBase = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetLink = `${resetUrlBase.replace(/\/+$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #1800ad 0%, #1f2fd1 100%); padding: 24px; border-radius: 10px 10px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0;">Reset your password</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 24px; border-radius: 0 0 10px 10px;">
+          <p style="font-size: 16px; color: #374151;">Hi ${user.name || 'there'},</p>
+          <p style="font-size: 16px; color: #374151;">We received a request to reset your Sweepro password.</p>
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${resetLink}" style="display: inline-block; padding: 14px 22px; background: #1800ad; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
+              Reset Password
+            </a>
+          </div>
+          <p style="font-size: 14px; color: #6b7280;">This link will expire in 1 hour. If you didn’t request this, you can ignore this email.</p>
+        </div>
+      </div>
+    `;
+
+    const emailResult = await emailService.sendEmail({
+      to: user.email,
+      subject: 'Reset your Sweepro password',
+      html
+    });
+
+    if (emailResult?.success) {
+      console.log(
+        `[forgot-password] Reset email sent for userId=${user.id} email=${user.email} provider=${emailResult.provider || 'unknown'} messageId=${emailResult.messageId || 'n/a'}`
+      );
+    } else {
+      console.error(
+        `[forgot-password] Reset email FAILED for userId=${user.id} email=${user.email} provider=${emailResult?.provider || 'unknown'} error=${emailResult?.error || emailResult?.reason || 'unknown'}`
+      );
+    }
+
+    return res.json(genericResponse);
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    // Still avoid revealing anything
+    return res.json({
+      success: true,
+      message: 'If an account exists for that email, a reset link has been sent.'
+    });
+  }
+});
+
+// Reset password - verify token and set new password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const prisma = await initializePrisma();
+    const token = String(req.body?.token || '').trim();
+    const newPassword = String(req.body?.password || '');
+    const confirmPassword = String(req.body?.confirmPassword || '');
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Reset token is required' });
+    }
+
+    if (!newPassword || newPassword.length < 8 || newPassword.length > 128) {
+      return res.status(400).json({ success: false, message: 'Password must be between 8 and 128 characters long' });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Password confirmation does not match password' });
+    }
+
+    // Keep same complexity policy used in registration
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&].*$/;
+    if (!strongPasswordRegex.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must contain at least one lowercase letter, one uppercase letter, one digit, and one special character'
+      });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const resetRecord = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: true }
+    });
+
+    if (!resetRecord || resetRecord.usedAt || resetRecord.expiresAt <= new Date()) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: resetRecord.userId },
+        data: { password: hashedPassword }
+      }),
+      prisma.passwordResetToken.update({
+        where: { id: resetRecord.id },
+        data: { usedAt: new Date() }
+      })
+    ]);
+
+    res.json({ success: true, message: 'Password reset successful. Please log in with your new password.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ success: false, message: 'Failed to reset password. Please try again.' });
   }
 });
 
@@ -243,8 +408,11 @@ router.post('/login', loginValidation, async (req, res) => {
       id: user.id,
       name: user.name,
       email: user.email,
+      firebase_uid: user.firebase_uid,
       phone: user.phone,
       address: user.address,
+      apartment_id: user.apartment_id,
+      profile_completed: user.profile_completed,
       role: user.role,
       timeSlot: user.timeSlot,
       status: user.status,
@@ -300,8 +468,11 @@ router.get('/me', authenticateToken, async (req, res) => {
       id: user.id,
       name: user.name,
       email: user.email,
+      firebase_uid: user.firebase_uid,
       phone: user.phone,
       address: user.address,
+      apartment_id: user.apartment_id,
+      profile_completed: user.profile_completed,
       role: user.role,
       timeSlot: user.timeSlot,
       status: user.status,

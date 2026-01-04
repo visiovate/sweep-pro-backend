@@ -1,5 +1,5 @@
 @echo off
-echo 🚀 Setting up SweepPro Backend for Testing
+echo 🚀 Setting up Sweepro Backend for Testing
 echo =============================================
 
 REM Check if Node.js is installed

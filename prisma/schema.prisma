@@ -10,10 +10,13 @@ datasource db {
 model User {
   id                  String           @id @default(uuid())
   email               String           @unique
-  password            String
-  role                UserRole         @default(CUSTOMER)
+  password            String?          // Optional for Firebase OAuth users
+  firebase_uid        String?          @unique // Firebase UID
+  role                UserRole?       // Nullable until profile completion
   name                String
-  phone               String           @unique
+  phone               String?          @unique // Nullable until profile completion
+  apartment_id       String?          // Reference to apartment (stored as string for now)
+  profile_completed   Boolean          @default(false) // Mandatory onboarding flag
   address             String?
   latitude            Float?
   longitude           Float?
@@ -36,6 +39,7 @@ model User {
   locality            String?
   pincode             String?
   state               String?
+  passwordResetTokens PasswordResetToken[]
   adminProfile        AdminProfile?
   customerBookings    Booking[]        @relation("CustomerBookings")
   maidBookings        Booking[]        @relation("MaidBookings")
@@ -56,6 +60,20 @@ model User {
   @@index([email])
   @@index([phone])
   @@index([role])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model CustomerProfile {

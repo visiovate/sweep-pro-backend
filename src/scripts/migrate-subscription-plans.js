@@ -8,7 +8,7 @@ async function main() {
 
   const LEGACY_PLAN_IDS = ['basic-plan', 'premium-plan', 'standard-plan'];
 
-  console.log('🔄 Migrating subscription plans to only SweepPro Touch/Lux...');
+  console.log('🔄 Migrating subscription plans to only Sweepro Touch/Lux...');
 
   const touchPlan = await prisma.servicePlan.findUnique({ where: { id: TOUCH_PLAN_ID } });
   const luxPlan = await prisma.servicePlan.findUnique({ where: { id: LUX_PLAN_ID } });

@@ -94,7 +94,7 @@ class SubscriptionBufferService {
 
       // Check if plan supports buffer system
       if (!subscription.plan.hasBufferSystem) {
-        throw new Error('This plan does not support buffer system. Only SweepPro Lux plans have buffer functionality.');
+        throw new Error('This plan does not support buffer system. Only Sweepro Lux plans have buffer functionality.');
       }
 
       if (subscription.isInBufferPeriod) {

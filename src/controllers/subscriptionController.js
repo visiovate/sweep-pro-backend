@@ -427,7 +427,7 @@ const startBufferPeriod = async (req, res) => {
     // Check if plan supports buffer system
     if (!subscription.plan.hasBufferSystem) {
       return res.status(400).json({ 
-        message: 'Your current plan (SweepPro Touch) does not support buffer system. Please upgrade to SweepPro Lux to access buffer functionality.',
+        message: 'Your current plan (Sweepro Touch) does not support buffer system. Please upgrade to Sweepro Lux to access buffer functionality.',
         planType: subscription.plan.planType,
         upgradeRequired: true
       });

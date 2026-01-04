@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Setting up SweepPro Backend for Testing"
+echo "🚀 Setting up Sweepro Backend for Testing"
 echo "============================================="
 
 # Check if Node.js is installed

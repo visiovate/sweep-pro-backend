@@ -30,6 +30,7 @@ const automaticBookingRoutes = require('./routes/automaticBookingRoutes');
 const automaticAssignmentRoutes = require('./routes/automaticAssignmentRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
+const firebaseAuthRoutes = require('./routes/firebaseAuthRoutes');
 
 // Create Express app
 const app = express();
@@ -42,6 +43,9 @@ const wss = new WebSocketServer({ server });
 
 // Import database utility
 const { initializePrisma, disconnectDatabase } = require('./utils/database');
+
+// Initialize Firebase Admin SDK
+const { initializeFirebaseAdmin } = require('./config/firebase');
 
 // Import notification service
 const notificationService = require('./services/notificationService');
@@ -155,6 +159,7 @@ module.exports.notificationService = notificationService;
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', firebaseAuthRoutes); // Firebase auth routes (login, me, complete-profile, apartments)
 app.use('/api/users', userRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/bookings', bookingRoutes);
@@ -216,6 +221,15 @@ if (process.env.NODE_ENV !== 'test') {
     try {
       await initializePrisma();
       console.log('✅ Database initialized successfully');
+      
+      // Initialize Firebase Admin SDK
+      try {
+        initializeFirebaseAdmin();
+        console.log('✅ Firebase Admin SDK initialized successfully');
+      } catch (firebaseError) {
+        console.error('⚠️ Firebase Admin initialization failed:', firebaseError.message);
+        console.log('⚠️ Firebase authentication features will not work');
+      }
       
       // Test Redis connection
       const redisConnected = await testRedisConnection();
