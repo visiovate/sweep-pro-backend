@@ -262,21 +262,28 @@ router.post('/forgot-password', async (req, res) => {
       </div>
     `;
 
-    const emailResult = await emailService.sendEmail({
-      to: user.email,
-      subject: 'Reset your Sweepro password',
-      html
-    });
-
-    if (emailResult?.success) {
-      console.log(
-        `[forgot-password] Reset email sent for userId=${user.id} email=${user.email} provider=${emailResult.provider || 'unknown'} messageId=${emailResult.messageId || 'n/a'}`
-      );
-    } else {
-      console.error(
-        `[forgot-password] Reset email FAILED for userId=${user.id} email=${user.email} provider=${emailResult?.provider || 'unknown'} error=${emailResult?.error || emailResult?.reason || 'unknown'}`
-      );
-    }
+    emailService
+      .sendEmail({
+        to: user.email,
+        subject: 'Reset your Sweepro password',
+        html
+      })
+      .then((emailResult) => {
+        if (emailResult?.success) {
+          console.log(
+            `[forgot-password] Reset email sent for userId=${user.id} email=${user.email} provider=${emailResult.provider || 'unknown'} messageId=${emailResult.messageId || 'n/a'}`
+          );
+        } else {
+          console.error(
+            `[forgot-password] Reset email FAILED for userId=${user.id} email=${user.email} provider=${emailResult?.provider || 'unknown'} error=${emailResult?.error || emailResult?.reason || 'unknown'}`
+          );
+        }
+      })
+      .catch((err) => {
+        console.error(
+          `[forgot-password] Reset email FAILED (exception) for userId=${user.id} email=${user.email} error=${err?.message || err}`
+        );
+      });
 
     return res.json(genericResponse);
   } catch (error) {

@@ -31,9 +31,10 @@ class FeedbackAnalyticsService {
       // Get all feedback for the maid
       const allFeedback = await prisma.feedback.findMany({
         where: {
-          booking: {
-            maidId
-          }
+          OR: [
+            { ratedMaidId: maidId },
+            { ratedMaidId: null, booking: { maidId } }
+          ]
         },
         include: {
           booking: {
@@ -99,15 +100,26 @@ class FeedbackAnalyticsService {
       if (punctualityCount > 0) avgPunctuality /= punctualityCount;
       if (behaviorCount > 0) avgBehavior /= behaviorCount;
 
-      // Get recent feedback for summary
-      const recentFeedback = activeFeedback.slice(0, 5).map(f => ({
-        id: f.id,
-        rating: f.overallRating,
-        comment: f.comment,
-        customerName: f.booking?.customer?.name,
-        date: f.createdAt,
-        wouldRecommend: f.wouldRecommend
-      }));
+      // Get recent feedback for summary (shape used by admin UI)
+      const recentFeedback = await prisma.feedback.findMany({
+        where: {
+          OR: [
+            { ratedMaidId: maidId },
+            { ratedMaidId: null, booking: { maidId } }
+          ]
+        },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              profileImage: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      });
 
       // Get monthly performance
       const currentYear = new Date().getFullYear();

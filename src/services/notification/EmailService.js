@@ -69,10 +69,17 @@ class EmailService {
       const explicitSecure = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
       const secure = explicitSecure ? explicitSecure === 'true' : port === 465;
 
+      const connectionTimeout = parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '10000', 10);
+      const greetingTimeout = parseInt(process.env.SMTP_GREETING_TIMEOUT_MS || '10000', 10);
+      const socketTimeout = parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS || '20000', 10);
+
       this.client = nodemailer.createTransport({
         host,
         port,
         secure,
+        connectionTimeout,
+        greetingTimeout,
+        socketTimeout,
         auth: {
           user,
           pass

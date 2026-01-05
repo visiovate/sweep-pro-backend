@@ -18,9 +18,10 @@ class RatingRecalculationService {
       // Get all ACTIVE feedback for the maid
       const feedbacks = await prisma.feedback.findMany({
         where: {
-          booking: {
-            maidId
-          },
+          OR: [
+            { ratedMaidId: maidId },
+            { ratedMaidId: null, booking: { maidId } }
+          ],
           status: 'ACTIVE'
         },
         select: {
@@ -223,7 +224,7 @@ class RatingRecalculationService {
         throw new Error('Feedback not found');
       }
 
-      const maidId = feedback.booking?.maidId;
+      const maidId = feedback.ratedMaidId || feedback.booking?.maidId;
       if (!maidId) {
         throw new Error('Maid not found for this feedback');
       }
@@ -318,7 +319,7 @@ class RatingRecalculationService {
       }
 
       const oldWeight = feedback.weight;
-      const maidId = feedback.booking?.maidId;
+      const maidId = feedback.ratedMaidId || feedback.booking?.maidId;
 
       if (!maidId) {
         throw new Error('Maid not found for this feedback');
@@ -367,13 +368,14 @@ class RatingRecalculationService {
           where: { verificationFlag: true },
           distinct: ['id'],
           select: {
+            ratedMaidId: true,
             booking: {
               select: { maidId: true }
             }
           }
         });
 
-        maidIds = [...new Set(flaggedFeedbacks.map(f => f.booking?.maidId).filter(Boolean))];
+        maidIds = [...new Set(flaggedFeedbacks.map(f => f.ratedMaidId || f.booking?.maidId).filter(Boolean))];
       } else {
         // Get all maids with bookings
         const allMaids = await prisma.maidProfile.findMany({
@@ -438,9 +440,10 @@ class RatingRecalculationService {
       // Simulate the change
       let simulatedFeedbacks = await prisma.feedback.findMany({
         where: {
-          booking: {
-            maidId: feedback.booking.maidId
-          },
+          OR: [
+            { ratedMaidId: feedback.ratedMaidId || feedback.booking.maidId },
+            { ratedMaidId: null, booking: { maidId: feedback.ratedMaidId || feedback.booking.maidId } }
+          ],
           status: 'ACTIVE'
         },
         select: {

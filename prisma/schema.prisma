@@ -44,7 +44,8 @@ model User {
   customerBookings    Booking[]        @relation("CustomerBookings")
   maidBookings        Booking[]        @relation("MaidBookings")
   customerProfile     CustomerProfile?
-  feedbacks           Feedback[]
+  feedbacks           Feedback[]       @relation("CustomerFeedback")
+  receivedFeedbacks   Feedback[]       @relation("RatedMaidFeedback")
   reportedIssues      Issue[]          @relation("ReportedIssues")
   resolvedIssues      Issue[]          @relation("ResolvedIssues")
   maidProfile         MaidProfile?
@@ -330,6 +331,7 @@ model Feedback {
   id                String    @id @default(uuid())
   bookingId         String    @unique
   customerId        String
+  ratedMaidId       String?
   overallRating     Int
   qualityRating     Int?
   punctualityRating Int?
@@ -354,10 +356,12 @@ model Feedback {
   updatedAt         DateTime  @updatedAt
   
   booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer          User      @relation(fields: [customerId], references: [id])
+  customer          User      @relation("CustomerFeedback", fields: [customerId], references: [id])
+  ratedMaid         User?     @relation("RatedMaidFeedback", fields: [ratedMaidId], references: [id])
   auditEntries      FeedbackAudit[]
 
   @@index([customerId])
+  @@index([ratedMaidId])
   @@index([overallRating])
   @@index([status])
   @@index([isWeightAdjusted])
