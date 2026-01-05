@@ -27,7 +27,7 @@ router.post('/:bookingId/start', auth, checkRole(['MAID']), startBookingService)
 // Complete booking with QR code verification
 router.post('/:bookingId/complete', auth, checkRole(['MAID']), completeBookingWithQR);
 
-// Generate QR code for maid
-router.get('/maid/qr-code', auth, checkRole(['MAID']), generateMaidQRCode);
+// Generate QR code for maid for a specific booking (requires service started)
+router.get('/:bookingId/qr-code', auth, checkRole(['MAID']), generateMaidQRCode);
 
 module.exports = router;

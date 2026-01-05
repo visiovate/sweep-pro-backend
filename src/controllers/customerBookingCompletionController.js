@@ -23,6 +23,22 @@ const customerCompleteBookingWithQR = async (req, res) => {
       qrData = { maidId: qrCodeData };
     }
 
+    const scannedBookingId = qrData.bookingId || qrData.id;
+
+    if (!scannedBookingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'QR code is missing booking information'
+      });
+    }
+
+    if (scannedBookingId !== bookingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'QR code does not match this booking'
+      });
+    }
+
     const booking = await prisma.booking.findFirst({
       where: {
         id: bookingId,
@@ -49,6 +65,13 @@ const customerCompleteBookingWithQR = async (req, res) => {
       });
     }
 
+    if (booking.status !== 'IN_PROGRESS') {
+      return res.status(400).json({
+        success: false,
+        message: 'Service must be marked as started before completion can be confirmed'
+      });
+    }
+
     const maidProfile = await prisma.maidProfile.findUnique({
       where: { userId: booking.maid.id },
       select: { id: true }
@@ -56,9 +79,13 @@ const customerCompleteBookingWithQR = async (req, res) => {
 
     const expectedUserId = booking.maid.id; // user.id of maid
     const expectedMaidProfileId = maidProfile?.id; // maidProfile.id
-    const providedMaidId = qrData.maidId || qrData.id || qrCodeData;
+    const providedProfileId = qrData.maidProfileId || qrData.maidId || qrData.id || qrCodeData;
+    const providedUserId = qrData.maidUserId || qrData.userId || null;
 
-    if (providedMaidId !== expectedUserId && providedMaidId !== expectedMaidProfileId) {
+    const profileMatches = providedProfileId === expectedMaidProfileId || providedProfileId === expectedUserId;
+    const userMatches = providedUserId === expectedUserId || providedUserId === expectedMaidProfileId;
+
+    if (!profileMatches && !userMatches) {
       return res.status(400).json({
         success: false,
         message: 'QR code does not match the assigned maid for this booking'
