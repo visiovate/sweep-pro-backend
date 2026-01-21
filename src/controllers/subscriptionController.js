@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
-const notificationService = require('../services/notificationService');
 const subscriptionBufferService = require('../services/subscriptionBufferService');
+const { publishNotificationEvent } = require('../notifications/events/publishEvent');
+const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
 const prisma = new PrismaClient();
 
 // Get all subscription plans
@@ -591,8 +592,11 @@ const completeSubscriptionPayment = async (req, res) => {
     // Schedule monthly services
     await subscriptionBufferService.scheduleMonthlyServices(subscriptionId);
 
-    // Send notification for subscription activation
-    await notificationService.notifySubscriptionCreated(subscription);
+    await publishNotificationEvent({
+      topic: NOTIFICATION_TOPICS.SUBSCRIPTION_ACTIVATED,
+      payload: { subscriptionId: subscription.id },
+      dedupeKey: `subscription-activated:${subscription.id}:${subscription.updatedAt.toISOString()}`
+    });
 
     res.json({
       success: true,
@@ -651,9 +655,12 @@ const cancelSubscription = async (req, res) => {
       }
     });
 
-    // Send notification for subscription cancellation
     if (existingSubscription) {
-      await notificationService.notifySubscriptionCancelled(existingSubscription, 'Cancelled by user');
+      await publishNotificationEvent({
+        topic: NOTIFICATION_TOPICS.SUBSCRIPTION_CANCELLED,
+        payload: { subscriptionId: existingSubscription.id },
+        dedupeKey: `subscription-cancelled:${existingSubscription.id}:${new Date().toISOString().slice(0, 10)}`
+      });
     }
 
     res.json({

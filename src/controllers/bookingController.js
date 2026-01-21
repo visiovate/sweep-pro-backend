@@ -1,6 +1,8 @@
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
 const bookingDeduplicationService = require('../services/bookingDeduplicationService');
+const { publishNotificationEvent } = require('../notifications/events/publishEvent');
+const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
 const prisma = new PrismaClient();
 
 const createBooking = async (req, res) => {
@@ -360,8 +362,19 @@ const createBooking = async (req, res) => {
       responseMessage = 'Booking request submitted successfully. Admin will assign a maid shortly.';
     }
 
-    // Send notification for booking creation
-    await notificationService.notifyBookingCreated(booking);
+    await publishNotificationEvent({
+      topic: NOTIFICATION_TOPICS.BOOKING_CREATED,
+      payload: { bookingId: booking.id },
+      dedupeKey: `booking-created:${booking.id}`
+    });
+
+    if (customerAssignment && assignmentStatus === 'ASSIGNED_PENDING_RESPONSE') {
+      await publishNotificationEvent({
+        topic: NOTIFICATION_TOPICS.BOOKING_MAID_ASSIGNED,
+        payload: { bookingId: booking.id },
+        dedupeKey: `booking-maid-assigned:${booking.id}:${customerAssignment.maid.userId}`
+      });
+    }
 
     // Return successful response
     res.status(201).json({
@@ -740,8 +753,11 @@ const   assignMaid = async (req, res) => {
       }
     });
 
-    // Send notification
-    await notificationService.notifyMaidAssigned(booking);
+    await publishNotificationEvent({
+      topic: NOTIFICATION_TOPICS.BOOKING_MAID_ASSIGNED,
+      payload: { bookingId: booking.id },
+      dedupeKey: `booking-maid-assigned:${booking.id}:${booking.updatedAt.toISOString()}`
+    });
 
     res.json(booking);
   } catch (error) {
@@ -787,7 +803,8 @@ const updateBookingStatus = async (req, res) => {
       }
     });
 
-    // Send notifications based on status
+    // Keep legacy in-app behavior for now for detailed lifecycle signals.
+    // Production path should publish dedicated outbox topics per lifecycle event.
     if (status === 'COMPLETED') {
       await notificationService.notifyServiceCompleted(booking);
     } else if (status === 'IN_PROGRESS') {

@@ -31,6 +31,7 @@ const automaticAssignmentRoutes = require('./routes/automaticAssignmentRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
 const firebaseAuthRoutes = require('./routes/firebaseAuthRoutes');
+const eventRoutes = require('./routes/eventRoutes');
 
 // Create Express app
 const app = express();
@@ -180,6 +181,7 @@ app.use('/api/automatic-bookings', automaticBookingRoutes);
 app.use('/api/automatic-assignments', automaticAssignmentRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/events', eventRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {

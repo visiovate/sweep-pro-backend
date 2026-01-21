@@ -2,7 +2,8 @@ const { razorpay, razorpayKeySecret } = require('../utils/razorpay-credintials')
 const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
 const subscriptionBufferService = require('./subscriptionBufferService');
-const notificationService = require('./notificationService');
+const { publishNotificationEvent } = require('../notifications/events/publishEvent');
+const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
 
 const prisma = new PrismaClient();
 
@@ -141,7 +142,11 @@ class RazorpayService {
       }
 
       if (shouldActivate) {
-        await notificationService.notifySubscriptionCreated(activatedSubscription);
+        await publishNotificationEvent({
+          topic: NOTIFICATION_TOPICS.SUBSCRIPTION_ACTIVATED,
+          payload: { subscriptionId: activatedSubscription.id },
+          dedupeKey: `subscription-activated:${activatedSubscription.id}:${activatedSubscription.updatedAt.toISOString()}`
+        });
       }
     }
   }
