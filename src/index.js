@@ -46,22 +46,13 @@ const { initializePrisma, disconnectDatabase } = require('./utils/database');
 // Import notification service
 const notificationService = require('./services/notificationService');
 
-// Import BullMQ job scheduler and Redis connection
-const JobScheduler = require('./services/jobScheduler');
-const { testRedisConnection } = require('./config/redis');
+// ⚠️ REMOVED: BullMQ job scheduler initialization (moved to worker)
+// ⚠️ REMOVED: Monthly subscription scheduler (moved to dedicated cron)
+// ⚠️ REMOVED: Automatic service scheduler (moved to dedicated cron)
+// ⚠️ REMOVED: Buffer period scheduler (moved to dedicated cron)
 
 // Initialize notification service with WebSocket server
 notificationService.init(wss);
-
-// Initialize monthly subscription scheduler
-require('./scheduler/monthlySubscriptionScheduler');
-
-// Initialize automatic service scheduler
-const AutomaticServiceScheduler = require('./services/AutomaticServiceScheduler');
-const automaticScheduler = new AutomaticServiceScheduler();
-
-// Initialize buffer period scheduler
-const bufferPeriodScheduler = require('./scheduler/bufferPeriodScheduler');
 
 // Middleware
 const allowedOrigins = [
@@ -217,30 +208,18 @@ if (process.env.NODE_ENV !== 'test') {
       await initializePrisma();
       console.log('✅ Database initialized successfully');
       
-      // Test Redis connection
-      const redisConnected = await testRedisConnection();
-      if (!redisConnected) {
-        console.error('⚠️ Redis connection failed. BullMQ features will not work.');
-        console.log('⚠️ Please ensure Redis is running and configured correctly.');
-      }
+      // ⚠️ REMOVED: Redis connection test (not needed for stateless API)
+      // ⚠️ REMOVED: BullMQ job scheduler initialization (moved to worker)
+      // ⚠️ REMOVED: Automatic service scheduler (moved to dedicated cron)
+      // ⚠️ REMOVED: Buffer period scheduler (moved to dedicated cron)
       
-      // Initialize BullMQ job scheduler
-      if (redisConnected) {
-        await JobScheduler.initialize();
-        console.log('✅ BullMQ Job Scheduler initialized successfully');
-        console.log('📋 Background worker should be running separately: npm run worker');
-      }
-      
-      // Initialize automatic service scheduler after database is ready
-      await automaticScheduler.init();
-      console.log('✅ Automatic service scheduler initialized');
-      
-      // Initialize buffer period scheduler
-      bufferPeriodScheduler.start();
-      console.log('✅ Buffer period scheduler initialized');
+      console.log('✅ Web server is stateless and ready');
+      console.log('📝 Background jobs handled by:');
+      console.log('   - Worker: npm run worker');
+      console.log('   - Cron: npm run cron');
       
     } catch (error) {
-      console.error('❌ Failed to initialize database or scheduler:', error);
+      console.error('❌ Failed to initialize database:', error);
       console.log('⚠️ Server will continue running but some features may not work');
     }
   });
@@ -255,26 +234,15 @@ const shutdown = async (signal) => {
   isShuttingDown = true;
 
   try {
-    console.log(`${signal} received. Closing HTTP server, queues, Redis, and Prisma Client...`);
+    console.log(`${signal} received. Closing HTTP server and Prisma Client...`);
 
     await new Promise((resolve) => {
       server.close(() => resolve());
       setTimeout(() => resolve(), 3000);
     });
 
-    try {
-      const { closeQueue } = require('./queues/assignmentQueue');
-      await closeQueue();
-    } catch (e) {
-      console.warn('⚠️ Failed to close BullMQ queue:', e?.message || e);
-    }
-
-    try {
-      const { closeRedisConnection } = require('./config/redis');
-      await closeRedisConnection();
-    } catch (e) {
-      console.warn('⚠️ Failed to close Redis connection:', e?.message || e);
-    }
+    // ⚠️ REMOVED: Queue closing (not used by stateless API)
+    // ⚠️ REMOVED: Redis closing (not used by stateless API)
 
     try {
       await disconnectDatabase();

@@ -1,0 +1,334 @@
+# Render.com Deployment Configuration
+# This file defines all services needed for production deployment
+
+services:
+  # =============================================================================
+  # WEB SERVICE
+  # =============================================================================
+  - type: web
+    name: sweep-pro-api
+    runtime: node
+    region: oregon
+    plan: starter
+    buildCommand: cd sweep-pro-backend && npm install && npx prisma generate
+    startCommand: cd sweep-pro-backend && npm run start:web
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: development
+      - key: DATABASE_URL
+        value: "postgresql://neondb_owner:npg_jBQxq3AfopN5@ep-bold-hall-a4oqwqjg-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+      - key: REDIS_URL
+        value: redis://red-d54k7t4hg0os739ifpa0:6379
+      - key: JWT_SECRET
+        value: your-secret-key
+      - key: CORS_ORIGIN
+        value: http://localhost:3000
+      - key: FRONTEND_URL
+        value: https://sweep-pro-frontend.vercel.app
+      - key: RAZORPAY_TEST_KEY_ID
+        value: rzp_test_Rud96C2o67c9aS
+      - key: RAZORPAY_TEST_KEY_SECRET
+        value: 1vaiiZRp04kz17lMOst37Qb7
+      - key: RAZORPAY_WEBHOOK_SECRET
+        value: ""
+      - key: CLOUDINARY_CLOUD_NAME
+        value: dh5nftivc
+      - key: CLOUDINARY_API_KEY
+        value: "265946311479531"
+      - key: CLOUDINARY_API_SECRET
+        value: 44oXQF0Nprt5XsgyA4ROn-sn_nA
+      - key: FIREBASE_CLIENT_EMAIL
+        value: firebase-adminsdk-fbsvc@sweepro-auth.iam.gserviceaccount.com
+      - key: FIREBASE_CLIENT_ID
+        value: "111664339629192375778"
+      - key: FIREBASE_PRIVATE_KEY_BASE64
+        value: "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQ2NzdVRlVndvRDExRW0KK0ZsalVLTkloWmJyRkQyWExoSC9MV3RrMTZqUWd1eU1pVE40NW5mZGtyTWVhL2xIZzVhOXlXSGFDRmxCQ1FVdApKSThONmtWa0VaUXhKaXJESTBHQ3MzbVA3NUpTZFNtOFU1dFhwNjhraWJENTFkQ01VVFlEZkZidnFpZGNWenFsCjd0bGZUM3lHUUlKeC9tUXgyUGNJMXhFMk1iVmJLVkd5Slc4R1M2ZnZyQXVsUVRhYUNTampUbEFaenU1dzNyOHQKWmYzamxnU1dwM2dxejJ2TkNhQWN3N3hFZ2gvdThBU1Z6cDdJWlVvSFhKUmE1cm9NbEV1dENWT1h6dk5FcWlvRQpmbStNc0xhNE1FYWMyajE4TG1DUVNpSUpvWDhUSXBYMldXaWM1NkEwRHFCcENxZURQcHBOMEJiMEdBaTZnMTE2CnRXdHFvd2IxQWdNQkFBRUNnZ0VBQ1JkSjRaVUd6dUtTNGVJVHB0MlA4NDVUTmZxUkk0VzM0K2c1MXZwa3RXQWwKelhZaVJ5MHhIcjQ2NTc5czVzSVN5MFQxTTlzN0k3anh2MitPWUhOMTAzcy9tcEJlZDc3Q1lnejc0YWEzcnYxVQpKQW5DWCt0VVpSZ2JRb3RZazQ0Y201d3BtN0x4UzFGV09qZnBZdUd2Z0VjYTFQYVBlbzJJc004YXY3R25sZzBhCjFsTEZhaDQ2Y0VPNm5aR051M1g4VnMrekNPM21uUGdDdDVGOHpNcGs2dU05RTVjUVlteXlyU1NuenVzWGJaNmoKdWtUR0ZjYWlvWEJqMGJMbHozVnRSbUZPcEgxOTFsQVl5eVV5cSs3YUZuazdYbHdxTWZaeExvK0J5dVduZVVuTQpUSTBIdTJyOGJ6OXdHY2FEV3prRDJGdnZUcGJRWU9XNWs3VytEbmVHeXdLQmdRRFdLbjlqMWt3d0FVeDZPM0VVCnYva3FFRVZ3MTJKWE1lQXNVMUd4N1BlTVJWclgzSDZ4aVRtVW9LUUVXTUJOK3MxSXBXYmloZXJLMzFoMjhQWGkKTjk3UjZTc2lnd3V3NHRsRXIvbXB4bm9MTkdUUWlCR1VDcDlQQUkrY1c1cktMQUtNTmtEc3kycktoVlZvTnM3egpIQzlEbEsxcDMvWitlVTMzdjlJWTdoNTN5d0tCZ1FDN1RyYTV2S0VvWVpZT3JBc01Wc0VXUERaNTRxeUtUaGNvCnRrUzBaVjBsVmpjU1grRUhYcWtjTHFOclUvckNESzhqaFhPTTZYK05nUHJvTHZld0RHdHo5eHlkeWJFaS96engKTDdaT1hlcngybENWVnF6Y3NoTUExMG1uUFRJa3FkQm5PZEZBZTBwZW10WUpKdDZGdEYwTFZVK2hVUlE0M0dXNApPWlRqSVlFa1B3S0JnRWlhKzdrVEM1MHlzNFMwNWk5TXJlSU94aHZ0U1ErYWZ3OUg1K2hVRjlCY0t1SUhoSVFYCnE0ZXh0aWtyRlhiYVVnSVE0UUptdUNTeTkwRExpL0IzVkhrQmZYZ2p5VERjbHgvc01NM1gxY1E2clBydFJsaFUKQ1pJMDlIcmpxMlJpNnpJeHFtMGN3VVdMVWxzVVNiQ3RtM0JqMVM2Um1QVmpsb1VwYU1hKzQyRmxBb0dBTGFweApMak5vN3hscnBrUVhwWGg1TnR5VFE0QWFKTllKRzJua3NqNk1TUkFOK1RMYkFCcjZDOTdyQkwzQ3d4Q29tblpzCng0d2VCdmZOTkZKUEhPTEtSOG1WZG5xMzd4cGZWMFlVb21LUFowdWNuZXcxMU5DdGhXVDNsZ2g3Y3lqYm9HOGUKTHlSZjYxVEFuaGFWNWU4bFNDQVNlL2Z5Z0RKcnNsQ0hsaUNUQmEwQ2dZQUszZTBwNG9rNVdvZkYwdm1CTkZBNQpyRStrR0NlVEZxZDhCa2dQNHVYOHdrM0tZS3NveldmWTBpUmdjWTJRa2xzMjRQbmxLTjRRcGd4d09RZHNFb3JXCi9PRmd6MjZodkJKblI0bURKVXBtODh3NDRkbmdZR044encyYmRnNFB6Zm52SjNRSyswcEVzM0ZqWmQ2a2Q3RUsKc1FRUHc0dUJQWUhOYUZyM2IvNVg3UT09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K"
+      - key: FIREBASE_PRIVATE_KEY_ID
+        value: 6769668cbc05ea2a376f11c939d43e645e3a5606
+      - key: FIREBASE_PROJECT_ID
+        value: sweepro-auth
+      - key: FROM_EMAIL
+        value: sweeproindia@gmail.com
+      - key: FROM_NAME
+        value: SweePro
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PASS
+        value: ocfxysytbiaamzpv
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        value: sweeproindia@gmail.com
+      - key: ASSIGNMENT_REQUEST_HOURS_BEFORE
+        value: 20
+      - key: PORT
+        value: 3000
+
+  # =============================================================================
+  # BACKGROUND WORKER
+  # =============================================================================
+  - type: worker
+    name: sweep-pro-worker
+    runtime: node
+    region: oregon
+    plan: starter
+    buildCommand: cd sweep-pro-backend && npm install && npx prisma generate
+    startCommand: cd sweep-pro-backend && npm run worker
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: development
+      - key: DATABASE_URL
+        value: "postgresql://neondb_owner:npg_jBQxq3AfopN5@ep-bold-hall-a4oqwqjg-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+      - key: REDIS_URL
+        value: redis://red-d54k7t4hg0os739ifpa0:6379
+      - key: JWT_SECRET
+        value: your-secret-key
+      - key: CORS_ORIGIN
+        value: http://localhost:3000
+      - key: FRONTEND_URL
+        value: https://sweep-pro-frontend.vercel.app
+      - key: RAZORPAY_TEST_KEY_ID
+        value: rzp_test_Rud96C2o67c9aS
+      - key: RAZORPAY_TEST_KEY_SECRET
+        value: 1vaiiZRp04kz17lMOst37Qb7
+      - key: RAZORPAY_WEBHOOK_SECRET
+        value: ""
+      - key: CLOUDINARY_CLOUD_NAME
+        value: dh5nftivc
+      - key: CLOUDINARY_API_KEY
+        value: "265946311479531"
+      - key: CLOUDINARY_API_SECRET
+        value: 44oXQF0Nprt5XsgyA4ROn-sn_nA
+      - key: FIREBASE_CLIENT_EMAIL
+        value: firebase-adminsdk-fbsvc@sweepro-auth.iam.gserviceaccount.com
+      - key: FIREBASE_CLIENT_ID
+        value: "111664339629192375778"
+      - key: FIREBASE_PRIVATE_KEY_BASE64
+        value: "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQ2NzdVRlVndvRDExRW0KK0ZsalVLTkloWmJyRkQyWExoSC9MV3RrMTZqUWd1eU1pVE40NW5mZGtyTWVhL2xIZzVhOXlXSGFDRmxCQ1FVdApKSThONmtWa0VaUXhKaXJESTBHQ3MzbVA3NUpTZFNtOFU1dFhwNjhraWJENTFkQ01VVFlEZkZidnFpZGNWenFsCjd0bGZUM3lHUUlKeC9tUXgyUGNJMXhFMk1iVmJLVkd5Slc4R1M2ZnZyQXVsUVRhYUNTampUbEFaenU1dzNyOHQKWmYzamxnU1dwM2dxejJ2TkNhQWN3N3hFZ2gvdThBU1Z6cDdJWlVvSFhKUmE1cm9NbEV1dENWT1h6dk5FcWlvRQpmbStNc0xhNE1FYWMyajE4TG1DUVNpSUpvWDhUSXBYMldXaWM1NkEwRHFCcENxZURQcHBOMEJiMEdBaTZnMTE2CnRXdHFvd2IxQWdNQkFBRUNnZ0VBQ1JkSjRaVUd6dUtTNGVJVHB0MlA4NDVUTmZxUkk0VzM0K2c1MXZwa3RXQWwKelhZaVJ5MHhIcjQ2NTc5czVzSVN5MFQxTTlzN0k3anh2MitPWUhOMTAzcy9tcEJlZDc3Q1lnejc0YWEzcnYxVQpKQW5DWCt0VVpSZ2JRb3RZazQ0Y201d3BtN0x4UzFGV09qZnBZdUd2Z0VjYTFQYVBlbzJJc004YXY3R25sZzBhCjFsTEZhaDQ2Y0VPNm5aR051M1g4VnMrekNPM21uUGdDdDVGOHpNcGs2dU05RTVjUVlteXlyU1NuenVzWGJaNmoKdWtUR0ZjYWlvWEJqMGJMbHozVnRSbUZPcEgxOTFsQVl5eVV5cSs3YUZuazdYbHdxTWZaeExvK0J5dVduZVVuTQpUSTBIdTJyOGJ6OXdHY2FEV3prRDJGdnZUcGJRWU9XNWs3VytEbmVHeXdLQmdRRFdLbjlqMWt3d0FVeDZPM0VVCnYva3FFRVZ3MTJKWE1lQXNVMUd4N1BlTVJWclgzSDZ4aVRtVW9LUUVXTUJOK3MxSXBXYmloZXJLMzFoMjhQWGkKTjk3UjZTc2lnd3V3NHRsRXIvbXB4bm9MTkdUUWlCR1VDcDlQQUkrY1c1cktMQUtNTmtEc3kycktoVlZvTnM3egpIQzlEbEsxcDMvWitlVTMzdjlJWTdoNTN5d0tCZ1FDN1RyYTV2S0VvWVpZT3JBc01Wc0VXUERaNTRxeUtUaGNvCnRrUzBaVjBsVmpjU1grRUhYcWtjTHFOclUvckNESzhqaFhPTTZYK05nUHJvTHZld0RHdHo5eHlkeWJFaS96engKTDdaT1hlcngybENWVnF6Y3NoTUExMG1uUFRJa3FkQm5PZEZBZTBwZW10WUpKdDZGdEYwTFZVK2hVUlE0M0dXNApPWlRqSVlFa1B3S0JnRWlhKzdrVEM1MHlzNFMwNWk5TXJlSU94aHZ0U1ErYWZ3OUg1K2hVRjlCY0t1SUhoSVFYCnE0ZXh0aWtyRlhiYVVnSVE0UUptdUNTeTkwRExpL0IzVkhrQmZYZ2p5VERjbHgvc01NM1gxY1E2clBydFJsaFUKQ1pJMDlIcmpxMlJpNnpJeHFtMGN3VVdMVWxzVVNiQ3RtM0JqMVM2Um1QVmpsb1VwYU1hKzQyRmxBb0dBTGFweApMak5vN3hscnBrUVhwWGg1TnR5VFE0QWFKTllKRzJua3NqNk1TUkFOK1RMYkFCcjZDOTdyQkwzQ3d4Q29tblpzCng0d2VCdmZOTkZKUEhPTEtSOG1WZG5xMzd4cGZWMFlVb21LUFowdWNuZXcxMU5DdGhXVDNsZ2g3Y3lqYm9HOGUKTHlSZjYxVEFuaGFWNWU4bFNDQVNlL2Z5Z0RKcnNsQ0hsaUNUQmEwQ2dZQUszZTBwNG9rNVdvZkYwdm1CTkZBNQpyRStrR0NlVEZxZDhCa2dQNHVYOHdrM0tZS3NveldmWTBpUmdjWTJRa2xzMjRQbmxLTjRRcGd4d09RZHNFb3JXCi9PRmd6MjZodkJKblI0bURKVXBtODh3NDRkbmdZR044encyYmRnNFB6Zm52SjNRSyswcEVzM0ZqWmQ2a2Q3RUsKc1FRUHc0dUJQWUhOYUZyM2IvNVg3UT09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K"
+      - key: FIREBASE_PRIVATE_KEY_ID
+        value: 6769668cbc05ea2a376f11c939d43e645e3a5606
+      - key: FIREBASE_PROJECT_ID
+        value: sweepro-auth
+      - key: FROM_EMAIL
+        value: sweeproindia@gmail.com
+      - key: FROM_NAME
+        value: SweePro
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PASS
+        value: ocfxysytbiaamzpv
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        value: sweeproindia@gmail.com
+      - key: ASSIGNMENT_REQUEST_HOURS_BEFORE
+        value: 20
+      - key: WORKER_CONCURRENCY
+        value: 5
+
+  # =============================================================================
+  # CRON JOBS
+  # =============================================================================
+  - type: cron
+    name: sweep-pro-cron-assignment
+    runtime: node
+    region: oregon
+    plan: starter
+    buildCommand: cd sweep-pro-backend && npm install && npx prisma generate
+    schedule: "*/5 * * * *" # Every 5 minutes
+    startCommand: cd sweep-pro-backend && npm run cron:assignment
+    envVars:
+      - key: NODE_ENV
+        value: development
+      - key: DATABASE_URL
+        value: "postgresql://neondb_owner:npg_jBQxq3AfopN5@ep-bold-hall-a4oqwqjg-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+      - key: REDIS_URL
+        value: redis://red-d54k7t4hg0os739ifpa0:6379
+      - key: JWT_SECRET
+        value: your-secret-key
+      - key: CORS_ORIGIN
+        value: http://localhost:3000
+      - key: FRONTEND_URL
+        value: https://sweep-pro-frontend.vercel.app
+      - key: RAZORPAY_TEST_KEY_ID
+        value: rzp_test_Rud96C2o67c9aS
+      - key: RAZORPAY_TEST_KEY_SECRET
+        value: 1vaiiZRp04kz17lMOst37Qb7
+      - key: RAZORPAY_WEBHOOK_SECRET
+        value: ""
+      - key: CLOUDINARY_CLOUD_NAME
+        value: dh5nftivc
+      - key: CLOUDINARY_API_KEY
+        value: "265946311479531"
+      - key: CLOUDINARY_API_SECRET
+        value: 44oXQF0Nprt5XsgyA4ROn-sn_nA
+      - key: FIREBASE_CLIENT_EMAIL
+        value: firebase-adminsdk-fbsvc@sweepro-auth.iam.gserviceaccount.com
+      - key: FIREBASE_CLIENT_ID
+        value: "111664339629192375778"
+      - key: FIREBASE_PRIVATE_KEY_BASE64
+        value: "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQ2NzdVRlVndvRDExRW0KK0ZsalVLTkloWmJyRkQyWExoSC9MV3RrMTZqUWd1eU1pVE40NW5mZGtyTWVhL2xIZzVhOXlXSGFDRmxCQ1FVdApKSThONmtWa0VaUXhKaXJESTBHQ3MzbVA3NUpTZFNtOFU1dFhwNjhraWJENTFkQ01VVFlEZkZidnFpZGNWenFsCjd0bGZUM3lHUUlKeC9tUXgyUGNJMXhFMk1iVmJLVkd5Slc4R1M2ZnZyQXVsUVRhYUNTampUbEFaenU1dzNyOHQKWmYzamxnU1dwM2dxejJ2TkNhQWN3N3hFZ2gvdThBU1Z6cDdJWlVvSFhKUmE1cm9NbEV1dENWT1h6dk5FcWlvRQpmbStNc0xhNE1FYWMyajE4TG1DUVNpSUpvWDhUSXBYMldXaWM1NkEwRHFCcENxZURQcHBOMEJiMEdBaTZnMTE2CnRXdHFvd2IxQWdNQkFBRUNnZ0VBQ1JkSjRaVUd6dUtTNGVJVHB0MlA4NDVUTmZxUkk0VzM0K2c1MXZwa3RXQWwKelhZaVJ5MHhIcjQ2NTc5czVzSVN5MFQxTTlzN0k3anh2MitPWUhOMTAzcy9tcEJlZDc3Q1lnejc0YWEzcnYxVQpKQW5DWCt0VVpSZ2JRb3RZazQ0Y201d3BtN0x4UzFGV09qZnBZdUd2Z0VjYTFQYVBlbzJJc004YXY3R25sZzBhCjFsTEZhaDQ2Y0VPNm5aR051M1g4VnMrekNPM21uUGdDdDVGOHpNcGs2dU05RTVjUVlteXlyU1NuenVzWGJaNmoKdWtUR0ZjYWlvWEJqMGJMbHozVnRSbUZPcEgxOTFsQVl5eVV5cSs3YUZuazdYbHdxTWZaeExvK0J5dVduZVVuTQpUSTBIdTJyOGJ6OXdHY2FEV3prRDJGdnZUcGJRWU9XNWs3VytEbmVHeXdLQmdRRFdLbjlqMWt3d0FVeDZPM0VVCnYva3FFRVZ3MTJKWE1lQXNVMUd4N1BlTVJWclgzSDZ4aVRtVW9LUUVXTUJOK3MxSXBXYmloZXJLMzFoMjhQWGkKTjk3UjZTc2lnd3V3NHRsRXIvbXB4bm9MTkdUUWlCR1VDcDlQQUkrY1c1cktMQUtNTmtEc3kycktoVlZvTnM3egpIQzlEbEsxcDMvWitlVTMzdjlJWTdoNTN5d0tCZ1FDN1RyYTV2S0VvWVpZT3JBc01Wc0VXUERaNTRxeUtUaGNvCnRrUzBaVjBsVmpjU1grRUhYcWtjTHFOclUvckNESzhqaFhPTTZYK05nUHJvTHZld0RHdHo5eHlkeWJFaS96engKTDdaT1hlcngybENWVnF6Y3NoTUExMG1uUFRJa3FkQm5PZEZBZTBwZW10WUpKdDZGdEYwTFZVK2hVUlE0M0dXNApPWlRqSVlFa1B3S0JnRWlhKzdrVEM1MHlzNFMwNWk5TXJlSU94aHZ0U1ErYWZ3OUg1K2hVRjlCY0t1SUhoSVFYCnE0ZXh0aWtyRlhiYVVnSVE0UUptdUNTeTkwRExpL0IzVkhrQmZYZ2p5VERjbHgvc01NM1gxY1E2clBydFJsaFUKQ1pJMDlIcmpxMlJpNnpJeHFtMGN3VVdMVWxzVVNiQ3RtM0JqMVM2Um1QVmpsb1VwYU1hKzQyRmxBb0dBTGFweApMak5vN3hscnBrUVhwWGg1TnR5VFE0QWFKTllKRzJua3NqNk1TUkFOK1RMYkFCcjZDOTdyQkwzQ3d4Q29tblpzCng0d2VCdmZOTkZKUEhPTEtSOG1WZG5xMzd4cGZWMFlVb21LUFowdWNuZXcxMU5DdGhXVDNsZ2g3Y3lqYm9HOGUKTHlSZjYxVEFuaGFWNWU4bFNDQVNlL2Z5Z0RKcnNsQ0hsaUNUQmEwQ2dZQUszZTBwNG9rNVdvZkYwdm1CTkZBNQpyRStrR0NlVEZxZDhCa2dQNHVYOHdrM0tZS3NveldmWTBpUmdjWTJRa2xzMjRQbmxLTjRRcGd4d09RZHNFb3JXCi9PRmd6MjZodkJKblI0bURKVXBtODh3NDRkbmdZR044encyYmRnNFB6Zm52SjNRSyswcEVzM0ZqWmQ2a2Q3RUsKc1FRUHc0dUJQWUhOYUZyM2IvNVg3UT09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K"
+      - key: FIREBASE_PRIVATE_KEY_ID
+        value: 6769668cbc05ea2a376f11c939d43e645e3a5606
+      - key: FIREBASE_PROJECT_ID
+        value: sweepro-auth
+      - key: FROM_EMAIL
+        value: sweeproindia@gmail.com
+      - key: FROM_NAME
+        value: SweePro
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PASS
+        value: ocfxysytbiaamzpv
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        value: sweeproindia@gmail.com
+      - key: ASSIGNMENT_REQUEST_HOURS_BEFORE
+        value: 20
+
+  - type: cron
+    name: sweep-pro-cron-expired
+    runtime: node
+    region: oregon
+    plan: starter
+    buildCommand: cd sweep-pro-backend && npm install && npx prisma generate
+    schedule: "*/30 * * * *" # Every 30 minutes
+    startCommand: cd sweep-pro-backend && npm run cron:expired
+    envVars:
+      - key: NODE_ENV
+        value: development
+      - key: DATABASE_URL
+        value: "postgresql://neondb_owner:npg_jBQxq3AfopN5@ep-bold-hall-a4oqwqjg-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+      - key: REDIS_URL
+        value: redis://red-d54k7t4hg0os739ifpa0:6379
+      - key: JWT_SECRET
+        value: your-secret-key
+      - key: CORS_ORIGIN
+        value: http://localhost:3000
+      - key: FRONTEND_URL
+        value: https://sweep-pro-frontend.vercel.app
+      - key: RAZORPAY_TEST_KEY_ID
+        value: rzp_test_Rud96C2o67c9aS
+      - key: RAZORPAY_TEST_KEY_SECRET
+        value: 1vaiiZRp04kz17lMOst37Qb7
+      - key: RAZORPAY_WEBHOOK_SECRET
+        value: ""
+      - key: CLOUDINARY_CLOUD_NAME
+        value: dh5nftivc
+      - key: CLOUDINARY_API_KEY
+        value: "265946311479531"
+      - key: CLOUDINARY_API_SECRET
+        value: 44oXQF0Nprt5XsgyA4ROn-sn_nA
+      - key: FIREBASE_CLIENT_EMAIL
+        value: firebase-adminsdk-fbsvc@sweepro-auth.iam.gserviceaccount.com
+      - key: FIREBASE_CLIENT_ID
+        value: "111664339629192375778"
+      - key: FIREBASE_PRIVATE_KEY_BASE64
+        value: "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQ2NzdVRlVndvRDExRW0KK0ZsalVLTkloWmJyRkQyWExoSC9MV3RrMTZqUWd1eU1pVE40NW5mZGtyTWVhL2xIZzVhOXlXSGFDRmxCQ1FVdApKSThONmtWa0VaUXhKaXJESTBHQ3MzbVA3NUpTZFNtOFU1dFhwNjhraWJENTFkQ01VVFlEZkZidnFpZGNWenFsCjd0bGZUM3lHUUlKeC9tUXgyUGNJMXhFMk1iVmJLVkd5Slc4R1M2ZnZyQXVsUVRhYUNTampUbEFaenU1dzNyOHQKWmYzamxnU1dwM2dxejJ2TkNhQWN3N3hFZ2gvdThBU1Z6cDdJWlVvSFhKUmE1cm9NbEV1dENWT1h6dk5FcWlvRQpmbStNc0xhNE1FYWMyajE4TG1DUVNpSUpvWDhUSXBYMldXaWM1NkEwRHFCcENxZURQcHBOMEJiMEdBaTZnMTE2CnRXdHFvd2IxQWdNQkFBRUNnZ0VBQ1JkSjRaVUd6dUtTNGVJVHB0MlA4NDVUTmZxUkk0VzM0K2c1MXZwa3RXQWwKelhZaVJ5MHhIcjQ2NTc5czVzSVN5MFQxTTlzN0k3anh2MitPWUhOMTAzcy9tcEJlZDc3Q1lnejc0YWEzcnYxVQpKQW5DWCt0VVpSZ2JRb3RZazQ0Y201d3BtN0x4UzFGV09qZnBZdUd2Z0VjYTFQYVBlbzJJc004YXY3R25sZzBhCjFsTEZhaDQ2Y0VPNm5aR051M1g4VnMrekNPM21uUGdDdDVGOHpNcGs2dU05RTVjUVlteXlyU1NuenVzWGJaNmoKdWtUR0ZjYWlvWEJqMGJMbHozVnRSbUZPcEgxOTFsQVl5eVV5cSs3YUZuazdYbHdxTWZaeExvK0J5dVduZVVuTQpUSTBIdTJyOGJ6OXdHY2FEV3prRDJGdnZUcGJRWU9XNWs3VytEbmVHeXdLQmdRRFdLbjlqMWt3d0FVeDZPM0VVCnYva3FFRVZ3MTJKWE1lQXNVMUd4N1BlTVJWclgzSDZ4aVRtVW9LUUVXTUJOK3MxSXBXYmloZXJLMzFoMjhQWGkKTjk3UjZTc2lnd3V3NHRsRXIvbXB4bm9MTkdUUWlCR1VDcDlQQUkrY1c1cktMQUtNTmtEc3kycktoVlZvTnM3egpIQzlEbEsxcDMvWitlVTMzdjlJWTdoNTN5d0tCZ1FDN1RyYTV2S0VvWVpZT3JBc01Wc0VXUERaNTRxeUtUaGNvCnRrUzBaVjBsVmpjU1grRUhYcWtjTHFOclUvckNESzhqaFhPTTZYK05nUHJvTHZld0RHdHo5eHlkeWJFaS96engKTDdaT1hlcngybENWVnF6Y3NoTUExMG1uUFRJa3FkQm5PZEZBZTBwZW10WUpKdDZGdEYwTFZVK2hVUlE0M0dXNApPWlRqSVlFa1B3S0JnRWlhKzdrVEM1MHlzNFMwNWk5TXJlSU94aHZ0U1ErYWZ3OUg1K2hVRjlCY0t1SUhoSVFYCnE0ZXh0aWtyRlhiYVVnSVE0UUptdUNTeTkwRExpL0IzVkhrQmZYZ2p5VERjbHgvc01NM1gxY1E2clBydFJsaFUKQ1pJMDlIcmpxMlJpNnpJeHFtMGN3VVdMVWxzVVNiQ3RtM0JqMVM2Um1QVmpsb1VwYU1hKzQyRmxBb0dBTGFweApMak5vN3hscnBrUVhwWGg1TnR5VFE0QWFKTllKRzJua3NqNk1TUkFOK1RMYkFCcjZDOTdyQkwzQ3d4Q29tblpzCng0d2VCdmZOTkZKUEhPTEtSOG1WZG5xMzd4cGZWMFlVb21LUFowdWNuZXcxMU5DdGhXVDNsZ2g3Y3lqYm9HOGUKTHlSZjYxVEFuaGFWNWU4bFNDQVNlL2Z5Z0RKcnNsQ0hsaUNUQmEwQ2dZQUszZTBwNG9rNVdvZkYwdm1CTkZBNQpyRStrR0NlVEZxZDhCa2dQNHVYOHdrM0tZS3NveldmWTBpUmdjWTJRa2xzMjRQbmxLTjRRcGd4d09RZHNFb3JXCi9PRmd6MjZodkJKblI0bURKVXBtODh3NDRkbmdZR044encyYmRnNFB6Zm52SjNRSyswcEVzM0ZqWmQ2a2Q3RUsKc1FRUHc0dUJQWUhOYUZyM2IvNVg3UT09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K"
+      - key: FIREBASE_PRIVATE_KEY_ID
+        value: 6769668cbc05ea2a376f11c939d43e645e3a5606
+      - key: FIREBASE_PROJECT_ID
+        value: sweepro-auth
+      - key: FROM_EMAIL
+        value: sweeproindia@gmail.com
+      - key: FROM_NAME
+        value: SweePro
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PASS
+        value: ocfxysytbiaamzpv
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        value: sweeproindia@gmail.com
+      - key: ASSIGNMENT_REQUEST_HOURS_BEFORE
+        value: 20
+
+  - type: cron
+    name: sweep-pro-cron-subscriptions
+    runtime: node
+    region: oregon
+    plan: starter
+    buildCommand: cd sweep-pro-backend && npm install && npx prisma generate
+    schedule: "0 0 * * *" # Daily at midnight UTC
+    startCommand: cd sweep-pro-backend && npm run cron:subscriptions
+    envVars:
+      - key: NODE_ENV
+        value: development
+      - key: DATABASE_URL
+        value: "postgresql://neondb_owner:npg_jBQxq3AfopN5@ep-bold-hall-a4oqwqjg-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+      - key: REDIS_URL
+        value: redis://red-d54k7t4hg0os739ifpa0:6379
+      - key: JWT_SECRET
+        value: your-secret-key
+      - key: CORS_ORIGIN
+        value: http://localhost:3000
+      - key: FRONTEND_URL
+        value: https://sweep-pro-frontend.vercel.app
+      - key: RAZORPAY_TEST_KEY_ID
+        value: rzp_test_Rud96C2o67c9aS
+      - key: RAZORPAY_TEST_KEY_SECRET
+        value: 1vaiiZRp04kz17lMOst37Qb7
+      - key: RAZORPAY_WEBHOOK_SECRET
+        value: ""
+      - key: CLOUDINARY_CLOUD_NAME
+        value: dh5nftivc
+      - key: CLOUDINARY_API_KEY
+        value: "265946311479531"
+      - key: CLOUDINARY_API_SECRET
+        value: 44oXQF0Nprt5XsgyA4ROn-sn_nA
+      - key: FIREBASE_CLIENT_EMAIL
+        value: firebase-adminsdk-fbsvc@sweepro-auth.iam.gserviceaccount.com
+      - key: FIREBASE_CLIENT_ID
+        value: "111664339629192375778"
+      - key: FIREBASE_PRIVATE_KEY_BASE64
+        value: "LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2QUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQ2NzdVRlVndvRDExRW0KK0ZsalVLTkloWmJyRkQyWExoSC9MV3RrMTZqUWd1eU1pVE40NW5mZGtyTWVhL2xIZzVhOXlXSGFDRmxCQ1FVdApKSThONmtWa0VaUXhKaXJESTBHQ3MzbVA3NUpTZFNtOFU1dFhwNjhraWJENTFkQ01VVFlEZkZidnFpZGNWenFsCjd0bGZUM3lHUUlKeC9tUXgyUGNJMXhFMk1iVmJLVkd5Slc4R1M2ZnZyQXVsUVRhYUNTampUbEFaenU1dzNyOHQKWmYzamxnU1dwM2dxejJ2TkNhQWN3N3hFZ2gvdThBU1Z6cDdJWlVvSFhKUmE1cm9NbEV1dENWT1h6dk5FcWlvRQpmbStNc0xhNE1FYWMyajE4TG1DUVNpSUpvWDhUSXBYMldXaWM1NkEwRHFCcENxZURQcHBOMEJiMEdBaTZnMTE2CnRXdHFvd2IxQWdNQkFBRUNnZ0VBQ1JkSjRaVUd6dUtTNGVJVHB0MlA4NDVUTmZxUkk0VzM0K2c1MXZwa3RXQWwKelhZaVJ5MHhIcjQ2NTc5czVzSVN5MFQxTTlzN0k3anh2MitPWUhOMTAzcy9tcEJlZDc3Q1lnejc0YWEzcnYxVQpKQW5DWCt0VVpSZ2JRb3RZazQ0Y201d3BtN0x4UzFGV09qZnBZdUd2Z0VjYTFQYVBlbzJJc004YXY3R25sZzBhCjFsTEZhaDQ2Y0VPNm5aR051M1g4VnMrekNPM21uUGdDdDVGOHpNcGs2dU05RTVjUVlteXlyU1NuenVzWGJaNmoKdWtUR0ZjYWlvWEJqMGJMbHozVnRSbUZPcEgxOTFsQVl5eVV5cSs3YUZuazdYbHdxTWZaeExvK0J5dVduZVVuTQpUSTBIdTJyOGJ6OXdHY2FEV3prRDJGdnZUcGJRWU9XNWs3VytEbmVHeXdLQmdRRFdLbjlqMWt3d0FVeDZPM0VVCnYva3FFRVZ3MTJKWE1lQXNVMUd4N1BlTVJWclgzSDZ4aVRtVW9LUUVXTUJOK3MxSXBXYmloZXJLMzFoMjhQWGkKTjk3UjZTc2lnd3V3NHRsRXIvbXB4bm9MTkdUUWlCR1VDcDlQQUkrY1c1cktMQUtNTmtEc3kycktoVlZvTnM3egpIQzlEbEsxcDMvWitlVTMzdjlJWTdoNTN5d0tCZ1FDN1RyYTV2S0VvWVpZT3JBc01Wc0VXUERaNTRxeUtUaGNvCnRrUzBaVjBsVmpjU1grRUhYcWtjTHFOclUvckNESzhqaFhPTTZYK05nUHJvTHZld0RHdHo5eHlkeWJFaS96engKTDdaT1hlcngybENWVnF6Y3NoTUExMG1uUFRJa3FkQm5PZEZBZTBwZW10WUpKdDZGdEYwTFZVK2hVUlE0M0dXNApPWlRqSVlFa1B3S0JnRWlhKzdrVEM1MHlzNFMwNWk5TXJlSU94aHZ0U1ErYWZ3OUg1K2hVRjlCY0t1SUhoSVFYCnE0ZXh0aWtyRlhiYVVnSVE0UUptdUNTeTkwRExpL0IzVkhrQmZYZ2p5VERjbHgvc01NM1gxY1E2clBydFJsaFUKQ1pJMDlIcmpxMlJpNnpJeHFtMGN3VVdMVWxzVVNiQ3RtM0JqMVM2Um1QVmpsb1VwYU1hKzQyRmxBb0dBTGFweApMak5vN3hscnBrUVhwWGg1TnR5VFE0QWFKTllKRzJua3NqNk1TUkFOK1RMYkFCcjZDOTdyQkwzQ3d4Q29tblpzCng0d2VCdmZOTkZKUEhPTEtSOG1WZG5xMzd4cGZWMFlVb21LUFowdWNuZXcxMU5DdGhXVDNsZ2g3Y3lqYm9HOGUKTHlSZjYxVEFuaGFWNWU4bFNDQVNlL2Z5Z0RKcnNsQ0hsaUNUQmEwQ2dZQUszZTBwNG9rNVdvZkYwdm1CTkZBNQpyRStrR0NlVEZxZDhCa2dQNHVYOHdrM0tZS3NveldmWTBpUmdjWTJRa2xzMjRQbmxLTjRRcGd4d09RZHNFb3JXCi9PRmd6MjZodkJKblI0bURKVXBtODh3NDRkbmdZR044encyYmRnNFB6Zm52SjNRSyswcEVzM0ZqWmQ2a2Q3RUsKc1FRUHc0dUJQWUhOYUZyM2IvNVg3UT09Ci0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K"
+      - key: FIREBASE_PRIVATE_KEY_ID
+        value: 6769668cbc05ea2a376f11c939d43e645e3a5606
+      - key: FIREBASE_PROJECT_ID
+        value: sweepro-auth
+      - key: FROM_EMAIL
+        value: sweeproindia@gmail.com
+      - key: FROM_NAME
+        value: SweePro
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PASS
+        value: ocfxysytbiaamzpv
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        value: sweeproindia@gmail.com
+      - key: ASSIGNMENT_REQUEST_HOURS_BEFORE
+        value: 20
+
+# =============================================================================
+# DATABASES
+# =============================================================================
+databases:
+  - name: sweep-pro-db
+    databaseName: sweeppro
+    user: sweeppro
+    plan: free # upgrade to starter/standard for production
+    region: oregon
+    ipAllowList: [] # Empty = allow all (required for Render services)
+
+# =============================================================================
+# DEPLOYMENT NOTES
+# =============================================================================
+# Update values above to match your .env; secrets shown here are placeholders and should be set securely in Render.
+# After the first deploy, run migrations: render services deploy sweep-pro-api && render services deploy sweep-pro-worker
