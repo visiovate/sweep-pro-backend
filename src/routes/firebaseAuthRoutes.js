@@ -162,6 +162,11 @@ router.get('/firebase/me', verifyFirebaseToken, async (req, res) => {
       phone: user.phone,
       role: user.role,
       apartment_id: user.apartment_id,
+      address: user.address,
+      locality: user.locality,
+      pincode: user.pincode,
+      latitude: user.latitude,
+      longitude: user.longitude,
       profile_completed: user.profile_completed,
       status: user.status,
       createdAt: user.createdAt,
@@ -370,6 +375,80 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
       success: false,
       error: 'Failed to complete profile. Please try again.',
       message: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+router.put('/firebase/update-profile', requireFirebaseAuth, async (req, res) => {
+  try {
+    const prisma = await initializePrisma();
+    if (!req.user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const { address, pincode, locality, latitude, longitude } = req.body;
+
+    const updateData = {};
+    if (typeof address !== 'undefined') updateData.address = address;
+    if (typeof pincode !== 'undefined') updateData.pincode = pincode;
+    if (typeof locality !== 'undefined') updateData.locality = locality;
+    if (typeof latitude !== 'undefined') updateData.latitude = Number(latitude);
+    if (typeof longitude !== 'undefined') updateData.longitude = Number(longitude);
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: updateData,
+      include: {
+        customerProfile: true,
+        maidProfile: true,
+        adminProfile: true
+      }
+    });
+
+    try {
+      await notificationService.notifyUserProfileUpdate(updatedUser);
+    } catch (e) {
+    }
+
+    const userResponse = {
+      id: updatedUser.id,
+      firebase_uid: updatedUser.firebase_uid,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      phone: updatedUser.phone,
+      role: updatedUser.role,
+      apartment_id: updatedUser.apartment_id,
+      address: updatedUser.address,
+      locality: updatedUser.locality,
+      pincode: updatedUser.pincode,
+      latitude: updatedUser.latitude,
+      longitude: updatedUser.longitude,
+      profile_completed: updatedUser.profile_completed,
+      status: updatedUser.status,
+      createdAt: updatedUser.createdAt,
+      updatedAt: updatedUser.updatedAt,
+      profiles: {
+        customer: updatedUser.customerProfile,
+        maid: updatedUser.maidProfile,
+        admin: updatedUser.adminProfile
+      }
+    };
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        user: userResponse
+      }
+    });
+  } catch (error) {
+    console.error('Firebase profile update error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update profile'
     });
   }
 });
