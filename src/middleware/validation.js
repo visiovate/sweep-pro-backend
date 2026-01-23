@@ -53,6 +53,21 @@ const registerValidation = [
     .withMessage('Address must be between 10 and 500 characters long')
     .matches(/^[a-zA-Z0-9\s,.'#()\/\-\:]+$/)
     .withMessage('Address contains invalid characters'),
+  body('pincode')
+    .custom((value, { req }) => {
+      const role = req.body.role;
+      const hasValue = typeof value !== 'undefined' && value !== null && String(value).trim() !== '';
+
+      if (role === 'MAID' && !hasValue) {
+        throw new Error('Pincode is required');
+      }
+
+      if (hasValue && !/^\d{6}$/.test(String(value).trim())) {
+        throw new Error('Please provide a valid 6-digit pincode');
+      }
+
+      return true;
+    }),
   validate
 ];
 

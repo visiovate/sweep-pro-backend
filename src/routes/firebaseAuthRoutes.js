@@ -200,12 +200,12 @@ router.get('/firebase/me', verifyFirebaseToken, async (req, res) => {
  * POST /auth/firebase/complete-profile
  * Complete mandatory onboarding fields
  * Requires: Firebase ID token, profile_completed = false
- * Body: { phone: string, apartment_id: string, role: 'CUSTOMER' | 'MAID' }
+ * Body: { phone: string, role: 'CUSTOMER' | 'MAID', apartment_id?: string, address?: string, pincode?: string }
  */
 router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) => {
   try {
     const prisma = await initializePrisma();
-    const { phone, apartment_id, role } = req.body;
+    const { phone, apartment_id, role, address, pincode } = req.body;
 
     // Validate that user exists and profile is not already completed
     if (!req.user) {
@@ -231,14 +231,28 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
       errors.push({ field: 'phone', message: 'Invalid phone number. Must be 10 digits starting with 6-9' });
     }
 
-    if (!apartment_id) {
-      errors.push({ field: 'apartment_id', message: 'Service address is required' });
-    }
-
     if (!role) {
       errors.push({ field: 'role', message: 'Account type is required' });
     } else if (!['CUSTOMER', 'MAID'].includes(role)) {
       errors.push({ field: 'role', message: 'Invalid role. Must be CUSTOMER or MAID' });
+    }
+
+    if (role === 'CUSTOMER') {
+      if (!apartment_id) {
+        errors.push({ field: 'apartment_id', message: 'Service address is required' });
+      }
+    }
+
+    if (role === 'MAID') {
+      if (!address || String(address).trim() === '') {
+        errors.push({ field: 'address', message: 'Residential address is required' });
+      }
+
+      if (!pincode || String(pincode).trim() === '') {
+        errors.push({ field: 'pincode', message: 'Pincode is required' });
+      } else if (!/^\d{6}$/.test(String(pincode).trim())) {
+        errors.push({ field: 'pincode', message: 'Please provide a valid 6-digit pincode' });
+      }
     }
 
     if (errors.length > 0) {
@@ -262,15 +276,26 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
       });
     }
 
+    const updateData = {
+      phone,
+      role,
+      profile_completed: true,
+    };
+
+    if (role === 'CUSTOMER') {
+      updateData.apartment_id = apartment_id;
+    }
+
+    if (role === 'MAID') {
+      updateData.address = address;
+      updateData.pincode = String(pincode).trim();
+      updateData.apartment_id = null;
+    }
+
     // Update user with profile information
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
-      data: {
-        phone,
-        apartment_id,
-        role,
-        profile_completed: true
-      },
+      data: updateData,
       include: {
         customerProfile: true,
         maidProfile: true,
@@ -337,6 +362,9 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
       phone: finalUser.phone,
       role: finalUser.role,
       apartment_id: finalUser.apartment_id,
+      address: finalUser.address,
+      locality: finalUser.locality,
+      pincode: finalUser.pincode,
       profile_completed: finalUser.profile_completed,
       status: finalUser.status,
       createdAt: finalUser.createdAt,
