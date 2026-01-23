@@ -80,6 +80,8 @@ const allowedOrigins = [
   'http://localhost:3001',
   'http://127.0.0.1:4173',
   'http://127.0.0.1:3001',
+  'https://sweepro.in',
+  'https://www.sweepro.in',
   'https://sweep-pro-frontend.vercel.app',
   'https://www.sweep-pro-frontend.vercel.app'
 ];
