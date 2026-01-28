@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
+const ratingRecalculationService = require('../services/ratingRecalculationService');
 
 const prisma = new PrismaClient();
 
@@ -72,11 +73,29 @@ const submitFeedback = async (req, res) => {
       });
     }
 
+    // Feedback must be for the maid who actually completed this booking.
+    // We freeze this on the Feedback row so later reassignments don't change rating history.
+    const targetMaidId = booking.maidId;
+    if (!targetMaidId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot submit feedback: no maid assigned to this booking'
+      });
+    }
+
+    if (maidId && maidId !== targetMaidId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid maid selected for this booking'
+      });
+    }
+
     // Create feedback
     const feedback = await prisma.feedback.create({
       data: {
         bookingId,
         customerId,
+        ratedMaidId: targetMaidId,
         overallRating,
         qualityRating: qualityRating || null,
         punctualityRating: punctualityRating || null,
@@ -106,86 +125,76 @@ const submitFeedback = async (req, res) => {
       }
     });
 
-    // Determine which maid to rate (use provided maidId or booking's maidId)
-    const targetMaidId = maidId || booking.maidId;
-    
-    // Update maid profile rating if maid is assigned
-    if (targetMaidId) {
-      // Get maid profile
+    // Keep maid profile rating consistent with ACTIVE feedback (weights, disputes, etc.)
+    await ratingRecalculationService.recalculateMaidRating(targetMaidId);
+
+    // Update performance metrics for current month (if metric exists)
+    try {
       const maidUser = await prisma.user.findUnique({
         where: { id: targetMaidId },
-        include: {
-          maidProfile: true
-        }
+        include: { maidProfile: true }
       });
 
       if (maidUser?.maidProfile) {
         const maidProfile = maidUser.maidProfile;
-      
-      // Calculate new average rating
-      const totalRatings = maidProfile.totalRatings + 1;
-      const currentRating = maidProfile.rating || 0;
-      const newRating = ((currentRating * maidProfile.totalRatings) + overallRating) / totalRatings;
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const year = now.getFullYear();
 
-      // Update maid profile
-      await prisma.maidProfile.update({
-        where: { id: maidProfile.id },
-        data: {
-          rating: newRating,
-          totalRatings: totalRatings
-        }
-      });
-
-      // Update performance metrics for current month
-      const now = new Date();
-      const month = now.getMonth() + 1;
-      const year = now.getFullYear();
-
-      const existingMetric = await prisma.performanceMetric.findUnique({
-        where: {
-          maidId_month_year: {
-            maidId: maidProfile.id,
-            month,
-            year
-          }
-        }
-      });
-
-      if (existingMetric) {
-        // Recalculate average rating for the month
-        const monthRatings = await prisma.feedback.findMany({
-          where: {
-            booking: {
-              maidId: targetMaidId,
-              completedAt: {
-                gte: new Date(year, month - 1, 1),
-                lt: new Date(year, month, 1)
-              }
-            }
-          },
-          select: {
-            overallRating: true
-          }
-        });
-
-        const monthAverageRating = monthRatings.length > 0
-          ? monthRatings.reduce((sum, f) => sum + f.overallRating, 0) / monthRatings.length
-          : 0;
-
-        await prisma.performanceMetric.update({
+        const existingMetric = await prisma.performanceMetric.findUnique({
           where: {
             maidId_month_year: {
               maidId: maidProfile.id,
               month,
               year
             }
-          },
-          data: {
-            averageRating: monthAverageRating
           }
         });
+
+        if (existingMetric) {
+          const monthRatings = await prisma.feedback.findMany({
+            where: {
+              ratedMaidId: targetMaidId,
+              status: 'ACTIVE',
+              booking: {
+                completedAt: {
+                  gte: new Date(year, month - 1, 1),
+                  lt: new Date(year, month, 1)
+                }
+              }
+            },
+            select: {
+              overallRating: true,
+              weight: true
+            }
+          });
+
+          let totalWeightedRating = 0;
+          let totalWeight = 0;
+          monthRatings.forEach((f) => {
+            const w = f.weight || 1.0;
+            totalWeightedRating += f.overallRating * w;
+            totalWeight += w;
+          });
+
+          const monthAverageRating = totalWeight > 0 ? totalWeightedRating / totalWeight : 0;
+
+          await prisma.performanceMetric.update({
+            where: {
+              maidId_month_year: {
+                maidId: maidProfile.id,
+                month,
+                year
+              }
+            },
+            data: {
+              averageRating: monthAverageRating
+            }
+          });
+        }
       }
-      }
+    } catch (metricError) {
+      console.error('Error updating performance metric rating:', metricError);
     }
 
     // Send notification to maid if feedback is positive
@@ -255,9 +264,10 @@ const getMaidReviews = async (req, res) => {
 
     const feedbacks = await prisma.feedback.findMany({
       where: {
-        booking: {
-          maidId: maidUserId
-        },
+        OR: [
+          { ratedMaidId: maidUserId },
+          { ratedMaidId: null, booking: { maidId: maidUserId } }
+        ],
         status: 'ACTIVE'
       },
       include: {
@@ -455,7 +465,7 @@ const getCustomerFeedback = async (req, res) => {
  */
 const getAllFeedback = async (req, res) => {
   try {
-    const { page = 1, limit = 20, rating, maidId, customerId } = req.query;
+    const { page = 1, limit = 20, rating, maidId, customerId, status } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const where = {};
@@ -463,12 +473,16 @@ const getAllFeedback = async (req, res) => {
       where.overallRating = parseInt(rating);
     }
     if (maidId) {
-      where.booking = {
-        maidId: maidId
-      };
+      where.OR = [
+        { ratedMaidId: maidId },
+        { ratedMaidId: null, booking: { maidId: maidId } }
+      ];
     }
     if (customerId) {
       where.customerId = customerId;
+    }
+    if (status) {
+      where.status = status;
     }
 
     const [feedbacks, total] = await Promise.all([
@@ -549,9 +563,10 @@ const getFeedbackStats = async (req, res) => {
 
     const where = {};
     if (maidId) {
-      where.booking = {
-        maidId: maidId
-      };
+      where.OR = [
+        { ratedMaidId: maidId },
+        { ratedMaidId: null, booking: { maidId: maidId } }
+      ];
     }
 
     const [

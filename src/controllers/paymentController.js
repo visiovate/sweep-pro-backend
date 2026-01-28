@@ -2,7 +2,8 @@ const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 const razorpayService = require('../services/razorpayService');
 const { razorpayKeyId } = require('../utils/razorpay-credintials');
-const notificationService = require('../services/notificationService');
+const { publishNotificationEvent } = require('../notifications/events/publishEvent');
+const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
 const prisma = new PrismaClient();
 
 const createPayment = async (req, res) => {
@@ -271,14 +272,14 @@ const updatePaymentStatus = async (req, res) => {
       }
     });
 
-    // Send notifications based on payment status
-    if (status === 'COMPLETED') {
-      await notificationService.notifyPaymentReceived(payment);
-    } else if (status === 'FAILED') {
-      await notificationService.notifyPaymentFailed(payment);
-    } else if (status === 'REFUNDED' || status === 'PARTIALLY_REFUNDED') {
-      await notificationService.notifyRefundProcessed(payment, payment.refundAmount);
-    }
+    await publishNotificationEvent({
+      topic: NOTIFICATION_TOPICS.PAYMENT_STATUS_UPDATED,
+      payload: {
+        paymentId: payment.id,
+        status: payment.status
+      },
+      dedupeKey: `payment-status:${payment.id}:${payment.status}:${payment.updatedAt.toISOString()}`
+    });
 
     res.json(payment);
   } catch (error) {
@@ -371,8 +372,14 @@ const verifyPayment = async (req, res) => {
       }
     });
 
-    // Send payment success notification
-    await notificationService.notifyPaymentReceived(updatedPayment);
+    await publishNotificationEvent({
+      topic: NOTIFICATION_TOPICS.PAYMENT_STATUS_UPDATED,
+      payload: {
+        paymentId: updatedPayment.id,
+        status: updatedPayment.status
+      },
+      dedupeKey: `payment-status:${updatedPayment.id}:${updatedPayment.status}:${updatedPayment.updatedAt.toISOString()}`
+    });
 
     res.json(updatedPayment);
   } catch (error) {

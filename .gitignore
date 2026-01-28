@@ -62,3 +62,6 @@ postman-razorpay-tests.json
 RAZORPAY_TESTING_GUIDE.md
 test-notifications.json
 websocket-client-example.json
+
+# Firebase-service
+firebase-service-account.json

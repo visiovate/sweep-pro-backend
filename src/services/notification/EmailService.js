@@ -15,8 +15,8 @@ const prisma = new PrismaClient();
  * SMTP_PORT=587
  * SMTP_USER=your_email@gmail.com
  * SMTP_PASS=your_app_password
- * FROM_EMAIL=noreply@sweeppro.com
- * FROM_NAME=SweepPro
+ * FROM_EMAIL=noreply@sweepro.com
+ * FROM_NAME=Sweepro
  * FRONTEND_URL=http://localhost:5173
  */
 
@@ -24,8 +24,8 @@ class EmailService {
   constructor() {
     this.provider = null;
     this.client = null;
-    this.fromEmail = process.env.FROM_EMAIL || 'noreply@sweeppro.com';
-    this.fromName = process.env.FROM_NAME || 'SweepPro';
+    this.fromEmail = process.env.FROM_EMAIL || 'noreply@sweepro.com';
+    this.fromName = process.env.FROM_NAME || 'Sweepro';
     this.frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     
     this.initializeProvider();
@@ -52,16 +52,49 @@ class EmailService {
   initializeSMTP() {
     try {
       const nodemailer = require('nodemailer');
+
+      const host = String(process.env.SMTP_HOST || '').trim();
+      const user = String(process.env.SMTP_USER || '').trim();
+      const pass = String(process.env.SMTP_PASS || '').trim();
+
+      // If SMTP isn't configured, mark provider disabled so callers can see it.
+      if (!host || !user || !pass) {
+        console.warn('⚠️ SMTP not configured (missing SMTP_HOST/SMTP_USER/SMTP_PASS). Email sending disabled.');
+        this.provider = 'disabled';
+        this.client = null;
+        return;
+      }
+
+      const port = parseInt(process.env.SMTP_PORT) || 587;
+      const explicitSecure = String(process.env.SMTP_SECURE || '').trim().toLowerCase();
+      const secure = explicitSecure ? explicitSecure === 'true' : port === 465;
+
+      const connectionTimeout = parseInt(process.env.SMTP_CONNECTION_TIMEOUT_MS || '10000', 10);
+      const greetingTimeout = parseInt(process.env.SMTP_GREETING_TIMEOUT_MS || '10000', 10);
+      const socketTimeout = parseInt(process.env.SMTP_SOCKET_TIMEOUT_MS || '20000', 10);
+
       this.client = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: parseInt(process.env.SMTP_PORT) || 587,
-        secure: false,
+        host,
+        port,
+        secure,
+        connectionTimeout,
+        greetingTimeout,
+        socketTimeout,
         auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS
+          user,
+          pass
         }
       });
       this.provider = 'smtp';
+
+      // Verify transport in production-like environments to catch config issues early
+      if (process.env.NODE_ENV === 'production') {
+        this.client.verify().then(
+          () => console.log('✅ SMTP transport verified'),
+          (err) => console.warn('⚠️ SMTP transport verification failed:', err?.message || err)
+        );
+      }
+
       console.log('✅ Email service initialized with SMTP');
     } catch (error) {
       console.error('❌ Email service initialization failed:', error);
@@ -72,7 +105,7 @@ class EmailService {
   async sendEmail({ to, subject, html, text }) {
     if (this.provider === 'disabled') {
       console.log('📧 Email service disabled, skipping send to:', to);
-      return { success: false, reason: 'disabled' };
+      return { success: false, provider: 'disabled', reason: 'disabled' };
     }
 
     try {
@@ -91,11 +124,32 @@ class EmailService {
         result = await this.client.sendMail(emailData);
       }
 
-      console.log(`✅ Email sent to ${to}: ${subject}`);
-      return { success: true, messageId: result[0]?.messageId || result.messageId };
+      let messageId;
+      let statusCode;
+      if (this.provider === 'sendgrid') {
+        // SendGrid returns [response, body]
+        statusCode = result?.[0]?.statusCode;
+        const headers = result?.[0]?.headers || {};
+        messageId = headers['x-message-id'] || headers['x-messageid'] || headers['x-sg-id'];
+      } else {
+        // Nodemailer returns { messageId, response, accepted, rejected, ... }
+        messageId = result?.messageId;
+      }
+
+      console.log(
+        `✅ Email sent to ${to}: ${subject} provider=${this.provider}` +
+          (statusCode ? ` status=${statusCode}` : '') +
+          (messageId ? ` messageId=${messageId}` : '')
+      );
+
+      return { success: true, provider: this.provider, messageId, statusCode };
     } catch (error) {
+      const errorMessage = error?.response?.body?.errors
+        ? JSON.stringify(error.response.body.errors)
+        : (error?.message || String(error));
+
       console.error('❌ Email send error:', error);
-      return { success: false, error: error.message };
+      return { success: false, provider: this.provider, error: errorMessage };
     }
   }
 
@@ -130,15 +184,15 @@ class EmailService {
   getEmailTemplate(type, data) {
     const templates = {
       USER_REGISTERED: {
-        subject: 'Welcome to SweepPro! 🎉',
+        subject: 'Welcome to Sweepro! 🎉',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
-              <h1 style="color: white; margin: 0;">Welcome to SweepPro! 🎉</h1>
+              <h1 style="color: white; margin: 0;">Welcome to Sweepro! 🎉</h1>
             </div>
             <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
               <p style="font-size: 16px; color: #374151;">Hi ${data.name},</p>
-              <p style="font-size: 16px; color: #374151;">Thank you for joining SweepPro! We're excited to help you keep your home sparkling clean.</p>
+              <p style="font-size: 16px; color: #374151;">Thank you for joining Sweepro! We're excited to help you keep your home sparkling clean.</p>
               
               <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea;">
                 <h3 style="color: #667eea; margin-top: 0;">What's Next?</h3>
@@ -162,7 +216,7 @@ class EmailService {
               
               <p style="font-size: 16px; color: #374151; margin-top: 20px;">
                 Best regards,<br>
-                <strong>The SweepPro Team</strong>
+                <strong>The Sweepro Team</strong>
               </p>
             </div>
           </div>
@@ -211,7 +265,7 @@ class EmailService {
 
               <p style="font-size: 16px; color: #374151; margin-top: 20px;">
                 Best regards,<br>
-                <strong>The SweepPro Team</strong>
+                <strong>The Sweepro Team</strong>
               </p>
             </div>
           </div>
@@ -272,7 +326,7 @@ class EmailService {
 
               <p style="font-size: 16px; color: #374151; margin-top: 20px;">
                 Best regards,<br>
-                <strong>The SweepPro Team</strong>
+                <strong>The Sweepro Team</strong>
               </p>
             </div>
           </div>
@@ -288,7 +342,7 @@ class EmailService {
             </div>
             <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
               <p style="font-size: 16px; color: #374151;">Hi ${data.name},</p>
-              <p style="font-size: 16px; color: #374151;">We noticed you registered with SweepPro but haven't booked a service yet.</p>
+              <p style="font-size: 16px; color: #374151;">We noticed you registered with Sweepro but haven't booked a service yet.</p>
               
               <div style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 25px; border-radius: 8px; margin: 20px 0; text-align: center; border: 3px dashed #f59e0b;">
                 <h2 style="color: #d97706; margin: 0 0 10px 0; font-size: 28px;">20% OFF</h2>
@@ -296,7 +350,7 @@ class EmailService {
                 <p style="color: #92400e; margin: 10px 0 0 0; font-size: 14px;">Limited time offer - Book within 48 hours</p>
               </div>
 
-              <h3 style="color: #374151; margin-top: 30px;">Why Choose SweepPro?</h3>
+              <h3 style="color: #374151; margin-top: 30px;">Why Choose Sweepro?</h3>
               <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
                 <ul style="color: #374151; line-height: 2; padding-left: 20px;">
                   <li>✨ <strong>Verified Maids:</strong> All our maids are background-checked</li>
@@ -318,7 +372,7 @@ class EmailService {
 
               <p style="font-size: 16px; color: #374151; margin-top: 30px;">
                 Best regards,<br>
-                <strong>The SweepPro Team</strong>
+                <strong>The Sweepro Team</strong>
               </p>
             </div>
           </div>
@@ -334,7 +388,7 @@ class EmailService {
             </div>
             <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
               <p style="font-size: 16px; color: #374151;">Hi ${data.name},</p>
-              <p style="font-size: 16px; color: #374151;">Your SweepPro subscription is expiring soon!</p>
+              <p style="font-size: 16px; color: #374151;">Your Sweepro subscription is expiring soon!</p>
               
               <div style="background: #fee2e2; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444;">
                 <p style="margin: 0; color: #991b1b; font-size: 18px; font-weight: bold;">
@@ -367,7 +421,7 @@ class EmailService {
 
               <p style="font-size: 16px; color: #374151; margin-top: 30px;">
                 Best regards,<br>
-                <strong>The SweepPro Team</strong>
+                <strong>The Sweepro Team</strong>
               </p>
             </div>
           </div>
@@ -417,7 +471,7 @@ class EmailService {
 
               <p style="font-size: 16px; color: #374151; margin-top: 20px;">
                 Thank you for your payment!<br>
-                <strong>The SweepPro Team</strong>
+                <strong>The Sweepro Team</strong>
               </p>
             </div>
           </div>
@@ -426,12 +480,12 @@ class EmailService {
     };
 
     return templates[type] || {
-      subject: data.title || 'Notification from SweepPro',
+      subject: data.title || 'Notification from Sweepro',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2>${data.title || 'Notification'}</h2>
           <p>${data.message || ''}</p>
-          <p>Best regards,<br><strong>The SweepPro Team</strong></p>
+          <p>Best regards,<br><strong>The Sweepro Team</strong></p>
         </div>
       `
     };

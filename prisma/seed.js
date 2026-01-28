@@ -237,13 +237,13 @@ async function main() {
       }
     });
 
-    // Create subscription plans - SweepPro Touch and SweepPro Lux
+    // Create subscription plans - Sweepro Touch and Sweepro Lux
     const sweepProTouchPlan = await prisma.servicePlan.upsert({
       where: { id: 'sweepro-touch-plan' },
       update: {},
       create: {
         id: 'sweepro-touch-plan',
-        name: 'SweepPro Touch',
+        name: 'Sweepro Touch',
         description: 'Premium silver plan for medium-sized homes. Enjoy enhanced cleaning and priority service.',
         serviceId: dailyCleaningService.id,
 
@@ -285,7 +285,7 @@ async function main() {
       }
     });
 
-    // Only SweepPro Touch and SweepPro Lux plans are kept
+    // Only Sweepro Touch and Sweepro Lux plans are kept
 
     console.log('✅ Database seeded successfully!');
     console.log('📄 Created:');
@@ -294,12 +294,12 @@ async function main() {
     console.log('- Maid user: maid@sweepro.com (password: maid123)');
     console.log('- 3 Services: Daily Cleaning, Deep Cleaning, Maintenance');
 
-    console.log('- 2 Active Subscription Plans: SweepPro Touch (₹4,050/month), SweepPro Lux (₹6,800/month)');
+    console.log('- 2 Active Subscription Plans: Sweepro Touch (₹4,050/month), Sweepro Lux (₹6,800/month)');
 
     // Create subscriptions for all customers
     console.log('\n📋 Creating subscriptions and payments for customers...');
     
-    // Subscribe customer1 to SweepPro Touch plan
+    // Subscribe customer1 to Sweepro Touch plan
     const customer1Profile = await ensureCustomerProfile(customer.id);
     
     const subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -356,7 +356,7 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription and payment for customer@sweepro.com (SweepPro Touch Plan)');
+    console.log('✅ Created subscription and payment for customer@sweepro.com (Sweepro Touch Plan)');
 
     // Get maid profile for assignment
     // Create maid assignment for customer
@@ -365,13 +365,13 @@ async function main() {
       update: {
         maidId: maidProfile.id,
         isActive: true,
-        notes: 'Assigned for SweepPro Touch subscription'
+        notes: 'Assigned for Sweepro Touch subscription'
       },
       create: {
         customerId: customer.id,
         maidId: maidProfile.id,
         isActive: true,
-        notes: 'Assigned for SweepPro Touch subscription'
+        notes: 'Assigned for Sweepro Touch subscription'
       }
     });
 
@@ -466,7 +466,7 @@ async function main() {
         }
       }
     });
-    // Subscribe customer2 to SweepPro Lux plan
+    // Subscribe customer2 to Sweepro Lux plan
     const customer2Profile = await ensureCustomerProfile(user2.id);
     
     const subscription2EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -522,7 +522,7 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription and payment for customer2@sweepro.com (SweepPro Lux Plan)');
+    console.log('✅ Created subscription and payment for customer2@sweepro.com (Sweepro Lux Plan)');
 
     // Get maid2 profile and assign to customer2
     const maid2Profile = await ensureMaidProfile(maid2.id, {
@@ -555,13 +555,13 @@ async function main() {
       update: {
         maidId: maid2Profile.id,
         isActive: true,
-        notes: 'Assigned for SweepPro Lux subscription'
+        notes: 'Assigned for Sweepro Lux subscription'
       },
       create: {
         customerId: user2.id,
         maidId: maid2Profile.id,
         isActive: true,
-        notes: 'Assigned for SweepPro Lux subscription'
+        notes: 'Assigned for Sweepro Lux subscription'
       }
     });
 
@@ -633,7 +633,7 @@ async function main() {
         }
       }
     });
-    // Subscribe customer3 to SweepPro Touch plan
+    // Subscribe customer3 to Sweepro Touch plan
     const customer3Profile = await ensureCustomerProfile(user3.id);
     
     const subscription3EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -683,7 +683,7 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription and payment for customer3@sweepro.com (SweepPro Touch Plan)');
+    console.log('✅ Created subscription and payment for customer3@sweepro.com (Sweepro Touch Plan)');
 
     await prisma.booking.create({
       data: {
@@ -751,7 +751,7 @@ async function main() {
         }
       }
     });
-    // Subscribe customer4 to SweepPro Touch plan
+    // Subscribe customer4 to Sweepro Touch plan
     const customer4Profile = await ensureCustomerProfile(user4.id);
     
     const subscription4EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -800,7 +800,7 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription and payment for customer4@sweepro.com (SweepPro Touch Plan)');
+    console.log('✅ Created subscription and payment for customer4@sweepro.com (Sweepro Touch Plan)');
 
     await prisma.booking.create({
       data: {
@@ -868,7 +868,7 @@ async function main() {
         }
       }
     });
-    // Subscribe customer5 to SweepPro Lux plan
+    // Subscribe customer5 to Sweepro Lux plan
     const customer5Profile = await ensureCustomerProfile(user5.id);
     
     const subscription5EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -917,7 +917,7 @@ async function main() {
       }
     });
     
-    console.log('✅ Created subscription and payment for customer5@sweepro.com (SweepPro Lux Plan)');
+    console.log('✅ Created subscription and payment for customer5@sweepro.com (Sweepro Lux Plan)');
 
     await prisma.booking.create({
       data: {
@@ -938,11 +938,11 @@ async function main() {
     });
     console.log('- 5 Pending Bookings created for 5 different customers and maids.');
     console.log('- 5 Active Subscriptions created for all customers:');
-    console.log('  • customer@sweepro.com: SweepPro Touch Plan');
-    console.log('  • customer2@sweepro.com: SweepPro Lux Plan');
-    console.log('  • customer3@sweepro.com: SweepPro Touch Plan');
-    console.log('  • customer4@sweepro.com: SweepPro Touch Plan');
-    console.log('  • customer5@sweepro.com: SweepPro Lux Plan');
+    console.log('  • customer@sweepro.com: Sweepro Touch Plan');
+    console.log('  • customer2@sweepro.com: Sweepro Lux Plan');
+    console.log('  • customer3@sweepro.com: Sweepro Touch Plan');
+    console.log('  • customer4@sweepro.com: Sweepro Touch Plan');
+    console.log('  • customer5@sweepro.com: Sweepro Lux Plan');
     
     // Create additional test users for comprehensive testing
     console.log('\n🔄 Creating additional test data...');
@@ -1373,11 +1373,11 @@ async function main() {
     console.log('\n💳 All customers now have active subscriptions and can create bookings!');
     console.log('\n🧪 Test Users Created:');
     console.log('- admin@sweepro.com (password: admin123) - Admin');
-    console.log('- customer@sweepro.com (password: customer123) - Customer with SweepPro Touch Plan');
-    console.log('- customer2@sweepro.com (password: customer2123) - Customer with SweepPro Lux Plan');
-    console.log('- customer3@sweepro.com (password: customer3123) - Customer with SweepPro Touch Plan');
-    console.log('- customer4@sweepro.com (password: customer4123) - Customer with SweepPro Touch Plan');
-    console.log('- customer5@sweepro.com (password: customer5123) - Customer with SweepPro Lux Plan');
+    console.log('- customer@sweepro.com (password: customer123) - Customer with Sweepro Touch Plan');
+    console.log('- customer2@sweepro.com (password: customer2123) - Customer with Sweepro Lux Plan');
+    console.log('- customer3@sweepro.com (password: customer3123) - Customer with Sweepro Touch Plan');
+    console.log('- customer4@sweepro.com (password: customer4123) - Customer with Sweepro Touch Plan');
+    console.log('- customer5@sweepro.com (password: customer5123) - Customer with Sweepro Lux Plan');
     console.log('- pending@sweepro.com (password: pending123) - Customer with Pending Payment');
     console.log('- maid@sweepro.com (password: maid123) - Maid');
     console.log('- maid2@sweepro.com (password: maid2123) - Maid');
@@ -1958,10 +1958,10 @@ async function main() {
     
     console.log('✅ Created automatically scheduled daily services for demonstration');
     
-    // Create new customers with SweepPro Touch and SweepPro Lux plans
-    console.log('\n🆕 Creating customers with new SweepPro Touch and SweepPro Lux plans...');
+    // Create new customers with Sweepro Touch and Sweepro Lux plans
+    console.log('\n🆕 Creating customers with new Sweepro Touch and Sweepro Lux plans...');
     
-    // Customer with SweepPro Touch plan - 2BHK Apartment
+    // Customer with Sweepro Touch plan - 2BHK Apartment
     const touchCustomer = await prisma.user.upsert({
       where: { email: 'touch@sweepro.com' },
       update: {},
@@ -2025,9 +2025,9 @@ async function main() {
       }
     });
     
-    console.log('✅ Created SweepPro Touch subscription for touch@sweepro.com (₹4,050/month - No Buffer System)');
+    console.log('✅ Created Sweepro Touch subscription for touch@sweepro.com (₹4,050/month - No Buffer System)');
     
-    // Customer with SweepPro Lux plan - 4BHK Bungalow
+    // Customer with Sweepro Lux plan - 4BHK Bungalow
     const luxCustomer = await prisma.user.upsert({
       where: { email: 'lux@sweepro.com' },
       update: {},
@@ -2092,7 +2092,7 @@ async function main() {
       }
     });
     
-    console.log('✅ Created SweepPro Lux subscription for lux@sweepro.com (₹6,800/month - 5 Buffer Days)');
+    console.log('✅ Created Sweepro Lux subscription for lux@sweepro.com (₹6,800/month - 5 Buffer Days)');
     
     // Create more diverse test users with different house types
     console.log('\n🏠 Creating diverse customers with various property types...');
@@ -2374,14 +2374,14 @@ async function main() {
     console.log('\n✅ Comprehensive seed data created successfully!');
     console.log('\n🧪 Test Scenarios Available:');
     console.log('\n📋 NEW SUBSCRIPTION PLANS:');
-    console.log('- touch@sweepro.com: SweepPro Touch (₹4,050/month - NO BUFFER SYSTEM)');
-    console.log('- lux@sweepro.com: SweepPro Lux (₹6,800/month - 5 BUFFER DAYS)');
+    console.log('- touch@sweepro.com: Sweepro Touch (₹4,050/month - NO BUFFER SYSTEM)');
+    console.log('- lux@sweepro.com: Sweepro Lux (₹6,800/month - 5 BUFFER DAYS)');
     console.log('\n📋 SUBSCRIPTION STATUSES:');
-    console.log('- customer@sweepro.com: ACTIVE subscription (SweepPro Touch)');
-    console.log('- customer2@sweepro.com: ACTIVE subscription (SweepPro Lux)');
-    console.log('- customer3@sweepro.com: ACTIVE subscription (SweepPro Touch)');
-    console.log('- customer4@sweepro.com: ACTIVE subscription (SweepPro Touch)');
-    console.log('- customer5@sweepro.com: ACTIVE subscription (SweepPro Lux)');
+    console.log('- customer@sweepro.com: ACTIVE subscription (Sweepro Touch)');
+    console.log('- customer2@sweepro.com: ACTIVE subscription (Sweepro Lux)');
+    console.log('- customer3@sweepro.com: ACTIVE subscription (Sweepro Touch)');
+    console.log('- customer4@sweepro.com: ACTIVE subscription (Sweepro Touch)');
+    console.log('- customer5@sweepro.com: ACTIVE subscription (Sweepro Lux)');
     console.log('- buffer@sweepro.com: ACTIVE subscription with ACTIVE buffer period');
     console.log('- expired@sweepro.com: EXPIRED subscription');
     console.log('- cancelled@sweepro.com: CANCELLED subscription');

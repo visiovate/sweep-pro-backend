@@ -31,6 +31,8 @@ const automaticAssignmentRoutes = require('./routes/automaticAssignmentRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
 const termsRoutes = require('./routes/termsRoutes');
+const firebaseAuthRoutes = require('./routes/firebaseAuthRoutes');
+const eventRoutes = require('./routes/eventRoutes');
 
 // Create Express app
 const app = express();
@@ -43,6 +45,9 @@ const wss = new WebSocketServer({ server });
 
 // Import database utility
 const { initializePrisma, disconnectDatabase } = require('./utils/database');
+
+// Initialize Firebase Admin SDK
+const { initializeFirebaseAdmin } = require('./config/firebase');
 
 // Import notification service
 const notificationService = require('./services/notificationService');
@@ -67,6 +72,8 @@ const allowedOrigins = [
   'http://localhost:3001',
   'http://127.0.0.1:4173',
   'http://127.0.0.1:3001',
+  'https://sweepro.in',
+  'https://www.sweepro.in',
   'https://sweep-pro-frontend.vercel.app',
   'https://www.sweep-pro-frontend.vercel.app'
 ];
@@ -147,6 +154,7 @@ module.exports.notificationService = notificationService;
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/auth', firebaseAuthRoutes); // Firebase auth routes (login, me, complete-profile, apartments)
 app.use('/api/users', userRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/bookings', bookingRoutes);
@@ -167,6 +175,7 @@ app.use('/api/automatic-bookings', automaticBookingRoutes);
 app.use('/api/automatic-assignments', automaticAssignmentRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/events', eventRoutes);
 app.use('/api/terms', termsRoutes);
 
 // Health check route
@@ -210,15 +219,36 @@ if (process.env.NODE_ENV !== 'test') {
       await initializePrisma();
       console.log('✅ Database initialized successfully');
       
-      // ⚠️ REMOVED: Redis connection test (not needed for stateless API)
-      // ⚠️ REMOVED: BullMQ job scheduler initialization (moved to worker)
-      // ⚠️ REMOVED: Automatic service scheduler (moved to dedicated cron)
-      // ⚠️ REMOVED: Buffer period scheduler (moved to dedicated cron)
+      // Initialize Firebase Admin SDK
+      try {
+        initializeFirebaseAdmin();
+        console.log('✅ Firebase Admin SDK initialized successfully');
+      } catch (firebaseError) {
+        console.error('⚠️ Firebase Admin initialization failed:', firebaseError.message);
+        console.log('⚠️ Firebase authentication features will not work');
+      }
       
-      console.log('✅ Web server is stateless and ready');
-      console.log('📝 Background jobs handled by:');
-      console.log('   - Worker: npm run worker');
-      console.log('   - Cron: npm run cron');
+      // Test Redis connection
+      const redisConnected = await testRedisConnection();
+      if (!redisConnected) {
+        console.error('⚠️ Redis connection failed. BullMQ features will not work.');
+        console.log('⚠️ Please ensure Redis is running and configured correctly.');
+      }
+      
+      // Initialize BullMQ job scheduler
+      if (redisConnected) {
+        await JobScheduler.initialize();
+        console.log('✅ BullMQ Job Scheduler initialized successfully');
+        console.log('📋 Background worker should be running separately: npm run worker');
+      }
+      
+      // Initialize automatic service scheduler after database is ready
+      await automaticScheduler.init();
+      console.log('✅ Automatic service scheduler initialized');
+      
+      // Initialize buffer period scheduler
+      bufferPeriodScheduler.start();
+      console.log('✅ Buffer period scheduler initialized');
       
     } catch (error) {
       console.error('❌ Failed to initialize database:', error);

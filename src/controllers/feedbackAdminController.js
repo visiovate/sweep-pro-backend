@@ -195,9 +195,10 @@ const getMaidRecentFeedback = async (req, res) => {
 
     const feedbacks = await prisma.feedback.findMany({
       where: {
-        booking: {
-          maidId
-        },
+        OR: [
+          { ratedMaidId: maidId },
+          { ratedMaidId: null, booking: { maidId } }
+        ],
         status: 'ACTIVE'
       },
       include: {

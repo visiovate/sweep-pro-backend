@@ -10,10 +10,13 @@ datasource db {
 model User {
   id                  String           @id @default(uuid())
   email               String           @unique
-  password            String
-  role                UserRole         @default(CUSTOMER)
+  password            String?          // Optional for Firebase OAuth users
+  firebase_uid        String?          @unique // Firebase UID
+  role                UserRole?       // Nullable until profile completion
   name                String
-  phone               String           @unique
+  phone               String?          @unique // Nullable until profile completion
+  apartment_id       String?          // Reference to apartment (stored as string for now)
+  profile_completed   Boolean          @default(false) // Mandatory onboarding flag
   address             String?
   latitude            Float?
   longitude           Float?
@@ -36,15 +39,20 @@ model User {
   locality            String?
   pincode             String?
   state               String?
+  passwordResetTokens PasswordResetToken[]
   adminProfile        AdminProfile?
   customerBookings    Booking[]        @relation("CustomerBookings")
   maidBookings        Booking[]        @relation("MaidBookings")
   customerProfile     CustomerProfile?
-  feedbacks           Feedback[]
+  feedbacks           Feedback[]       @relation("CustomerFeedback")
+  receivedFeedbacks   Feedback[]       @relation("RatedMaidFeedback")
   reportedIssues      Issue[]          @relation("ReportedIssues")
   resolvedIssues      Issue[]          @relation("ResolvedIssues")
   maidProfile         MaidProfile?
   notifications       Notification[]
+  notificationPreference NotificationPreference?
+  notificationDeliveries NotificationDelivery[]
+  userEvents           UserEvent[]
   payments            Payment[]        @relation("CustomerPayments")
   customerAssignments CustomerMaidAssignment[] @relation("CustomerAssignments")
   customerAssignmentRequests CustomerAssignmentRequest[] @relation("CustomerAssignmentRequests")
@@ -56,6 +64,20 @@ model User {
   @@index([email])
   @@index([phone])
   @@index([role])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model CustomerProfile {
@@ -316,6 +338,7 @@ model Feedback {
   id                String    @id @default(uuid())
   bookingId         String    @unique
   customerId        String
+  ratedMaidId       String?
   overallRating     Int
   qualityRating     Int?
   punctualityRating Int?
@@ -340,10 +363,12 @@ model Feedback {
   updatedAt         DateTime  @updatedAt
   
   booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer          User      @relation(fields: [customerId], references: [id])
+  customer          User      @relation("CustomerFeedback", fields: [customerId], references: [id])
+  ratedMaid         User?     @relation("RatedMaidFeedback", fields: [ratedMaidId], references: [id])
   auditEntries      FeedbackAudit[]
 
   @@index([customerId])
+  @@index([ratedMaidId])
   @@index([overallRating])
   @@index([status])
   @@index([isWeightAdjusted])
@@ -620,6 +645,100 @@ model Notification {
   @@index([scheduledFor])
 }
 
+model NotificationPreference {
+  userId                   String  @id
+  inAppEnabled             Boolean @default(true)
+  emailEnabled             Boolean @default(true)
+  transactionalEmailEnabled Boolean @default(true)
+  marketingEmailEnabled    Boolean @default(true)
+  updatedAt                DateTime @updatedAt
+  createdAt                DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum NotificationOutboxStatus {
+  PENDING
+  PROCESSING
+  ENQUEUED
+  PROCESSED
+  FAILED
+}
+
+model NotificationOutboxEvent {
+  id          String                  @id @default(uuid())
+  topic       String
+  payload     Json
+  dedupeKey   String?                 @unique
+  status      NotificationOutboxStatus @default(PENDING)
+  availableAt DateTime                @default(now())
+  lockedAt    DateTime?
+  lockedBy    String?
+  attempts    Int                     @default(0)
+  lastError   String?
+  enqueuedAt  DateTime?
+  processedAt DateTime?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  deliveries  NotificationDelivery[]
+
+  @@index([status, availableAt])
+  @@index([lockedAt])
+  @@index([createdAt])
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model NotificationDelivery {
+  id            String                   @id @default(uuid())
+  outboxEventId String
+  userId        String
+  channel       NotificationChannel
+  status        NotificationDeliveryStatus @default(PENDING)
+  provider      String?
+  providerMessageId String?
+  lastError     String?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  outboxEvent NotificationOutboxEvent @relation(fields: [outboxEventId], references: [id], onDelete: Cascade)
+  user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([outboxEventId, userId, channel])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum UserEventType {
+  PRICING_VISITED
+}
+
+model UserEvent {
+  id        String        @id @default(uuid())
+  userId    String
+  type      UserEventType
+  data      Json?
+  createdAt DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
 model AdminProfile {
   id          String   @id @default(uuid())
   userId      String   @unique
@@ -859,30 +978,82 @@ enum LocationActivity {
 
 enum NotificationType {
   BOOKING_CONFIRMED
+  BOOKING_CREATED
   BOOKING_REMINDER
   BOOKING_CANCELLED
+  BOOKING_STATUS_CHANGED
+  BOOKING_RESCHEDULED
+  BOOKING_APPROACHING
+  BOOKING_OVERDUE
   SERVICE_CANCELLED
   MAID_ASSIGNED
   SERVICE_ASSIGNED
+  ASSIGNMENT_REQUEST
+  ASSIGNMENT_ACCEPTED
+  ASSIGNMENT_REJECTED
+  ASSIGNMENT_EXPIRED
+  REASSIGNMENT_REQUIRED
   MAID_ARRIVED
+  MAID_RUNNING_LATE
   SERVICE_STARTED
   SERVICE_COMPLETED
+  SERVICE_DELAYED
+  SHIFT_REMINDER
+  TASK_STARTED
+  TASK_COMPLETED
+  ALL_TASKS_COMPLETED
+  VERIFICATION_REQUIRED
+  USER_REGISTERED
+  PROFILE_UPDATED
+  USER_STATUS_CHANGED
+  MAID_STATUS_CHANGED
+  MAID_CHECK_IN
+  MAID_CHECK_OUT
+  MISSED_CHECK_IN
+  LOW_PERFORMANCE_WARNING
   PAYMENT_SUCCESS
+  PAYMENT_RECEIVED
   PAYMENT_FAILED
+  PAYMENT_REMINDER
+  PAYMENT_PENDING
+  PAYMENT_OVERDUE
+  REFUND_PROCESSED
   FEEDBACK_REQUEST
+  FEEDBACK_RECEIVED
+  POSITIVE_FEEDBACK
+  NEGATIVE_FEEDBACK
+  ISSUE_REPORTED
+  ISSUE_RESOLVED
   PROMOTION
+  PROMOTIONAL_OFFER
+  NEW_SERVICE_AVAILABLE
+  DAILY_SUMMARY
   SYSTEM_ALERT
+  SYSTEM_MAINTENANCE
+  EMERGENCY_ALERT
   ATTENDANCE_ALERT
   PERFORMANCE_ALERT
+  DOCUMENT_VERIFIED
   BUFFER_REQUEST
   BUFFER_APPROVED
   BUFFER_REJECTED
   BUFFER_STARTED
   BUFFER_ENDED
   SUBSCRIPTION_RENEWED
+  SUBSCRIPTION_CREATED
+  SUBSCRIPTION_CANCELLED
+  SUBSCRIPTION_EXPIRING
+  SUBSCRIPTION_EXPIRED
   SUBSCRIPTION_PAUSED
   SUBSCRIPTION_RESUMED
   CYCLE_COMPLETED
+  MONTHLY_CYCLE_STARTED
+  MONTHLY_CYCLE_COMPLETED
+  MONTHLY_SERVICES_SCHEDULED
+  BUFFER_PERIOD_STARTED
+  BUFFER_PERIOD_ENDED
+  BUFFER_PERIOD_APPROACHING
+  BUFFER_PERIOD_ENDING
 }
 
 enum IssueType {
