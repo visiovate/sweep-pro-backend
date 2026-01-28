@@ -30,6 +30,7 @@ const automaticBookingRoutes = require('./routes/automaticBookingRoutes');
 const automaticAssignmentRoutes = require('./routes/automaticAssignmentRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
+const termsRoutes = require('./routes/termsRoutes');
 
 // Create Express app
 const app = express();
@@ -166,6 +167,7 @@ app.use('/api/automatic-bookings', automaticBookingRoutes);
 app.use('/api/automatic-assignments', automaticAssignmentRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/terms', termsRoutes);
 
 // Health check route
 app.get('/health', (req, res) => {

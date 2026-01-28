@@ -3,7 +3,7 @@
 /**
  * Pre-Deployment Check Script
  * 
- * Runs validation checks before deploying to Render
+ * Runs validation checks before deploying to AWS (EC2 + EventBridge)
  * Usage: node scripts/pre-deployment-check.js
  */
 
@@ -25,7 +25,7 @@ function checkPackageScript(scriptName) {
 
 function checkEnvironmentVariable(varName) {
   const exists = process.env[varName];
-  console.log(`${exists ? '✅' : '⚠️ '} Environment variable '${varName}' ${exists ? 'set' : 'not set (will need to be set in Render)'}`);
+  console.log(`${exists ? '✅' : '⚠️ '} Environment variable '${varName}' ${exists ? 'set' : 'not set'}`);
   return exists;
 }
 
@@ -42,7 +42,14 @@ function main() {
   allChecks &= checkFile('src/workers/assignmentWorker.js', 'Assignment worker');
   allChecks &= checkFile('src/workers/adminReassignWorker.js', 'Reassignment worker');
   allChecks &= checkFile('src/cron/cronManager.js', 'Cron manager');
-  allChecks &= checkFile('render.yaml', 'Render configuration');
+  // AWS migration: render.yaml must be removed
+  const renderYamlExists = fs.existsSync('render.yaml');
+  if (renderYamlExists) {
+    console.log('❌ Render configuration found (render.yaml) — remove as part of AWS migration');
+    allChecks = false;
+  } else {
+    console.log('✅ No Render configuration file detected (render.yaml removed)');
+  }
 
   console.log('\n📦 Package Scripts Checks:');
   allChecks &= checkPackageScript('start');
@@ -57,10 +64,11 @@ function main() {
 
   console.log('\n🎯 Critical Deployment Files:');
   const deploymentFiles = [
-    'DEPLOYMENT_GUIDE.md',
-    'DEPLOYMENT_CHECKLIST.md',
+    '../DEPLOYMENT_CHECKLIST.md',
     'scripts/start-production.sh',
-    'scripts/start-worker.sh'
+    'scripts/start-worker.sh',
+    'scripts/run-cron.sh',
+    '.env.example.aws'
   ];
   
   deploymentFiles.forEach(file => {
@@ -98,7 +106,7 @@ function main() {
   // Summary
   console.log('\n' + '='.repeat(60));
   if (allChecks) {
-    console.log('🎉 ALL CHECKS PASSED! Ready for Render deployment.');
+    console.log('🎉 ALL CHECKS PASSED! Ready for AWS deployment.');
     console.log('\n📚 Next Steps:');
     console.log('1. Commit all changes to GitHub');
     console.log('2. Follow DEPLOYMENT_CHECKLIST.md');
@@ -106,7 +114,7 @@ function main() {
     console.log('   - PostgreSQL Database');
     console.log('   - Redis');
     console.log('   - Main API Server');
-    console.log('   - Background Workers');
+    console.log('   - Background Workers (EC2 systemd)');
   } else {
     console.log('⚠️  SOME CHECKS FAILED. Please fix issues before deployment.');
     console.log('\n🔧 Common Fixes:');
@@ -115,11 +123,10 @@ function main() {
     console.log('- Validate Prisma schema');
     console.log('- Fix import errors');
   }
-  
   console.log('\n🔗 Deployment Resources:');
-  console.log('- Render Dashboard: https://dashboard.render.com');
-  console.log('- Deployment Guide: ./DEPLOYMENT_GUIDE.md');
-  console.log('- Checklist: ./DEPLOYMENT_CHECKLIST.md');
+  console.log('- AWS: EC2 + EventBridge + SSM (see project docs)');
+  console.log('- Deployment Guide: ./DEPLOYMENT_CHECKLIST.md');
+  console.log('- Infra Overview: ./PROJECT_DOCUMENTATION.md');
   
   process.exit(allChecks ? 0 : 1);
 }

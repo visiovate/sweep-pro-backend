@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -1124,6 +1125,13 @@ model MaidMonthlyPerformance {
   @@index([year, month])
 }
 
+model Apartment {
+  id        String   @id @default(uuid())
+  name      String
+  area      String
+  pincode   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-
-
+  @@index([pincode])
+}
