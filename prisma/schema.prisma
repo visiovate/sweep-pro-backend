@@ -244,6 +244,10 @@ model Booking {
   status              BookingStatus       @default(PENDING)
   priority            BookingPriority     @default(NORMAL)
   scheduledAt         DateTime
+  slot_date           DateTime            @db.Date // New: explicit date for scheduling
+  slot_time           DateTime            @db.Time // New: explicit time for scheduling
+  assignment_sent     Boolean             @default(false) // New: tracks if assignment request sent
+  assignment_sent_at  DateTime? // New: when assignment request was sent
   estimatedDuration   Int
   actualStartTime     DateTime?
   actualEndTime       DateTime?
@@ -1168,6 +1172,7 @@ model AssignmentRequest {
   booking         Booking                  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   maid            MaidProfile              @relation(fields: [maidId], references: [id], onDelete: Cascade)
   
+  @@unique([bookingId, maidId]) // Enforce DB-level idempotency: one request per booking-maid pair
   @@index([bookingId])
   @@index([maidId])
   @@index([status])
@@ -1291,6 +1296,13 @@ model MaidMonthlyPerformance {
   @@index([year, month])
 }
 
+model Apartment {
+  id        String   @id @default(uuid())
+  name      String
+  area      String
+  pincode   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-
-
+  @@index([pincode])
+}

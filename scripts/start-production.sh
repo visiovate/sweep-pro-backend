@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Production startup script for Render deployment
+# Legacy: Production startup script for Render deployment (deprecated). For AWS, use systemd with scripts/start-worker.sh.
 echo "🚀 Starting Sweepro Backend in Production Mode..."
 
 # Wait for database to be ready

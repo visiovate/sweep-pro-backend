@@ -191,13 +191,29 @@ const completeBookingWithQR = async (req, res) => {
       });
     }
 
-    // Parse QR code data (expecting JSON with maid info)
+    // Parse QR code data (expecting JSON with maid and booking info)
     let qrData;
     try {
       qrData = JSON.parse(qrCodeData);
     } catch (parseError) {
-      // If not JSON, treat as plain maid ID
+      // If not JSON, treat as plain maid ID for backward compatibility
       qrData = { maidId: qrCodeData };
+    }
+
+    const scannedBookingId = qrData.bookingId || qrData.id;
+
+    if (!scannedBookingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'QR code is missing booking information'
+      });
+    }
+
+    if (scannedBookingId !== bookingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'QR code does not match this booking'
+      });
     }
 
     // Find the booking
@@ -223,6 +239,13 @@ const completeBookingWithQR = async (req, res) => {
       });
     }
 
+    if (booking.status !== 'IN_PROGRESS') {
+      return res.status(400).json({
+        success: false,
+        message: 'Service must be started before it can be completed'
+      });
+    }
+
     // Get maid profile for verification
     const maidProfile = await prisma.maidProfile.findUnique({
       where: { userId: req.user.id },
@@ -238,12 +261,17 @@ const completeBookingWithQR = async (req, res) => {
 
     // Verify QR code contains correct maid information
     const expectedMaidId = maidProfile.id;
-    const providedMaidId = qrData.maidId || qrData.id || qrCodeData;
+    const expectedMaidUserId = req.user.id;
+    const providedProfileId = qrData.maidProfileId || qrData.maidId || qrData.id || null;
+    const providedUserId = qrData.maidUserId || qrData.userId || null;
 
-    if (providedMaidId !== expectedMaidId && providedMaidId !== req.user.id) {
+    const profileMatches = providedProfileId === expectedMaidId;
+    const userMatches = providedUserId === expectedMaidUserId || providedUserId === expectedMaidId;
+
+    if (!profileMatches && !userMatches) {
       console.log(`❌ QR code verification failed`);
-      console.log(`   Expected: ${expectedMaidId} or ${req.user.id}`);
-      console.log(`   Provided: ${providedMaidId}`);
+      console.log(`   Expected profile: ${expectedMaidId} or user: ${expectedMaidUserId}`);
+      console.log(`   Provided profile: ${providedProfileId} user: ${providedUserId}`);
       
       return res.status(400).json({
         success: false,
@@ -383,7 +411,52 @@ const startBookingService = async (req, res) => {
  */
 const generateMaidQRCode = async (req, res) => {
   try {
-    console.log(`\n🔳 Generating QR code for maid: ${req.user.name} (${req.user.id})`);
+    const { bookingId } = req.params;
+
+    if (!bookingId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Booking ID is required to generate QR code'
+      });
+    }
+
+    console.log(`\n🔳 Generating QR code for maid: ${req.user.name} (${req.user.id}) for booking ${bookingId}`);
+
+    const booking = await prisma.booking.findFirst({
+      where: {
+        id: bookingId,
+        maidId: req.user.id,
+        assignmentStatus: 'ACCEPTED'
+      },
+      include: {
+        service: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        customer: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    if (!booking) {
+      return res.status(400).json({
+        success: false,
+        message: 'Booking not found or not assigned to you'
+      });
+    }
+
+    if (booking.status !== 'IN_PROGRESS') {
+      return res.status(400).json({
+        success: false,
+        message: 'Start the service before generating the completion QR code'
+      });
+    }
 
     const maidProfile = await prisma.maidProfile.findUnique({
       where: { userId: req.user.id },
@@ -407,12 +480,14 @@ const generateMaidQRCode = async (req, res) => {
 
     // Generate QR code data
     const qrData = {
+      type: 'booking_completion',
+      bookingId,
       maidId: maidProfile.id,
-      userId: req.user.id,
-      name: req.user.name,
-      email: req.user.email,
-      type: 'maid_verification',
-      timestamp: new Date().toISOString()
+      maidProfileId: maidProfile.id,
+      maidUserId: req.user.id,
+      maidName: req.user.name,
+      maidEmail: req.user.email,
+      generatedAt: new Date().toISOString()
     };
 
     res.json({
@@ -425,10 +500,15 @@ const generateMaidQRCode = async (req, res) => {
           userId: req.user.id,
           name: req.user.name,
           email: req.user.email
+        },
+        booking: {
+          id: booking.id,
+          status: booking.status,
+          serviceName: booking.service?.name,
+          customerName: booking.customer?.name
         }
       }
     });
-
   } catch (error) {
     console.error('❌ Error generating QR code:', error);
     res.status(500).json({

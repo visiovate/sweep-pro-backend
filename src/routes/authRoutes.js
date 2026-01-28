@@ -509,6 +509,31 @@ router.get('/me', authenticateToken, async (req, res) => {
   }
 });
 
+// Get all available apartments
+router.get('/apartments', async (req, res) => {
+  try {
+    const prisma = await initializePrisma();
+    const apartments = await prisma.apartment.findMany({
+      orderBy: { name: 'asc' }
+    });
+
+    res.json({
+      success: true,
+      message: 'Apartments retrieved successfully',
+      data: {
+        apartments
+      }
+    });
+  } catch (error) {
+    console.error('Get apartments error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve apartments',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 // Logout endpoint (optional - mainly for clearing client-side token)
 router.post('/logout', authenticateToken, async (req, res) => {
   try {
