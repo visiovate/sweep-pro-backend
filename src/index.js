@@ -49,6 +49,9 @@ const { initializePrisma, disconnectDatabase } = require('./utils/database');
 // Initialize Firebase Admin SDK
 const { initializeFirebaseAdmin } = require('./config/firebase');
 
+// Import Redis utility
+const { testRedisConnection } = require('./config/redis');
+
 // Import notification service
 const notificationService = require('./services/notificationService');
 
@@ -236,19 +239,21 @@ if (process.env.NODE_ENV !== 'test') {
       }
       
       // Initialize BullMQ job scheduler
+      // ⚠️ MOVED: Job scheduler initialization moved to worker (separate npm run worker)
       if (redisConnected) {
-        await JobScheduler.initialize();
-        console.log('✅ BullMQ Job Scheduler initialized successfully');
-        console.log('📋 Background worker should be running separately: npm run worker');
+        console.log('ℹ️ BullMQ Job Scheduler runs in separate worker process');
+        console.log('📋 Start the background worker with: npm run worker');
       }
       
       // Initialize automatic service scheduler after database is ready
-      await automaticScheduler.init();
-      console.log('✅ Automatic service scheduler initialized');
+      // ⚠️ MOVED: Automatic service scheduler moved to separate cron service
+      console.log('ℹ️ Automatic service scheduler runs in separate process');
       
       // Initialize buffer period scheduler
-      bufferPeriodScheduler.start();
-      console.log('✅ Buffer period scheduler initialized');
+      // ⚠️ MOVED: Buffer period scheduler moved to separate cron service
+      console.log('ℹ️ Buffer period scheduler runs in separate process');
+      
+      console.log('✅ All schedulers initialized (running in separate processes)');
       
     } catch (error) {
       console.error('❌ Failed to initialize database:', error);

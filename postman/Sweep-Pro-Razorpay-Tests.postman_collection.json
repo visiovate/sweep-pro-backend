@@ -1,0 +1,385 @@
+{
+  "info": {
+    "_postman_id": "razorpay-tests-suite",
+    "name": "Sweep Pro - Razorpay Payment Tests",
+    "description": "Complete test suite for Razorpay subscription payment flow",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Login User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"testuser@example.com\",\n  \"password\": \"YourPassword123\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/auth/login",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login to get JWT token. Save the token from response to use in other requests."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Subscription Management",
+      "item": [
+        {
+          "name": "Get Available Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:3000/api/subscriptions/plans",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "subscriptions",
+                "plans"
+              ]
+            },
+            "description": "Get list of available subscription plans"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{JWT_TOKEN}}",
+                "description": "Replace {{JWT_TOKEN}} with actual token from login response"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planId\": \"plan-id-from-plans-endpoint\",\n  \"billingCycle\": \"MONTHLY\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/subscriptions/subscribe",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "subscriptions",
+                "subscribe"
+              ]
+            },
+            "description": "Create a new subscription. Response will include subscriptionId needed for payment."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Subscription",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{JWT_TOKEN}}",
+                "description": "Replace {{JWT_TOKEN}} with actual token"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3000/api/subscriptions/my-subscription",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "subscriptions",
+                "my-subscription"
+              ]
+            },
+            "description": "Get current user's subscription details"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Razorpay Payment - CREATE ORDER (Main Test)",
+      "item": [
+        {
+          "name": "Create Razorpay Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test: Check if response is successful",
+                  "if (pm.response.code === 201) {",
+                  "    console.log('✅ Payment order created successfully!');",
+                  "    var jsonData = pm.response.json();",
+                  "    ",
+                  "    // Save order details to environment for next test",
+                  "    pm.environment.set('RAZORPAY_ORDER_ID', jsonData.order.id);",
+                  "    pm.environment.set('RAZORPAY_AMOUNT', jsonData.order.amount);",
+                  "    pm.environment.set('RAZORPAY_CURRENCY', jsonData.order.currency);",
+                  "    pm.environment.set('RAZORPAY_KEY_ID', jsonData.key);",
+                  "    ",
+                  "    console.log('Order ID: ' + jsonData.order.id);",
+                  "    console.log('Amount: ' + jsonData.order.amount);",
+                  "    console.log('Key: ' + jsonData.key);",
+                  "} else {",
+                  "    console.log('❌ Failed to create order');",
+                  "    console.log('Status: ' + pm.response.code);",
+                  "    console.log('Response: ' + pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{JWT_TOKEN}}",
+                "description": "Replace {{JWT_TOKEN}} with actual JWT token"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subscriptionId\": \"{{SUBSCRIPTION_ID}}\",\n  \"amount\": 99999,\n  \"currency\": \"INR\"\n}",
+              "description": "subscriptionId: Get from 'Create Subscription' or 'Get My Subscription' response\namount: Amount in paise (99999 = ₹999.99)\ncurrency: INR for India"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/payments/razorpay/subscription/create-order",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "payments",
+                "razorpay",
+                "subscription",
+                "create-order"
+              ]
+            },
+            "description": "**THIS IS THE MAIN TEST FOR YOUR ISSUE**\n\nCreate a Razorpay payment order for subscription payment.\n\n**Expected Response (201):**\n```json\n{\n  \"success\": true,\n  \"order\": {\n    \"id\": \"order_xxxxx\",\n    \"amount\": 99999,\n    \"currency\": \"INR\",\n    ...\n  },\n  \"key\": \"rzp_test_xxxxx\"\n}\n```\n\n**Variables needed:**\n- {{JWT_TOKEN}}: Your authentication token from login\n- {{SUBSCRIPTION_ID}}: Subscription ID from create subscription endpoint"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Razorpay Payment - VERIFY PAYMENT",
+      "item": [
+        {
+          "name": "Verify Razorpay Payment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Payment verified successfully!');",
+                  "    var jsonData = pm.response.json();",
+                  "    console.log('Payment ID: ' + jsonData.payment.id);",
+                  "    console.log('Status: ' + jsonData.payment.status);",
+                  "} else {",
+                  "    console.log('❌ Payment verification failed');",
+                  "    console.log('Response: ' + pm.response.text());",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{JWT_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"razorpay_order_id\": \"{{RAZORPAY_ORDER_ID}}\",\n  \"razorpay_payment_id\": \"pay_xxxxx\",\n  \"razorpay_signature\": \"signature_from_razorpay\",\n  \"payment_method\": \"card\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/payments/razorpay/verify",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "payments",
+                "razorpay",
+                "verify"
+              ]
+            },
+            "description": "Verify Razorpay payment signature and process successful payment.\n\n**Note:** In production, you would get razorpay_payment_id and razorpay_signature from Razorpay after user completes payment in checkout modal."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Razorpay Payment - HANDLE FAILURE",
+      "item": [
+        {
+          "name": "Handle Payment Failure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{JWT_TOKEN}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"razorpay_order_id\": \"{{RAZORPAY_ORDER_ID}}\",\n  \"error_code\": \"PAYMENT_CANCELLED\",\n  \"error_description\": \"User cancelled the payment\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:3000/api/payments/razorpay/failure",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "payments",
+                "razorpay",
+                "failure"
+              ]
+            },
+            "description": "Handle payment failure or cancellation"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Debug - Check Payment Status",
+      "item": [
+        {
+          "name": "Get Payment Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{JWT_TOKEN}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:3000/api/payments/{{PAYMENT_ID}}",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "3000",
+              "path": [
+                "api",
+                "payments",
+                "{{PAYMENT_ID}}"
+              ]
+            },
+            "description": "Get details of a specific payment"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "JWT_TOKEN",
+      "value": "",
+      "type": "string",
+      "description": "Authentication token from login. Get this from step 1."
+    },
+    {
+      "key": "SUBSCRIPTION_ID",
+      "value": "",
+      "type": "string",
+      "description": "Subscription ID from create/get subscription endpoint"
+    },
+    {
+      "key": "RAZORPAY_ORDER_ID",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated from create order response"
+    },
+    {
+      "key": "RAZORPAY_AMOUNT",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated from create order response"
+    },
+    {
+      "key": "RAZORPAY_CURRENCY",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated from create order response"
+    },
+    {
+      "key": "RAZORPAY_KEY_ID",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated from create order response"
+    },
+    {
+      "key": "PAYMENT_ID",
+      "value": "",
+      "type": "string",
+      "description": "Payment ID for debugging"
+    }
+  ]
+}

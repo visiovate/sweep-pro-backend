@@ -321,6 +321,61 @@ const getUserSubscription = async (req, res) => {
       });
     }
 
+    // CRITICAL VALIDATION: Verify ACTIVE subscription has a COMPLETED payment
+    // If an ACTIVE subscription doesn't have a COMPLETED payment, revert it to PENDING_PAYMENT
+    if (subscription.status === 'ACTIVE') {
+      const completedPayment = await prisma.payment.findFirst({
+        where: {
+          subscriptionId: subscription.id,
+          status: 'COMPLETED'
+        }
+      });
+
+      if (!completedPayment) {
+        console.warn(`⚠️  CRITICAL: ACTIVE subscription ${subscription.id} has NO completed payment. Reverting to PENDING_PAYMENT.`);
+        
+        // Revert to PENDING_PAYMENT
+        subscription = await prisma.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: 'PENDING_PAYMENT',
+            updatedAt: new Date()
+          },
+          include: {
+            plan: {
+              include: {
+                service: true
+              }
+            },
+            customer: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true,
+                    address: true
+                  }
+                }
+              }
+            },
+            payments: {
+              orderBy: {
+                createdAt: 'desc'
+              }
+            }
+          }
+        });
+
+        return res.json({
+          success: true,
+          subscription,
+          message: 'Subscription was in invalid state (ACTIVE without payment). Reverted to PENDING_PAYMENT. Please complete payment.'
+        });
+      }
+    }
+
     res.json({ 
       success: true,
       subscription 
@@ -363,7 +418,7 @@ const getMonthlySubscriptionStatus = async (req, res) => {
 
     const customerIdCandidates = [customerProfile.id, userId];
 
-    // Get active subscription
+    // ✅ FIXED: Only return ACTIVE subscriptions (not PENDING_PAYMENT)
     const subscription = await prisma.subscription.findFirst({
       where: {
         customerId: { in: customerIdCandidates },
@@ -375,7 +430,33 @@ const getMonthlySubscriptionStatus = async (req, res) => {
     if (!subscription) {
       return res.json({
         hasActiveSubscription: false,
-        message: 'No active subscription found'
+        message: 'No active subscription found. Please complete payment or purchase a subscription.'
+      });
+    }
+
+    // CRITICAL VALIDATION: Verify ACTIVE subscription has a COMPLETED payment
+    const completedPayment = await prisma.payment.findFirst({
+      where: {
+        subscriptionId: subscription.id,
+        status: 'COMPLETED'
+      }
+    });
+
+    if (!completedPayment) {
+      console.warn(`⚠️  CRITICAL: ACTIVE subscription ${subscription.id} has NO completed payment. Reverting to PENDING_PAYMENT.`);
+      
+      // Revert to PENDING_PAYMENT
+      await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: {
+          status: 'PENDING_PAYMENT',
+          updatedAt: new Date()
+        }
+      });
+
+      return res.json({
+        hasActiveSubscription: false,
+        message: 'Subscription was in invalid state. Reverted to PENDING_PAYMENT. Please complete payment to activate.'
       });
     }
 

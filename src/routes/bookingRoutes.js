@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
+const { validateActiveSubscription } = require('../middleware/subscriptionValidation');
 const {
   createBooking,
   getAllBookings,
@@ -16,8 +17,8 @@ const {
 } = require('../controllers/bookingController');
 const { customerCompleteBookingWithQR } = require('../controllers/customerBookingCompletionController');
 
-// Customer routes
-router.post('/', authenticateToken, createBooking);
+// ✅ Customer routes - with subscription validation
+router.post('/', authenticateToken, validateActiveSubscription, createBooking);
 router.get('/my-bookings', authenticateToken, getUserBookings);
 router.get('/available-slots', authenticateToken, getAvailableSlots);
 router.get('/stats', authenticateToken, getBookingStats);

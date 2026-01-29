@@ -37,6 +37,259 @@ const connection = createRedisConnection();
 const ASSIGNMENT_REQUEST_EXPIRY_HOURS = 24; // Assignment request expires after 24 hours
 const MIN_HOURS_BEFORE_SERVICE = 2; // Minimum hours before service to accept assignment
 
+// Job type constants
+const JOB_TYPES = {
+  CREATE_ASSIGNMENT_REQUEST: 'create-assignment-request',
+  PROCESS_ALL_ASSIGNMENTS: 'process-all-assignments',
+  HANDLE_EXPIRED_REQUESTS: 'handle-expired-requests',
+  SEND_REMINDER: 'send-reminder',
+};
+
+/**
+ * Main job router - dispatches to appropriate handler based on job type
+ */
+async function handleJob(job) {
+  console.log(`\n🔄 Processing job ${job.id}`);
+  console.log(`   Job Name: ${job.name}`);
+  
+  switch (job.name) {
+    case JOB_TYPES.PROCESS_ALL_ASSIGNMENTS:
+      return await processAllAssignments(job);
+    
+    case JOB_TYPES.HANDLE_EXPIRED_REQUESTS:
+      return await handleExpiredRequests(job);
+    
+    case JOB_TYPES.CREATE_ASSIGNMENT_REQUEST:
+    default:
+      return await processAssignmentJob(job);
+  }
+}
+
+/**
+ * Process all pending bookings that need maid assignment
+ * This is called by the recurring scheduled job
+ */
+async function processAllAssignments(job) {
+  console.log(`📋 Processing all pending assignments...`);
+  console.log(`   Triggered at: ${job.data?.triggeredAt || new Date().toISOString()}`);
+  console.log(`   Is recurring: ${job.data?.isRecurring || false}`);
+  
+  try {
+    const now = getCurrentUTC();
+    
+    // Find all bookings that:
+    // 1. Don't have a maid assigned
+    // 2. Are in PENDING or CONFIRMED status
+    // 3. Haven't had assignment_sent = true
+    // 4. Have a scheduled time in the future
+    const pendingBookings = await retryPrismaOperation(
+      () => prisma.booking.findMany({
+        where: {
+          maidId: null,
+          assignment_sent: { not: true },
+          status: { in: ['PENDING', 'CONFIRMED'] },
+          OR: [
+            { scheduledAt: { gt: now } },
+            { slot_date: { gte: now } },
+          ],
+        },
+        select: {
+          id: true,
+          customerId: true,
+          serviceId: true,
+          scheduledAt: true,
+          slot_date: true,
+          slot_time: true,
+        },
+        take: 100, // Process in batches of 100
+      }),
+      'Find pending bookings'
+    );
+    
+    console.log(`📊 Found ${pendingBookings.length} pending bookings to process`);
+    
+    if (pendingBookings.length === 0) {
+      return { success: true, processed: 0, message: 'No pending bookings found' };
+    }
+    
+    let processed = 0;
+    let failed = 0;
+    const results = [];
+    
+    for (const booking of pendingBookings) {
+      try {
+        // Create a mock job for processAssignmentJob
+        const mockJob = {
+          id: `batch-${job.id}-${booking.id}`,
+          data: {
+            bookingId: booking.id,
+            customerId: booking.customerId,
+            serviceId: booking.serviceId,
+          },
+        };
+        
+        const result = await processAssignmentJob(mockJob);
+        results.push({ bookingId: booking.id, ...result });
+        
+        if (result.success) {
+          processed++;
+        }
+      } catch (error) {
+        console.error(`❌ Failed to process booking ${booking.id}:`, error.message);
+        failed++;
+        results.push({ bookingId: booking.id, success: false, error: error.message });
+      }
+    }
+    
+    console.log(`\n📊 Batch processing complete:`);
+    console.log(`   ✅ Processed: ${processed}`);
+    console.log(`   ❌ Failed: ${failed}`);
+    console.log(`   📋 Total: ${pendingBookings.length}`);
+    
+    return {
+      success: true,
+      processed,
+      failed,
+      total: pendingBookings.length,
+      results,
+    };
+    
+  } catch (error) {
+    console.error(`❌ Failed to process all assignments:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Handle expired assignment requests
+ * Finds requests that have expired and marks them for reassignment
+ */
+async function handleExpiredRequests(job) {
+  console.log(`⏰ Handling expired assignment requests...`);
+  console.log(`   Triggered at: ${job.data?.triggeredAt || new Date().toISOString()}`);
+  
+  try {
+    const now = getCurrentUTC();
+    
+    // Find all expired assignment requests that are still pending
+    const expiredRequests = await retryPrismaOperation(
+      () => prisma.assignmentRequest.findMany({
+        where: {
+          status: 'pending',
+          expiresAt: { lt: now },
+        },
+        include: {
+          booking: {
+            select: {
+              id: true,
+              customerId: true,
+              serviceId: true,
+              status: true,
+              maidId: true,
+            },
+          },
+          maid: {
+            select: {
+              id: true,
+              user: {
+                select: { id: true, name: true },
+              },
+            },
+          },
+        },
+        take: 50, // Process in batches
+      }),
+      'Find expired assignment requests'
+    );
+    
+    console.log(`📊 Found ${expiredRequests.length} expired assignment requests`);
+    
+    if (expiredRequests.length === 0) {
+      return { success: true, processed: 0, message: 'No expired requests found' };
+    }
+    
+    let processed = 0;
+    let reassigned = 0;
+    const results = [];
+    
+    for (const request of expiredRequests) {
+      try {
+        // Update the expired request status
+        await retryPrismaOperation(
+          () => prisma.$transaction(async (tx) => {
+            // Mark request as expired
+            await tx.assignmentRequest.update({
+              where: { id: request.id },
+              data: { status: 'expired' },
+            });
+            
+            // If booking still needs assignment, reset it
+            if (request.booking && !request.booking.maidId && 
+                ['PENDING', 'CONFIRMED'].includes(request.booking.status)) {
+              await tx.booking.update({
+                where: { id: request.booking.id },
+                data: {
+                  assignment_sent: false,
+                  assignment_sent_at: null,
+                  assignmentStatus: 'PENDING_ASSIGNMENT',
+                  maidId: null,
+                  assignedAt: null,
+                },
+              });
+              
+              console.log(`🔄 Reset booking ${request.booking.id} for reassignment`);
+              reassigned++;
+            }
+          }),
+          `Handle expired request ${request.id}`
+        );
+        
+        processed++;
+        results.push({ requestId: request.id, bookingId: request.booking?.id, success: true });
+        
+        // Send notification to maid about expiration
+        if (request.maid?.user?.id) {
+          setImmediate(() => {
+            prisma.notification.create({
+              data: {
+                userId: request.maid.user.id,
+                type: 'ASSIGNMENT_EXPIRED',
+                title: 'Assignment Request Expired',
+                message: 'An assignment request has expired because you did not respond in time.',
+                data: {
+                  bookingId: request.booking?.id,
+                  assignmentRequestId: request.id,
+                },
+              },
+            }).catch(err => console.error(`⚠️ Failed to send expiry notification:`, err.message));
+          });
+        }
+        
+      } catch (error) {
+        console.error(`❌ Failed to handle expired request ${request.id}:`, error.message);
+        results.push({ requestId: request.id, success: false, error: error.message });
+      }
+    }
+    
+    console.log(`\n📊 Expired request handling complete:`);
+    console.log(`   ✅ Processed: ${processed}`);
+    console.log(`   🔄 Reassigned: ${reassigned}`);
+    console.log(`   📋 Total: ${expiredRequests.length}`);
+    
+    return {
+      success: true,
+      processed,
+      reassigned,
+      total: expiredRequests.length,
+      results,
+    };
+    
+  } catch (error) {
+    console.error(`❌ Failed to handle expired requests:`, error.message);
+    throw error;
+  }
+}
+
 /**
  * Process a single assignment job
  * Creates assignment request for a booking
@@ -44,7 +297,7 @@ const MIN_HOURS_BEFORE_SERVICE = 2; // Minimum hours before service to accept as
 async function processAssignmentJob(job) {
   const { bookingId, customerId, serviceId } = job.data;
   
-  console.log(`\n🔄 Processing job ${job.id}`);
+  console.log(`\n🔄 Processing assignment job ${job.id}`);
   console.log(`   Booking ID: ${bookingId}`);
   console.log(`   Customer ID: ${customerId}`);
 
@@ -317,7 +570,7 @@ console.log('══════════════════════�
 const worker = new Worker(
   'maid-assignment',
   async (job) => {
-    return await processAssignmentJob(job);
+    return await handleJob(job);
   },
   {
     connection,

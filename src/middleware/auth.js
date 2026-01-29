@@ -50,17 +50,25 @@ const buildFirebaseAuthSuccessResponse = (firebaseDecodedToken, userRecord) => {
 
 const authenticateToken = async (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const authHeader = req.header('Authorization');
+    console.log('🔐 Auth Debug - Authorization header:', authHeader ? `Bearer ${authHeader.substring(0, 20)}...` : 'MISSING');
+    
+    const token = authHeader?.replace('Bearer ', '');
 
     if (!token) {
+      console.log('🔐 Auth Debug - Token not found in Authorization header');
       throw new Error('Token missing');
     }
 
+    console.log('🔐 Auth Debug - Token found, length:', token.length);
     let decoded = null;
 
     try {
+      console.log('🔐 Auth Debug - JWT_SECRET configured:', !!process.env.JWT_SECRET);
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+      console.log('🔐 Auth Debug - JWT verified successfully, userId:', decoded?.userId || decoded?.id);
     } catch (jwtError) {
+      console.log('🔐 Auth Debug - JWT verification failed:', jwtError.message);
       // Not a valid JWT. Try Firebase ID token (Google sign-in sessions).
       try {
         const firebaseAuth = getFirebaseAuth();
@@ -104,11 +112,13 @@ const authenticateToken = async (req, res, next) => {
         req.user = buildFirebaseAuthSuccessResponse(firebaseDecodedToken, userRecord);
         return next();
       } catch (firebaseError) {
+        console.log('🔐 Auth Debug - Firebase verification also failed:', firebaseError.message);
         throw firebaseError;
       }
     }
 
     if (!decoded?.userId && !decoded?.id) {
+      console.log('🔐 Auth Debug - Token payload invalid, decoded:', decoded);
       throw new Error('Invalid token payload');
     }
 
@@ -146,7 +156,8 @@ const authenticateToken = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error('Authentication error:', error?.message || error);
+    console.error('❌ Authentication error:', error?.message || error);
+    console.error('❌ Error stack:', error?.stack);
     res.status(401).json({ error: 'Please authenticate.' });
   }
 };

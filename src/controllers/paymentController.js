@@ -1,6 +1,10 @@
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
+
+// CACHE BUST: Force reload of razorpayService - ${new Date().toISOString()}
+delete require.cache[require.resolve('../services/razorpayService')];
 const razorpayService = require('../services/razorpayService');
+
 const { razorpayKeyId } = require('../utils/razorpay-credintials');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
@@ -455,6 +459,12 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       });
     }
 
+    // Validate amount
+    const parsedAmount = parseFloat(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ error: 'Invalid amount provided' });
+    }
+
     // Get customer profile
     const customerProfile = await prisma.customerProfile.findUnique({
       where: { userId }
@@ -464,11 +474,35 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       return res.status(404).json({ error: 'Customer profile not found' });
     }
 
-    // Verify subscription belongs to user
+    // Verify subscription belongs to user and include relations for razorpayService
     const subscription = await prisma.subscription.findFirst({
       where: {
         id: subscriptionId,
         customerId: customerProfile.id
+      },
+      include: {
+        customer: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true
+              }
+            }
+          }
+        },
+        plan: {
+          include: {
+            service: {
+              select: {
+                name: true,
+                description: true
+              }
+            }
+          }
+        }
       }
     });
 
@@ -476,14 +510,58 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       return res.status(404).json({ error: 'Subscription not found or unauthorized' });
     }
 
+    // Allow payment creation for subscriptions in PENDING_PAYMENT status
+    // (subscriptions are created in PENDING_PAYMENT status and moved to ACTIVE only after verified payment)
     if (subscription.status !== 'PENDING_PAYMENT') {
+      console.warn(`Attempted payment creation for subscription ${subscriptionId} in ${subscription.status} status`);
       return res.status(409).json({
-        error: 'Subscription is not pending payment'
+        error: 'Subscription is not pending payment. Only subscriptions in PENDING_PAYMENT status can proceed to payment.',
+        currentStatus: subscription.status
       });
     }
 
-    // Create Razorpay order
-    const result = await razorpayService.createSubscriptionOrder(subscriptionId, amount, currency);
+    // CRITICAL FIX: Create payment record FIRST before order creation
+    // This ensures payment exists and can be marked FAILED if order creation fails
+    console.log(`Creating initial payment record for subscription ${subscriptionId}`);
+    
+    let paymentRecord = await prisma.payment.findFirst({
+      where: {
+        subscriptionId: subscriptionId,
+        status: 'PENDING'
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!paymentRecord) {
+      // Create new payment record with status PENDING
+      paymentRecord = await prisma.payment.create({
+        data: {
+          subscriptionId: subscriptionId,
+          customerId: userId,
+          amount: parsedAmount,
+          finalAmount: parsedAmount,
+          paymentMethod: 'CARD',
+          status: 'PENDING',
+          paymentType: 'SUBSCRIPTION',
+          gateway: null  // Gateway will be set to 'razorpay' after order creation
+        }
+      });
+      console.log(`✅ Created initial payment record: ${paymentRecord.id}`);
+    } else {
+      // Update existing payment record
+      paymentRecord = await prisma.payment.update({
+        where: { id: paymentRecord.id },
+        data: {
+          amount: parsedAmount,
+          finalAmount: parsedAmount,
+          updatedAt: new Date()
+        }
+      });
+      console.log(`✅ Updated existing payment record: ${paymentRecord.id}`);
+    }
+
+    // Now create Razorpay order (payment record already exists)
+    const result = await razorpayService.createSubscriptionOrder(subscriptionId, parsedAmount, currency);
 
     res.status(201).json({
       success: true,
@@ -494,7 +572,42 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
 
   } catch (error) {
     console.error('Error creating Razorpay subscription order:', error);
-    res.status(500).json({ error: 'Failed to create subscription payment order' });
+    console.error('Error stack:', error.stack);
+    
+    // CRITICAL: Mark payment as FAILED if order creation fails
+    try {
+      const failedPayment = await prisma.payment.findFirst({
+        where: {
+          subscriptionId: subscriptionId,
+          status: 'PENDING'
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+      
+      if (failedPayment) {
+        await prisma.payment.update({
+          where: { id: failedPayment.id },
+          data: {
+            status: 'FAILED',
+            gatewayResponse: {
+              error: error.message,
+              errorCode: error.code,
+              failedAt: new Date().toISOString(),
+              reason: 'Order creation failed - Server error'
+            },
+            updatedAt: new Date()
+          }
+        });
+        console.log(`✅ Marked payment ${failedPayment.id} as FAILED due to order creation error`);
+      }
+    } catch (updateError) {
+      console.error('Failed to mark payment as FAILED:', updateError.message);
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to create subscription payment order',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
