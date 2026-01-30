@@ -20,11 +20,44 @@ const getSubscriptionPlans = async (req, res) => {
   }
 };
 
+// Available time slots (limited to 14:00)
+const AVAILABLE_TIME_SLOTS = [
+  '06:00 - 08:00',
+  '08:00 - 10:00',
+  '10:00 - 12:00',
+  '12:00 - 14:00'
+];
+
+const MAX_USERS_PER_SLOT = 20;
+
 // Subscribe user to a plan
 const subscribeToPlan = async (req, res) => {
   try {
-    const { planId, finalAmount } = req.body;
+    const { planId, finalAmount, startDate: requestedStartDate, serviceDetails } = req.body;
     const userId = req.user.id;
+
+    // Extract timeSlot from serviceDetails
+    const timeSlot = serviceDetails?.timeSlot;
+
+    // Validate time slot if provided
+    if (timeSlot && !AVAILABLE_TIME_SLOTS.includes(timeSlot)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid time slot. Available slots are: ${AVAILABLE_TIME_SLOTS.join(', ')}`
+      });
+    }
+
+    // Check time slot availability if time slot is provided (global count, not date-specific)
+    if (timeSlot) {
+      const slotAvailable = await isTimeSlotAvailableInternal(timeSlot);
+      if (!slotAvailable) {
+        return res.status(400).json({
+          success: false,
+          message: `Time slot ${timeSlot} is fully booked (maximum ${MAX_USERS_PER_SLOT} users). Please select a different time slot.`,
+          slotFull: true
+        });
+      }
+    }
 
     // Get or create customer profile
     let customerProfile = await prisma.customerProfile.findUnique({
@@ -195,6 +228,15 @@ const subscribeToPlan = async (req, res) => {
       }
     });
 
+    // Update user's timeSlot if provided in serviceDetails
+    if (timeSlot) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { timeSlot: timeSlot }
+      });
+      console.log(`✅ Updated user ${userId} timeSlot to: ${timeSlot}`);
+    }
+
     // NOTE: We no longer create an initial PENDING payment here.
     // Razorpay flows create payment records via razorpayService when
     // an order is created and later mark them COMPLETED on verification.
@@ -321,6 +363,61 @@ const getUserSubscription = async (req, res) => {
       });
     }
 
+    // CRITICAL VALIDATION: Verify ACTIVE subscription has a COMPLETED payment
+    // If an ACTIVE subscription doesn't have a COMPLETED payment, revert it to PENDING_PAYMENT
+    if (subscription.status === 'ACTIVE') {
+      const completedPayment = await prisma.payment.findFirst({
+        where: {
+          subscriptionId: subscription.id,
+          status: 'COMPLETED'
+        }
+      });
+
+      if (!completedPayment) {
+        console.warn(`⚠️  CRITICAL: ACTIVE subscription ${subscription.id} has NO completed payment. Reverting to PENDING_PAYMENT.`);
+        
+        // Revert to PENDING_PAYMENT
+        subscription = await prisma.subscription.update({
+          where: { id: subscription.id },
+          data: {
+            status: 'PENDING_PAYMENT',
+            updatedAt: new Date()
+          },
+          include: {
+            plan: {
+              include: {
+                service: true
+              }
+            },
+            customer: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true,
+                    address: true
+                  }
+                }
+              }
+            },
+            payments: {
+              orderBy: {
+                createdAt: 'desc'
+              }
+            }
+          }
+        });
+
+        return res.json({
+          success: true,
+          subscription,
+          message: 'Subscription was in invalid state (ACTIVE without payment). Reverted to PENDING_PAYMENT. Please complete payment.'
+        });
+      }
+    }
+
     res.json({ 
       success: true,
       subscription 
@@ -363,7 +460,7 @@ const getMonthlySubscriptionStatus = async (req, res) => {
 
     const customerIdCandidates = [customerProfile.id, userId];
 
-    // Get active subscription
+    // ✅ FIXED: Only return ACTIVE subscriptions (not PENDING_PAYMENT)
     const subscription = await prisma.subscription.findFirst({
       where: {
         customerId: { in: customerIdCandidates },
@@ -375,7 +472,33 @@ const getMonthlySubscriptionStatus = async (req, res) => {
     if (!subscription) {
       return res.json({
         hasActiveSubscription: false,
-        message: 'No active subscription found'
+        message: 'No active subscription found. Please complete payment or purchase a subscription.'
+      });
+    }
+
+    // CRITICAL VALIDATION: Verify ACTIVE subscription has a COMPLETED payment
+    const completedPayment = await prisma.payment.findFirst({
+      where: {
+        subscriptionId: subscription.id,
+        status: 'COMPLETED'
+      }
+    });
+
+    if (!completedPayment) {
+      console.warn(`⚠️  CRITICAL: ACTIVE subscription ${subscription.id} has NO completed payment. Reverting to PENDING_PAYMENT.`);
+      
+      // Revert to PENDING_PAYMENT
+      await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: {
+          status: 'PENDING_PAYMENT',
+          updatedAt: new Date()
+        }
+      });
+
+      return res.json({
+        hasActiveSubscription: false,
+        message: 'Subscription was in invalid state. Reverted to PENDING_PAYMENT. Please complete payment to activate.'
       });
     }
 
@@ -1335,6 +1458,96 @@ const getUpcomingServices = async (req, res) => {
   }
 };
 
+// Get global time slot counts (total customers who selected each slot)
+const getTimeSlotCounts = async (req, res) => {
+  try {
+    // Get all time slot bookings (global counts)
+    const existingSlots = await prisma.timeSlotBooking.findMany();
+
+    // Build the response with counts for all available slots
+    const slotCounts = AVAILABLE_TIME_SLOTS.map(slot => {
+      const existingSlot = existingSlots.find(s => s.timeSlot === slot);
+      const count = existingSlot ? existingSlot.count : 0;
+      const maxLimit = existingSlot ? existingSlot.maxLimit : MAX_USERS_PER_SLOT;
+      
+      return {
+        timeSlot: slot,
+        count: count,
+        maxLimit: maxLimit,
+        available: maxLimit - count,
+        isDisabled: count >= maxLimit
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        slots: slotCounts,
+        totalSlots: AVAILABLE_TIME_SLOTS.length,
+        maxUsersPerSlot: MAX_USERS_PER_SLOT
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting time slot counts:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to get time slot counts' 
+    });
+  }
+};
+
+// Increment time slot count when a subscription is created/activated
+const incrementTimeSlotCount = async (timeSlot) => {
+  try {
+    // Upsert - create if doesn't exist, increment if exists
+    const result = await prisma.timeSlotBooking.upsert({
+      where: {
+        timeSlot: timeSlot
+      },
+      update: {
+        count: { increment: 1 }
+      },
+      create: {
+        timeSlot: timeSlot,
+        count: 1,
+        maxLimit: MAX_USERS_PER_SLOT
+      }
+    });
+
+    console.log(`✅ Time slot count incremented: ${timeSlot} - new count: ${result.count}`);
+    return result;
+  } catch (error) {
+    console.error('Error incrementing time slot count:', error);
+    throw error;
+  }
+};
+
+// Internal function to check if a time slot is available (used within subscribeToPlan)
+const isTimeSlotAvailableInternal = async (timeSlot) => {
+  try {
+    const existingSlot = await prisma.timeSlotBooking.findUnique({
+      where: {
+        timeSlot: timeSlot
+      }
+    });
+
+    if (!existingSlot) {
+      return true; // Slot doesn't exist yet, so it's available
+    }
+
+    return existingSlot.count < existingSlot.maxLimit;
+  } catch (error) {
+    console.error('Error checking time slot availability:', error);
+    return false;
+  }
+};
+
+// Check if a time slot is available (not at max capacity) - exported version
+const isTimeSlotAvailable = async (timeSlot) => {
+  return isTimeSlotAvailableInternal(timeSlot);
+};
+
 module.exports = {
   getSubscriptionPlans,
   subscribeToPlan,
@@ -1353,5 +1566,10 @@ module.exports = {
   adminStartBufferPeriod,
   adminEndBufferPeriod,
   getSubscriptionAnalytics,
-  getUpcomingServices
+  getUpcomingServices,
+  getTimeSlotCounts,
+  incrementTimeSlotCount,
+  isTimeSlotAvailable,
+  AVAILABLE_TIME_SLOTS,
+  MAX_USERS_PER_SLOT
 };

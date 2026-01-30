@@ -1306,3 +1306,16 @@ model Apartment {
 
   @@index([pincode])
 }
+
+// Track global time slot booking counts for subscription scheduling
+// Count represents total customers who have selected each time slot
+model TimeSlotBooking {
+  id        String   @id @default(uuid())
+  timeSlot  String   @unique // Time slot string e.g., "06:00 - 08:00"
+  count     Int      @default(0) // Number of customers who selected this slot
+  maxLimit  Int      @default(20) // Maximum users allowed per slot
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([timeSlot])
+}

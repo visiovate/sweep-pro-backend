@@ -20,11 +20,13 @@ const {
   adminStartBufferPeriod,
   adminEndBufferPeriod,
   getSubscriptionAnalytics,
-  getUpcomingServices
+  getUpcomingServices,
+  getTimeSlotCounts
 } = require('../controllers/subscriptionController');
 
 // Public routes
 router.get('/plans', getSubscriptionPlans);
+router.get('/time-slot-counts', getTimeSlotCounts); // Public: Get time slot booking counts for a date
 
 
 // Protected routes
