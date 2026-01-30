@@ -4,6 +4,7 @@ const { PrismaClient } = require('@prisma/client');
 const subscriptionBufferService = require('./subscriptionBufferService');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
+const { incrementTimeSlotCount } = require('../controllers/subscriptionController');
 
 const prisma = new PrismaClient();
 
@@ -322,6 +323,18 @@ class RazorpayService {
             customer: { include: { user: true } }
           }
         });
+
+        // Increment time slot count for the user's selected time slot (global count)
+        try {
+          const user = updatedSubscription.customer?.user;
+          if (user?.timeSlot) {
+            await incrementTimeSlotCount(user.timeSlot);
+            console.log(`✅ Time slot count incremented for subscription ${updatedPayment.subscriptionId}`);
+          }
+        } catch (slotError) {
+          console.error('Failed to increment time slot count (non-fatal):', slotError);
+          // Don't throw - this is a non-critical operation
+        }
 
         const existingCycle = await prisma.subscriptionCycle.findFirst({
           where: { subscriptionId: updatedPayment.subscriptionId, cycleNumber: 1 }
