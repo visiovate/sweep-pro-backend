@@ -244,8 +244,8 @@ model Booking {
   status              BookingStatus       @default(PENDING)
   priority            BookingPriority     @default(NORMAL)
   scheduledAt         DateTime
-  slot_date           DateTime            @db.Date // New: explicit date for scheduling
-  slot_time           DateTime            @db.Time // New: explicit time for scheduling
+  slot_date           DateTime?           @db.Date // New: explicit date for scheduling (optional for existing data)
+  slot_time           DateTime?           @db.Time // New: explicit time for scheduling (optional for existing data)
   assignment_sent     Boolean             @default(false) // New: tracks if assignment request sent
   assignment_sent_at  DateTime? // New: when assignment request was sent
   estimatedDuration   Int
