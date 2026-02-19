@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { getPrismaClient } = require('../utils/database');
 const { getFirebaseAuth } = require('../config/firebase');
+const { getJwtSecret } = require('../config/validateEnv');
 
 const buildAuthSuccessResponse = (decodedPayload, userRecord = null) => {
   const baseClaims = {
@@ -65,7 +66,8 @@ const authenticateToken = async (req, res, next) => {
 
     try {
       console.log('🔐 Auth Debug - JWT_SECRET configured:', !!process.env.JWT_SECRET);
-      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+      // SECURITY: Use centralized JWT secret getter - NEVER fallback to default
+      decoded = jwt.verify(token, getJwtSecret());
       console.log('🔐 Auth Debug - JWT verified successfully, userId:', decoded?.userId || decoded?.id);
     } catch (jwtError) {
       console.log('🔐 Auth Debug - JWT verification failed:', jwtError.message);

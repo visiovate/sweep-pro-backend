@@ -398,16 +398,16 @@ const verifyPayment = async (req, res) => {
 // Create Razorpay order for booking payment
 const createRazorpayBookingOrder = async (req, res) => {
   try {
-    const { bookingId, amount, currency } = req.body;
+    const { bookingId } = req.body;  // SECURITY: Only accept bookingId, NOT amount
     const userId = req.user.id;
 
-    if (!bookingId || !amount) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: bookingId, amount' 
+    if (!bookingId) {
+      return res.status(400).json({
+        error: 'Missing required field: bookingId'
       });
     }
 
-    // Verify booking belongs to user
+    // Verify booking exists and belongs to authenticated user
     const booking = await prisma.booking.findFirst({
       where: {
         id: bookingId,
@@ -419,11 +419,21 @@ const createRazorpayBookingOrder = async (req, res) => {
       return res.status(404).json({ error: 'Booking not found or unauthorized' });
     }
 
+    // SECURITY CRITICAL: Use server-side booking amount, NEVER trust frontend
+    // The finalAmount is calculated on backend during booking creation
+    const paymentAmount = booking.finalAmount;
+
+    if (!paymentAmount || paymentAmount <= 0) {
+      return res.status(400).json({
+        error: 'Invalid booking amount. Cannot process payment.'
+      });
+    }
+
     // Check if payment already exists
     const existingPayment = await prisma.payment.findFirst({
-      where: { 
+      where: {
         bookingId,
-        status: { in: ['PENDING', 'COMPLETED'] }
+        status: { in: ['PENDING', 'COMPLETED', 'PROCESSING'] }
       }
     });
 
@@ -431,14 +441,18 @@ const createRazorpayBookingOrder = async (req, res) => {
       return res.status(409).json({ error: 'Payment already exists for this booking' });
     }
 
-    // Create Razorpay order
-    const result = await razorpayService.createBookingOrder(bookingId, amount, currency);
+    // Create Razorpay order with server-side validated amount
+    const currency = 'INR';
+    const result = await razorpayService.createBookingOrder(bookingId, paymentAmount, currency);
 
     res.status(201).json({
       success: true,
       order: result.order,
       booking: result.booking,
-      key: razorpayKeyId
+      key: razorpayKeyId,
+      // Send back the validated amount for frontend confirmation
+      amount: paymentAmount,
+      currency: currency
     });
 
   } catch (error) {
@@ -450,19 +464,13 @@ const createRazorpayBookingOrder = async (req, res) => {
 // Create Razorpay order for subscription payment
 const createRazorpaySubscriptionOrder = async (req, res) => {
   try {
-    const { subscriptionId, amount, currency } = req.body;
+    const { subscriptionId } = req.body;  // SECURITY: Only accept subscriptionId, NOT amount
     const userId = req.user.id;
 
-    if (!subscriptionId || !amount) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: subscriptionId, amount' 
+    if (!subscriptionId) {
+      return res.status(400).json({
+        error: 'Missing required field: subscriptionId'
       });
-    }
-
-    // Validate amount
-    const parsedAmount = parseFloat(amount);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      return res.status(400).json({ error: 'Invalid amount provided' });
     }
 
     // Get customer profile
@@ -474,7 +482,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       return res.status(404).json({ error: 'Customer profile not found' });
     }
 
-    // Verify subscription belongs to user and include relations for razorpayService
+    // Verify subscription exists and belongs to user
     const subscription = await prisma.subscription.findFirst({
       where: {
         id: subscriptionId,
@@ -511,7 +519,6 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     }
 
     // Allow payment creation for subscriptions in PENDING_PAYMENT status
-    // (subscriptions are created in PENDING_PAYMENT status and moved to ACTIVE only after verified payment)
     if (subscription.status !== 'PENDING_PAYMENT') {
       console.warn(`Attempted payment creation for subscription ${subscriptionId} in ${subscription.status} status`);
       return res.status(409).json({
@@ -520,10 +527,19 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       });
     }
 
+    // SECURITY CRITICAL: Use server-side subscription amount, NEVER trust frontend
+    // The amount is set during subscription creation with plan pricing
+    const paymentAmount = subscription.amount;
+
+    if (!paymentAmount || paymentAmount <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subscription amount. Cannot process payment.'
+      });
+    }
+
     // CRITICAL FIX: Create payment record FIRST before order creation
-    // This ensures payment exists and can be marked FAILED if order creation fails
     console.log(`Creating initial payment record for subscription ${subscriptionId}`);
-    
+
     let paymentRecord = await prisma.payment.findFirst({
       where: {
         subscriptionId: subscriptionId,
@@ -538,8 +554,8 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
         data: {
           subscriptionId: subscriptionId,
           customerId: userId,
-          amount: parsedAmount,
-          finalAmount: parsedAmount,
+          amount: paymentAmount,
+          finalAmount: paymentAmount,
           paymentMethod: 'CARD',
           status: 'PENDING',
           paymentType: 'SUBSCRIPTION',
@@ -548,32 +564,36 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       });
       console.log(`✅ Created initial payment record: ${paymentRecord.id}`);
     } else {
-      // Update existing payment record
+      // Update existing payment record with server-side validated amount
       paymentRecord = await prisma.payment.update({
         where: { id: paymentRecord.id },
         data: {
-          amount: parsedAmount,
-          finalAmount: parsedAmount,
+          amount: paymentAmount,
+          finalAmount: paymentAmount,
           updatedAt: new Date()
         }
       });
       console.log(`✅ Updated existing payment record: ${paymentRecord.id}`);
     }
 
-    // Now create Razorpay order (payment record already exists)
-    const result = await razorpayService.createSubscriptionOrder(subscriptionId, parsedAmount, currency);
+    // Now create Razorpay order with server-side validated amount
+    const currency = 'INR';
+    const result = await razorpayService.createSubscriptionOrder(subscriptionId, paymentAmount, currency);
 
     res.status(201).json({
       success: true,
       order: result.order,
       subscription: result.subscription,
-      key: razorpayKeyId
+      key: razorpayKeyId,
+      // Send back the validated amount for frontend confirmation
+      amount: paymentAmount,
+      currency: currency
     });
 
   } catch (error) {
     console.error('Error creating Razorpay subscription order:', error);
     console.error('Error stack:', error.stack);
-    
+
     // CRITICAL: Mark payment as FAILED if order creation fails
     try {
       const failedPayment = await prisma.payment.findFirst({
@@ -583,7 +603,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
         },
         orderBy: { createdAt: 'desc' }
       });
-      
+
       if (failedPayment) {
         await prisma.payment.update({
           where: { id: failedPayment.id },
@@ -603,8 +623,8 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     } catch (updateError) {
       console.error('Failed to mark payment as FAILED:', updateError.message);
     }
-    
-    res.status(500).json({ 
+
+    res.status(500).json({
       error: 'Failed to create subscription payment order',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -739,49 +759,58 @@ const getPaymentStatus = async (req, res) => {
 };
 
 // Razorpay webhook handler
+// SECURITY: This handler receives ALREADY VERIFIED webhooks from middleware
+// The webhookSignatureVerifier middleware verifies HMAC-SHA256 signature using raw body before this runs
 const handleRazorpayWebhook = async (req, res) => {
   try {
-    const webhookSignature = req.headers['x-razorpay-signature'];
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    
-    if (!webhookSecret) {
-      console.error('Razorpay webhook secret not configured');
-      return res.status(400).json({ error: 'Webhook secret not configured' });
-    }
-
-    // Verify webhook signature
-    const body = JSON.stringify(req.body);
-    const expectedSignature = crypto
-      .createHmac('sha256', webhookSecret)
-      .update(body)
-      .digest('hex');
-
-    if (expectedSignature !== webhookSignature) {
-      return res.status(400).json({ error: 'Invalid webhook signature' });
-    }
+    // SECURITY: Signature has already been verified by razorpayWebhookVerifier middleware
+    // req.body is already parsed and validated
+    // Do NOT attempt to re-verify signature here
 
     const { event, payload } = req.body;
-    
+
+    if (!event) {
+      console.warn('⚠️  Webhook received without event type');
+      return res.json({ success: true });  // Accept silently to prevent retry storms
+    }
+
+    console.log(`📬 [WEBHOOK] Received event: ${event}`);
+
     // Handle different webhook events
     switch (event) {
       case 'payment.captured':
-        await handlePaymentCaptured(payload.payment.entity);
+        console.log('💳 [WEBHOOK] Processing payment.captured event');
+        if (payload?.payment?.entity) {
+          await handlePaymentCaptured(payload.payment.entity);
+        }
         break;
+
       case 'payment.failed':
-        await handlePaymentFailed(payload.payment.entity);
+        console.log('❌ [WEBHOOK] Processing payment.failed event');
+        if (payload?.payment?.entity) {
+          await handlePaymentFailed(payload.payment.entity);
+        }
         break;
+
       case 'refund.created':
-        await handleRefundCreated(payload.refund.entity);
+        console.log('🔄 [WEBHOOK] Processing refund.created event');
+        if (payload?.refund?.entity) {
+          await handleRefundCreated(payload.refund.entity);
+        }
         break;
+
       default:
-        console.log(`Unhandled webhook event: ${event}`);
+        console.log(`ℹ️  [WEBHOOK] Unhandled webhook event: ${event}`);
     }
 
-    res.json({ success: true });
+    // Always return 200 OK to prevent Razorpay retry storms
+    res.json({ success: true, message: 'Webhook processed' });
 
   } catch (error) {
-    console.error('Error handling Razorpay webhook:', error);
-    res.status(500).json({ error: 'Failed to process webhook' });
+    console.error('❌ [WEBHOOK] Error processing webhook:', error.message);
+    // Still return 200 to prevent retries, but log the error
+    console.error('❌ [WEBHOOK] Error details:', error);
+    res.json({ success: true, message: 'Webhook processed (with errors)' });
   }
 };
 
