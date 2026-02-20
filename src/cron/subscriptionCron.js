@@ -7,7 +7,8 @@
  * Command: node src/cron/subscriptionCron.js
  */
 
-const { PrismaClient } = require('@prisma/client');
+const { initializePrisma, getPrismaClient } = require("../utils/database");
+// const { PrismaClient } = require('@prisma/client');
 const { retryPrismaOperation, withTimeout } = require('../utils/retryUtils');
 
 const prisma = new PrismaClient({ log: ['error', 'warn'] });
@@ -34,7 +35,7 @@ async function runCron() {
     // 1. Activate buffer periods that should start today
     console.log('📅 Checking buffer period activations...');
     const buffersToActivate = await retryPrismaOperation(
-      () => prisma.bufferPeriod.findMany({
+      () => getPrismaClient().bufferPeriod.findMany({
         where: {
           status: 'ACTIVE',
           startDate: { lte: today },
@@ -50,7 +51,7 @@ async function runCron() {
     for (const buffer of buffersToActivate) {
       try {
         await retryPrismaOperation(
-          () => prisma.subscription.update({
+          () => getPrismaClient().subscription.update({
             where: { id: buffer.subscriptionId },
             data: {
               isInBufferPeriod: true,
@@ -72,7 +73,7 @@ async function runCron() {
     // 2. Complete buffer periods that should end today
     console.log('📅 Checking buffer period completions...');
     const buffersToComplete = await retryPrismaOperation(
-      () => prisma.bufferPeriod.findMany({
+      () => getPrismaClient().bufferPeriod.findMany({
         where: {
           status: 'ACTIVE',
           endDate: { lte: today },
@@ -87,7 +88,7 @@ async function runCron() {
     for (const buffer of buffersToComplete) {
       try {
         await retryPrismaOperation(
-          () => prisma.$transaction(async (tx) => {
+          () => getPrismaClient().$transaction(async (tx) => {
             await tx.bufferPeriod.update({
               where: { id: buffer.id },
               data: {
@@ -119,7 +120,7 @@ async function runCron() {
     // 3. Process subscription renewals
     console.log('📅 Checking subscription renewals...');
     const subscriptionsToRenew = await retryPrismaOperation(
-      () => prisma.subscription.findMany({
+      () => getPrismaClient().subscription.findMany({
         where: {
           status: 'ACTIVE',
           autoRenew: true,
@@ -139,7 +140,7 @@ async function runCron() {
         newEndDate.setMonth(newEndDate.getMonth() + 1); // Add 1 month
         
         await retryPrismaOperation(
-          () => prisma.subscription.update({
+          () => getPrismaClient().subscription.update({
             where: { id: subscription.id },
             data: {
               startDate: subscription.endDate,
@@ -169,7 +170,7 @@ async function runCron() {
     console.log(`║   Errors: ${stats.errors}`);
     console.log('═══════════════════════════════════════════════════════\n');
     
-    await prisma.$disconnect();
+    await getPrismaClient().$disconnect();
     process.exit(0);
     
   } catch (error) {
@@ -180,24 +181,24 @@ async function runCron() {
     console.error(`║   Error: ${error.message}`);
     console.error('═══════════════════════════════════════════════════════\n');
     
-    await prisma.$disconnect();
+    await getPrismaClient().$disconnect();
     process.exit(1);
   }
 }
 
 process.on('SIGTERM', async () => {
-  await prisma.$disconnect();
+  await getPrismaClient().$disconnect();
   process.exit(143);
-});
+// Initialization done by initializePrisma()
 
 process.on('SIGINT', async () => {
-  await prisma.$disconnect();
+  await getPrismaClient().$disconnect();
   process.exit(130);
-});
+// Initialization done by initializePrisma()
 
 withTimeout(runCron(), CRON_TIMEOUT_MS, 'Subscription cron')
   .catch(async (error) => {
     console.error('❌ Cron timeout or fatal error:', error);
-    await prisma.$disconnect();
+    await getPrismaClient().$disconnect();
     process.exit(1);
   });

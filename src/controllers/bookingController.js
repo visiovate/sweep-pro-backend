@@ -1,9 +1,10 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
 const bookingDeduplicationService = require('../services/bookingDeduplicationService');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 const createBooking = async (req, res) => {
   try {

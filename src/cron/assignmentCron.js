@@ -12,7 +12,7 @@
  */
 
 
-const { PrismaClient } = require('@prisma/client');
+const { initializePrisma, getPrismaClient } = require('../utils/database');
 const { Queue } = require('bullmq');
 const { createRedisConnection, closeRedisConnection } = require('../config/redis');
 const { retryPrismaOperation, retryRedisOperation, withTimeout } = require('../utils/retryUtils');
@@ -28,9 +28,9 @@ const CRON_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes max runtime
 const BATCH_SIZE = 100; // Process bookings in batches
 
 // Initialize Prisma
-const prisma = new PrismaClient({
-  log: ['error', 'warn'],
-});
+// Initialize using singleton pattern
+// Log configured in initializePrisma
+// Initialization done by initializePrisma()
 
 let redisConnection = null;
 let assignmentQueue = null;
@@ -56,7 +56,7 @@ async function initializeQueue() {
 /**
  * Find bookings that need assignment requests
  * Criteria:
- * - Service datetime (slot_date + slot_time combined) is 20 hours from now (±15 min)
+ * - Service datetime is within the next 20 hours
  * - assignment_sent = false
  * - status is PENDING or CONFIRMED
  * - maidId is null (not yet assigned)
@@ -65,13 +65,13 @@ async function findBookingsNeedingAssignment() {
   const now = getCurrentUTC();
   const { windowStart, windowEnd } = get20HourTriggerWindow(now);
 
-  console.log(`📅 Trigger window (20h ±15min):`);
+  console.log(`📅 Trigger window (now to 20h ahead):`);
   console.log(`   Start: ${formatDateTimeForLog(windowStart)}`);
   console.log(`   End:   ${formatDateTimeForLog(windowEnd)}`);
 
   // Fetch all eligible bookings (we'll filter combined datetime in JS for simplicity)
   const bookings = await retryPrismaOperation(
-    () => prisma.booking.findMany({
+    () => getPrismaClient().booking.findMany({
       where: {
         assignment_sent: false,
         status: {
@@ -89,6 +89,7 @@ async function findBookingsNeedingAssignment() {
               select: {
                 subscription: {
                   select: {
+                    id: true,
                     isInBufferPeriod: true,
                   },
                 },
@@ -142,13 +143,33 @@ async function findBookingsNeedingAssignment() {
  * 
  * This removes distributed transactions and prevents lost assignments
  */
-async function enqueueAssignmentJob(booking) {
-  const { id: bookingId, customerId, customer, service } = booking;
+async function enqueueAssignmentJob(booking, prisma) {
+  const { id: bookingId, customerId, customer, service, scheduledAt } = booking;
 
-  // Skip if customer is in buffer period
+  // Skip if customer is in buffer period (subscription-level flag)
   if (customer?.customerProfile?.subscription?.isInBufferPeriod) {
     console.log(`⏸️  Skipping booking ${bookingId}: customer in buffer period`);
     return { skipped: true, reason: 'buffer_period' };
+  }
+
+  // Also check if the specific booking date falls within a buffer period
+  if (customer?.customerProfile?.subscription) {
+    const subscriptionId = customer.customerProfile.subscription.id;
+    const bookingDate = new Date(scheduledAt);
+    
+    const bufferPeriodForDate = await getPrismaClient().bufferPeriod.findFirst({
+      where: {
+        subscriptionId,
+        status: 'ACTIVE',
+        startDate: { lte: bookingDate },
+        endDate: { gte: bookingDate }
+      }
+    });
+    
+    if (bufferPeriodForDate) {
+      console.log(`⏸️  Skipping booking ${bookingId}: booking date falls in buffer period`);
+      return { skipped: true, reason: 'buffer_period_date' };
+    }
   }
 
   try {
@@ -206,15 +227,17 @@ async function runCron() {
   console.log('║   🤖 ASSIGNMENT CRON JOB');
   console.log(`║   Started: ${new Date().toISOString()}`);
   console.log('═══════════════════════════════════════════════════════\n');
-  
+
   let stats = {
     found: 0,
     enqueued: 0,
     skipped: 0,
     errors: 0,
   };
-  
+
   try {
+    // Initialize Prisma database connection
+    await initializePrisma();
     // Initialize connections
     await initializeQueue();
     
@@ -225,7 +248,7 @@ async function runCron() {
     // Process each booking
     for (const booking of bookings) {
       try {
-        const result = await enqueueAssignmentJob(booking);
+        const result = await enqueueAssignmentJob(booking, prisma);
         
         if (result.skipped) {
           stats.skipped++;
@@ -288,7 +311,7 @@ async function cleanup() {
   }
   
   try {
-    await prisma.$disconnect();
+    await getPrismaClient().$disconnect();
   } catch (error) {
     console.warn('⚠️  Failed to disconnect Prisma:', error.message);
   }
@@ -303,25 +326,25 @@ process.on('SIGTERM', async () => {
   console.log('⚠️  SIGTERM received, shutting down...');
   await cleanup();
   process.exit(143); // 128 + 15 (SIGTERM)
-});
+// Initialization done by initializePrisma()
 
 process.on('SIGINT', async () => {
   console.log('⚠️  SIGINT received, shutting down...');
   await cleanup();
   process.exit(130); // 128 + 2 (SIGINT)
-});
+// Initialization done by initializePrisma()
 
 process.on('unhandledRejection', async (reason, promise) => {
   console.error('❌ Unhandled Rejection:', reason);
   await cleanup();
   process.exit(1);
-});
+// Initialization done by initializePrisma()
 
 process.on('uncaughtException', async (error) => {
   console.error('❌ Uncaught Exception:', error);
   await cleanup();
   process.exit(1);
-});
+// Initialization done by initializePrisma()
 
 // Run with timeout
 withTimeout(() => runCron(), CRON_TIMEOUT_MS, 'Cron job')

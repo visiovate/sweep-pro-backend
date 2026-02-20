@@ -15,7 +15,8 @@
  */
 
 const { Worker } = require('bullmq');
-const { PrismaClient } = require('@prisma/client');
+const { initializePrisma, getPrismaClient } = require("../utils/database");
+// const { PrismaClient } = require('@prisma/client');
 const { createRedisConnection } = require('../config/redis');
 const { retryPrismaOperation, retryRedisOperation } = require('../utils/retryUtils');
 const {
@@ -26,9 +27,9 @@ const {
 } = require('../utils/timeUtils');
 
 // Initialize Prisma
-const prisma = new PrismaClient({
-  log: ['error', 'warn'],
-});
+// Initialize using singleton pattern
+// Log configured in initializePrisma
+// Initialization done by initializePrisma()
 
 // Create Redis connection
 const connection = createRedisConnection();
@@ -83,7 +84,7 @@ async function processAllAssignments(job) {
     // 3. Haven't had assignment_sent = true
     // 4. Have a scheduled time in the future
     const pendingBookings = await retryPrismaOperation(
-      () => prisma.booking.findMany({
+      () => getPrismaClient().booking.findMany({
         where: {
           maidId: null,
           assignment_sent: { not: true },
@@ -173,7 +174,7 @@ async function handleExpiredRequests(job) {
     
     // Find all expired assignment requests that are still pending
     const expiredRequests = await retryPrismaOperation(
-      () => prisma.assignmentRequest.findMany({
+      () => getPrismaClient().assignmentRequest.findMany({
         where: {
           status: 'pending',
           expiresAt: { lt: now },
@@ -216,7 +217,7 @@ async function handleExpiredRequests(job) {
       try {
         // Update the expired request status
         await retryPrismaOperation(
-          () => prisma.$transaction(async (tx) => {
+          () => getPrismaClient().$transaction(async (tx) => {
             // Mark request as expired
             await tx.assignmentRequest.update({
               where: { id: request.id },
@@ -250,7 +251,7 @@ async function handleExpiredRequests(job) {
         // Send notification to maid about expiration
         if (request.maid?.user?.id) {
           setImmediate(() => {
-            prisma.notification.create({
+            getPrismaClient().notification.create({
               data: {
                 userId: request.maid.user.id,
                 type: 'ASSIGNMENT_EXPIRED',
@@ -310,7 +311,7 @@ async function processAssignmentJob(job) {
   try {
     // Use transaction to ensure consistency
     const result = await retryPrismaOperation(
-      () => prisma.$transaction(async (tx) => {
+      () => getPrismaClient().$transaction(async (tx) => {
         // 1. Fetch booking with lock
         const booking = await tx.booking.findUnique({
           where: { id: bookingId },
@@ -349,28 +350,82 @@ async function processAssignmentJob(job) {
           return { success: false, reason: 'buffer_period' };
         }
         
-        // 4. Find eligible maids
-        const eligibleMaids = await findEligibleMaids(tx, booking);
+        // 4. Check for assigned maid first (from CustomerMaidAssignment)
+        let selectedMaid = null;
+        const customerId = booking.customerId;
         
-        if (eligibleMaids.length === 0) {
-          console.log(`⚠️  No eligible maids found for booking ${bookingId}`);
-          
-          // Update booking status
-          await tx.booking.update({
-            where: { id: bookingId },
-            data: {
-              assignmentStatus: 'REJECTED',
-              rejectionReason: 'No eligible maids available',
+        const customerAssignment = await tx.customerMaidAssignment.findFirst({
+          where: {
+            customerId: customerId,
+            isActive: true,
+          },
+          include: {
+            maid: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    maidBookings: {
+                      where: {
+                        scheduledAt: booking.scheduledAt,
+                        status: {
+                          not: 'CANCELLED',
+                        },
+                      },
+                      select: {
+                        id: true,
+                      },
+                    },
+                  },
+                },
+              },
             },
-          });
+          },
+        });
+        
+        if (customerAssignment && customerAssignment.maid) {
+          const assignedMaid = customerAssignment.maid;
           
-          return { success: false, reason: 'no_eligible_maids' };
+          // Check if assigned maid is active, verified, and available
+          if (
+            assignedMaid.status === 'ACTIVE' &&
+            assignedMaid.isVerified &&
+            assignedMaid.user.maidBookings.length === 0 // No conflicting bookings
+          ) {
+            selectedMaid = assignedMaid;
+            console.log(`✅ Using assigned maid: ${selectedMaid.user.name} (${selectedMaid.user.email})`);
+          } else {
+            console.log(`⚠️  Assigned maid ${assignedMaid.user.name} is not available (status: ${assignedMaid.status}, verified: ${assignedMaid.isVerified}, conflicting bookings: ${assignedMaid.user.maidBookings.length})`);
+          }
+        } else {
+          console.log(`ℹ️  No assigned maid found for customer ${customerId}`);
         }
         
-        // 5. Select best maid (highest rating, least bookings)
-        const selectedMaid = selectBestMaid(eligibleMaids);
-        
-        console.log(`✅ Selected maid: ${selectedMaid.user.name} (Rating: ${selectedMaid.rating})`);
+        // 5. If no assigned maid available, find eligible maids by rating
+        if (!selectedMaid) {
+          const eligibleMaids = await findEligibleMaids(tx, booking);
+          
+          if (eligibleMaids.length === 0) {
+            console.log(`⚠️  No eligible maids found for booking ${bookingId}`);
+            
+            // Update booking status
+            await tx.booking.update({
+              where: { id: bookingId },
+              data: {
+                assignmentStatus: 'REJECTED',
+                rejectionReason: 'No eligible maids available',
+              },
+            });
+            
+            return { success: false, reason: 'no_eligible_maids' };
+          }
+          
+          // Select best maid (highest rating, least bookings)
+          selectedMaid = selectBestMaid(eligibleMaids);
+          console.log(`✅ Selected maid by rating: ${selectedMaid.user.name} (Rating: ${selectedMaid.rating})`);
+        }
         
         // 6. Calculate expiry time for assignment request
         const now = getCurrentUTC();
@@ -403,13 +458,14 @@ async function processAssignmentJob(job) {
 
           // 8. Mark assignment_sent = TRUE inside transaction (AFTER successful assignment creation)
           // FIX #1: This completes the atomic operation pattern
+          // NOTE: Booking.maidId references User.id, not MaidProfile.id
           await tx.booking.update({
             where: { id: bookingId },
             data: {
               assignment_sent: true,
               assignment_sent_at: now,
               assignmentStatus: 'ASSIGNED_PENDING_RESPONSE',
-              maidId: selectedMaid.id,
+              maidId: selectedMaid.user.id, // Use User.id, not MaidProfile.id
               assignedAt: now,
             },
           });
@@ -488,17 +544,18 @@ async function findEligibleMaids(tx, booking) {
           id: true,
           name: true,
           email: true,
-        },
-      },
-      maidBookings: {
-        where: {
-          scheduledAt: booking.scheduledAt,
-          status: {
-            not: 'CANCELLED',
+          // Access maidBookings through user relation
+          maidBookings: {
+            where: {
+              scheduledAt: booking.scheduledAt,
+              status: {
+                not: 'CANCELLED',
+              },
+            },
+            select: {
+              id: true,
+            },
           },
-        },
-        select: {
-          id: true,
         },
       },
     },
@@ -506,7 +563,7 @@ async function findEligibleMaids(tx, booking) {
   
   // Filter out maids with conflicting bookings
   const eligibleMaids = maids.filter(maid => {
-    return maid.maidBookings.length === 0; // No conflicting bookings
+    return maid.user.maidBookings.length === 0; // No conflicting bookings
   });
   
   return eligibleMaids;
@@ -533,7 +590,7 @@ function selectBestMaid(maids) {
 async function sendMaidNotification(maidUserId, booking, assignmentRequest) {
   try {
     await retryPrismaOperation(
-      () => prisma.notification.create({
+      () => getPrismaClient().notification.create({
         data: {
           userId: maidUserId,
           type: 'ASSIGNMENT_REQUEST',
@@ -589,30 +646,30 @@ const worker = new Worker(
 // Worker event listeners
 worker.on('ready', () => {
   console.log('✅ Worker is ready and waiting for jobs');
-});
+// Initialization done by initializePrisma()
 
 worker.on('active', (job) => {
   console.log(`🔄 Worker picked up job ${job.id}: ${job.name}`);
-});
+// Initialization done by initializePrisma()
 
 worker.on('completed', (job, result) => {
   console.log(`✅ Job ${job.id} completed:`, result);
-});
+// Initialization done by initializePrisma()
 
 worker.on('failed', (job, error) => {
   console.error(`❌ Job ${job?.id} failed:`, error.message);
   if (error.stack) {
     console.error(error.stack);
   }
-});
+// Initialization done by initializePrisma()
 
 worker.on('error', (error) => {
   console.error('❌ Worker error:', error);
-});
+// Initialization done by initializePrisma()
 
 worker.on('stalled', (jobId) => {
   console.warn(`⚠️  Job ${jobId} has stalled`);
-});
+// Initialization done by initializePrisma()
 
 // Graceful shutdown
 async function shutdown(signal) {
@@ -622,7 +679,7 @@ async function shutdown(signal) {
     await worker.close();
     console.log('✅ Worker closed gracefully');
     
-    await prisma.$disconnect();
+    await getPrismaClient().$disconnect();
     console.log('✅ Database disconnected');
     
     process.exit(0);
@@ -638,12 +695,12 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection:', reason);
   // Don't exit - let worker continue processing other jobs
-});
+// Initialization done by initializePrisma()
 
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
   // Don't exit immediately - attempt graceful shutdown
   shutdown('UNCAUGHT_EXCEPTION');
-});
+// Initialization done by initializePrisma()
 
 console.log('🔄 Worker is running. Waiting for jobs...\n');

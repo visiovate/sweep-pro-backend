@@ -11,7 +11,7 @@ const { REASSIGNMENT_JOB_TYPES } = require('../queues/adminReassignQueue');
  */
 
 // Initialize Prisma
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Create Redis connection for worker
 const connection = createRedisConnection();

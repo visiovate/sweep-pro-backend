@@ -10,6 +10,7 @@ const emailService = require('../services/notification/EmailService');
 const { initializePrisma } = require('../utils/database');
 // SECURITY: Import JWT secret getter
 const { getJwtSecret } = require('../config/validateEnv');
+const { blacklistToken } = require('../utils/tokenBlacklist');
 
 router.post('/register', registerValidation, async (req, res) => {
   try {
@@ -570,8 +571,9 @@ router.post('/logout', authenticateToken, (req, res) => {
   });
 });
 
-// Create test admin user (for development only)
-if (process.env.NODE_ENV !== 'production') {
+// Create test admin user (for development/test only - NOT production)
+// SECURITY: Explicitly check that NODE_ENV is NOT production
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== undefined) {
   router.post('/create-test-admin', async (req, res) => {
     try {
       // Check if test admin already exists

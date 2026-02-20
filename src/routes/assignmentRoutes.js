@@ -47,7 +47,7 @@ router.post('/admin/send-assignment-request', authenticateToken, authorizeAdmin,
 router.get('/debug/maid-assignments/:maidUserId', authenticateToken, async (req, res) => {
   try {
     const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    const prisma = getPrismaClient();
     const { maidUserId } = req.params;
     
     // Find the maid profile
@@ -154,7 +154,7 @@ router.get('/debug/maid-assignments/:maidUserId', authenticateToken, async (req,
 router.get('/admin/debug/assignment-request/:requestId', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    const prisma = getPrismaClient();
     const { requestId } = req.params;
     
     // Get the assignment request with booking details
@@ -218,7 +218,7 @@ router.get('/admin/debug/assignment-request/:requestId', authenticateToken, auth
 router.get('/admin/debug/reassignment-status', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    const prisma = getPrismaClient();
     
     // Get all bookings with their assignment requests
     const bookings = await prisma.booking.findMany({
@@ -282,7 +282,7 @@ router.get('/admin/debug/reassignment-status', authenticateToken, authorizeAdmin
 router.post('/admin/debug/fix-booking-status/:bookingId', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    const prisma = getPrismaClient();
     const { bookingId } = req.params;
     
     // Get current booking status

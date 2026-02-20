@@ -1,5 +1,6 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Feedback Analytics Service
@@ -15,7 +16,7 @@ class FeedbackAnalyticsService {
       const { days = 30, includeHistory = true } = options;
 
       // Get maid profile
-      const maidUser = await prisma.user.findUnique({
+      const maidUser = await getPrismaClient().user.findUnique({
         where: { id: maidId },
         include: {
           maidProfile: true
@@ -29,7 +30,7 @@ class FeedbackAnalyticsService {
       const maidProfile = maidUser.maidProfile;
 
       // Get all feedback for the maid
-      const allFeedback = await prisma.feedback.findMany({
+      const allFeedback = await getPrismaClient().feedback.findMany({
         where: {
           OR: [
             { ratedMaidId: maidId },
@@ -101,7 +102,7 @@ class FeedbackAnalyticsService {
       if (behaviorCount > 0) avgBehavior /= behaviorCount;
 
       // Get recent feedback for summary (shape used by admin UI)
-      const recentFeedback = await prisma.feedback.findMany({
+      const recentFeedback = await getPrismaClient().feedback.findMany({
         where: {
           OR: [
             { ratedMaidId: maidId },
@@ -135,7 +136,7 @@ class FeedbackAnalyticsService {
           year -= 1;
         }
 
-        const metric = await prisma.maidMonthlyPerformance.findUnique({
+        const metric = await getPrismaClient().maidMonthlyPerformance.findUnique({
           where: {
             maidId_month_year: {
               maidId,
@@ -162,7 +163,7 @@ class FeedbackAnalyticsService {
         startDate.setDate(startDate.getDate() - days);
         startDate.setHours(0, 0, 0, 0);
 
-        ratingHistory = await prisma.maidRatingHistory.findMany({
+        ratingHistory = await getPrismaClient().maidRatingHistory.findMany({
           where: {
             maidId,
             date: {
@@ -177,7 +178,7 @@ class FeedbackAnalyticsService {
       const trend = this.calculateTrend(ratingHistory);
 
       // Get platform average for comparison
-      const allMaidProfiles = await prisma.maidProfile.findMany({
+      const allMaidProfiles = await getPrismaClient().maidProfile.findMany({
         select: { rating: true }
       });
       const platformAverage = allMaidProfiles.length > 0
@@ -232,7 +233,7 @@ class FeedbackAnalyticsService {
   async generateMaidPerformanceReport(maidId, month, year) {
     try {
       // Get or create monthly performance
-      let performance = await prisma.maidMonthlyPerformance.findUnique({
+      let performance = await getPrismaClient().maidMonthlyPerformance.findUnique({
         where: {
           maidId_month_year: {
             maidId,
@@ -248,7 +249,7 @@ class FeedbackAnalyticsService {
       }
 
       // Get maid info
-      const maidUser = await prisma.user.findUnique({
+      const maidUser = await getPrismaClient().user.findUnique({
         where: { id: maidId },
         select: {
           name: true,
@@ -268,7 +269,7 @@ class FeedbackAnalyticsService {
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 1);
 
-      const monthFeedbacks = await prisma.feedback.findMany({
+      const monthFeedbacks = await getPrismaClient().feedback.findMany({
         where: {
           booking: {
             maidId,
@@ -310,7 +311,7 @@ class FeedbackAnalyticsService {
       const prevMonth = month === 1 ? 12 : month - 1;
       const prevYear = month === 1 ? year - 1 : year;
 
-      const previousPerformance = await prisma.maidMonthlyPerformance.findUnique({
+      const previousPerformance = await getPrismaClient().maidMonthlyPerformance.findUnique({
         where: {
           maidId_month_year: {
             maidId,
@@ -379,7 +380,7 @@ class FeedbackAnalyticsService {
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 1);
 
-      const feedbacks = await prisma.feedback.findMany({
+      const feedbacks = await getPrismaClient().feedback.findMany({
         where: {
           booking: {
             maidId,
@@ -404,7 +405,7 @@ class FeedbackAnalyticsService {
 
       if (feedbackCount === 0) {
         // Create empty performance record
-        return await prisma.maidMonthlyPerformance.create({
+        return await getPrismaClient().maidMonthlyPerformance.create({
           data: {
             maidId,
             month,
@@ -435,7 +436,7 @@ class FeedbackAnalyticsService {
       const withCommentsCount = feedbacks.filter(f => f.comment).length;
       const recommendCount = feedbacks.filter(f => f.wouldRecommend === true).length;
 
-      return await prisma.maidMonthlyPerformance.upsert({
+      return await getPrismaClient().maidMonthlyPerformance.upsert({
         where: {
           maidId_month_year: {
             maidId,
@@ -528,17 +529,17 @@ class FeedbackAnalyticsService {
       }
 
       // Total feedback
-      const totalFeedback = await prisma.feedback.count({ where });
+      const totalFeedback = await getPrismaClient().feedback.count({ where });
 
       // By status
-      const byStatus = await prisma.feedback.groupBy({
+      const byStatus = await getPrismaClient().feedback.groupBy({
         by: ['status'],
         where,
         _count: true
       });
 
       // Average rating
-      const avgRating = await prisma.feedback.aggregate({
+      const avgRating = await getPrismaClient().feedback.aggregate({
         where: {
           ...where,
           status: 'ACTIVE'
@@ -547,7 +548,7 @@ class FeedbackAnalyticsService {
       });
 
       // Rating distribution
-      const distribution = await prisma.feedback.groupBy({
+      const distribution = await getPrismaClient().feedback.groupBy({
         by: ['overallRating'],
         where: {
           ...where,
@@ -560,7 +561,7 @@ class FeedbackAnalyticsService {
       const disputedCount = byStatus.find(s => s.status === 'DISPUTED')?._count || 0;
 
       // Most problematic maids
-      const problemMaids = await prisma.booking.groupBy({
+      const problemMaids = await getPrismaClient().booking.groupBy({
         by: ['maidId'],
         where: {
           feedback: {

@@ -49,7 +49,39 @@ class AutomaticServiceScheduler {
   }
 
   /**
+   * Get the days of week a customer should have service based on plan
+   * Sweepro Touch (3 days/week): Mon, Wed, Fri
+   * Sweepro Lux (6 days/week): Mon-Sat (skip maid's weekly off)
+   */
+  getServiceDaysForPlan(sessionsPerWeek, maidWeeklyOff = null) {
+    // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    const weekdayMap = { 'SUNDAY': 0, 'MONDAY': 1, 'TUESDAY': 2, 'WEDNESDAY': 3, 'THURSDAY': 4, 'FRIDAY': 5, 'SATURDAY': 6 };
+    
+    if (sessionsPerWeek === 3) {
+      // 3 days/week: Mon, Wed, Fri
+      return [1, 3, 5];
+    } else if (sessionsPerWeek === 6) {
+      // 6 days/week: All days except maid's weekly off (default Sunday if not set)
+      const maidOffDay = maidWeeklyOff ? weekdayMap[maidWeeklyOff] : 0;
+      return [0, 1, 2, 3, 4, 5, 6].filter(d => d !== maidOffDay);
+    } else {
+      // Default: every day
+      return [0, 1, 2, 3, 4, 5, 6];
+    }
+  }
+
+  /**
+   * Check if a given date is a service day for this customer based on their plan
+   */
+  isServiceDay(date, sessionsPerWeek, maidWeeklyOff = null) {
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const serviceDays = this.getServiceDaysForPlan(sessionsPerWeek, maidWeeklyOff);
+    return serviceDays.includes(dayOfWeek);
+  }
+
+  /**
    * Schedule daily services for all active subscriptions
+   * Respects plan frequency (3 or 6 days/week) and maid's weekly off
    */
   async scheduleDailyServices() {
     console.log('📅 Scheduling daily services...');
@@ -58,6 +90,10 @@ class AutomaticServiceScheduler {
       const today = new Date();
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const tomorrowDayOfWeek = tomorrow.getDay();
+      const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+      console.log(`📆 Tomorrow is ${dayNames[tomorrowDayOfWeek]}`);
       
       // Get all active subscriptions
       const activeSubscriptions = await prisma.subscription.findMany({
@@ -69,7 +105,14 @@ class AutomaticServiceScheduler {
         include: {
           customer: {
             include: {
-              user: true
+              user: true,
+              maidAssignments: {
+                where: { isActive: true },
+                include: {
+                  maid: true
+                },
+                take: 1
+              }
             }
           },
           plan: {
@@ -81,23 +124,46 @@ class AutomaticServiceScheduler {
       });
 
       let servicesScheduled = 0;
+      let skippedNotServiceDay = 0;
 
       for (const subscription of activeSubscriptions) {
+        const customerEmail = subscription.customer.user.email;
+        const sessionsPerWeek = subscription.plan.sessionsPerWeek;
+        
+        // Get assigned maid's weekly off day
+        const assignedMaid = subscription.customer.maidAssignments?.[0]?.maid;
+        const maidWeeklyOff = assignedMaid?.weeklyOffDay || null;
+        
+        // Check if tomorrow is a service day for this plan
+        if (!this.isServiceDay(tomorrow, sessionsPerWeek, maidWeeklyOff)) {
+          const reason = maidWeeklyOff && tomorrow.getDay() === ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'].indexOf(maidWeeklyOff)
+            ? `Maid's weekly off (${maidWeeklyOff})`
+            : `Not a service day for ${sessionsPerWeek} days/week plan`;
+          console.log(`⏭️ Skipping ${customerEmail} - ${reason}`);
+          skippedNotServiceDay++;
+          continue;
+        }
+        
         // Check if customer has paused for tomorrow
         const isBufferDay = await this.isBufferDay(subscription.id, tomorrow);
         
         if (isBufferDay) {
-          console.log(`🛡️ Skipping service for customer ${subscription.customer.user.email} - Buffer day`);
+          console.log(`🛡️ Skipping service for customer ${customerEmail} - Buffer day`);
           continue;
         }
 
         // Check if service already scheduled for tomorrow
+        const tomorrowStart = new Date(tomorrow);
+        tomorrowStart.setHours(0, 0, 0, 0);
+        const tomorrowEnd = new Date(tomorrow);
+        tomorrowEnd.setHours(23, 59, 59, 999);
+        
         const existingBooking = await prisma.booking.findFirst({
           where: {
             customerId: subscription.customer.user.id,
             scheduledAt: {
-              gte: new Date(tomorrow.setHours(0, 0, 0, 0)),
-              lt: new Date(tomorrow.setHours(23, 59, 59, 999))
+              gte: tomorrowStart,
+              lt: tomorrowEnd
             },
             status: {
               not: 'CANCELLED'
@@ -106,7 +172,7 @@ class AutomaticServiceScheduler {
         });
 
         if (existingBooking) {
-          console.log(`📋 Service already scheduled for ${subscription.customer.user.email}`);
+          console.log(`📋 Service already scheduled for ${customerEmail}`);
           continue;
         }
 
@@ -139,6 +205,7 @@ class AutomaticServiceScheduler {
       }
 
       console.log(`✅ Scheduled ${servicesScheduled} services for tomorrow`);
+      console.log(`⏭️ Skipped ${skippedNotServiceDay} (not service day for their plan)`);
       
       // Notify admin about scheduled services
       await NotificationService.notifyAdmin('DAILY_SERVICES_SCHEDULED', {

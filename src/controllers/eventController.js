@@ -1,8 +1,9 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 async function pricingVisited(req, res) {
   try {

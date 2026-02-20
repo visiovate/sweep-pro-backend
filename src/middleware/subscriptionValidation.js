@@ -1,3 +1,4 @@
+const { getPrismaClient } = require('../utils/database');
 /**
  * Middleware to validate subscription status for booking operations
  * CRITICAL: Only ACTIVE subscriptions are allowed to create bookings
@@ -5,7 +6,7 @@
  */
 
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 const validateActiveSubscription = async (req, res, next) => {
   try {

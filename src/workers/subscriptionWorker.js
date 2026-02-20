@@ -7,7 +7,7 @@ const notificationService = require('../services/notificationService');
 const maidSchedulingService = require('../services/maidSchedulingService');
 const BufferDayService = require('../services/BufferDayService');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 const bufferService = new BufferDayService();
 
 /**

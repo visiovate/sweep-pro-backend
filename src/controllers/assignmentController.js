@@ -1,5 +1,6 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 const { isDateOnWeeklyOff } = require('../utils/weekdayUtils');
 
 // Helper function to calculate expiry time (24 hours from now)

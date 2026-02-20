@@ -1,6 +1,7 @@
+const { getPrismaClient } = require('../../utils/database');
 const { PrismaClient } = require('@prisma/client');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Persist a domain event in the NotificationOutboxEvent table.

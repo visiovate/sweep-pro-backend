@@ -1,3 +1,4 @@
+const { getPrismaClient } = require('../utils/database');
 const { Queue } = require('bullmq');
 const { PrismaClient } = require('@prisma/client');
 const { createRedisConnection } = require('../config/redis');
@@ -13,7 +14,7 @@ const { createRedisConnection } = require('../config/redis');
 
 // Create Redis connection for queue
 const connection = createRedisConnection();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 const buildJobMeta = (jobId, data = {}) => {
   return `jobId=${jobId} customerId=${data.customerId ?? 'n/a'} maidId=${data.maidId ?? 'n/a'} maidUserId=${data.maidUserId ?? 'n/a'}`;

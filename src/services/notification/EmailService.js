@@ -1,6 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient();
+const { getPrismaClient } = require('../../utils/database');
 
 /**
  * Email Notification Service
@@ -159,7 +157,7 @@ class EmailService {
 
   async sendNotificationEmail(notification, user) {
     // Check user preferences
-    const preferences = await prisma.notificationPreference.findUnique({
+    const preferences = await getPrismaClient().notificationPreference.findUnique({
       where: { userId: user.id }
     });
 

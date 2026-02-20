@@ -1,9 +1,10 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const { validateDocumentType, getRequiredDocuments } = require('../utils/fileUpload');
 const { uploadMaidDocument, deleteFile, validateFile } = require('../services/cloudinaryService');
 const fs = require('fs');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Upload document (for maids) - stores as binary data
 const uploadDocument = async (req, res) => {

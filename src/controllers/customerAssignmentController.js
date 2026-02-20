@@ -1,5 +1,6 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 const JobScheduler = require('../services/jobScheduler');
 
 // Assign a maid to a customer (Admin only)
@@ -443,6 +444,9 @@ const getCustomerStatus = async (req, res) => {
         status: {
           in: ['ACTIVE', 'PENDING_PAYMENT']
         }
+      },
+      include: {
+        plan: true
       }
     });
 
@@ -514,14 +518,21 @@ const getCustomerStatus = async (req, res) => {
           phone: assignment.maid.user.phone,
           rating: assignment.maid.rating,
           skills: assignment.maid.skills,
-          completedBookings: assignment.maid.completedBookings
+          completedBookings: assignment.maid.completedBookings,
+          weeklyOffDay: assignment.maid.weeklyOffDay
         }
       } : null,
       subscription: subscription ? {
         id: subscription.id,
+        planName: subscription.plan?.name || 'Unknown Plan',
         status: subscription.status,
         startDate: subscription.startDate,
-        endDate: subscription.endDate
+        endDate: subscription.endDate,
+        sessionsPerWeek: subscription.plan?.sessionsPerWeek,
+        sessionsPerMonth: subscription.plan?.sessionsPerMonth,
+        isInBufferPeriod: subscription.isInBufferPeriod,
+        bufferStartDate: subscription.bufferStartDate,
+        bufferEndDate: subscription.bufferEndDate
       } : null,
       isInBufferPeriod: !!activeBufferPeriod,
       bufferPeriod: activeBufferPeriod ? {
@@ -1431,6 +1442,86 @@ const getMyMaidAssignment = async (req, res) => {
   }
 };
 
+/**
+ * Get all customers assigned to a specific maid
+ */
+const getMaidAssignedCustomers = async (req, res) => {
+  try {
+    const { maidId } = req.params;
+
+    console.log(`🔍 Getting customers assigned to maid ID: ${maidId}`);
+
+    // Validate maidId
+    if (!maidId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Maid ID is required'
+      });
+    }
+
+    // Get all active assignments for this maid
+    const assignments = await prisma.customerMaidAssignment.findMany({
+      where: {
+        maidId: maidId,
+        isActive: true
+      },
+      include: {
+        customer: {
+          include: {
+            user: true
+          }
+        }
+      }
+    });
+
+    console.log(`📋 Found ${assignments.length} active assignments for maid ${maidId}`);
+
+    // Get subscription details for each customer
+    const customersWithDetails = await Promise.all(
+      assignments.map(async (assignment) => {
+        const subscription = await prisma.subscription.findFirst({
+          where: {
+            customerId: assignment.customer.id,
+            status: {
+              in: ['ACTIVE', 'PENDING_PAYMENT']
+            }
+          },
+          include: {
+            plan: true
+          }
+        });
+
+        return {
+          id: assignment.customer.userId,
+          name: assignment.customer.user.name,
+          email: assignment.customer.user.email,
+          phone: assignment.customer.user.phone,
+          timeSlot: assignment.customer.timeSlot,
+          planName: subscription?.plan?.name || 'No Plan',
+          sessionsPerWeek: subscription?.plan?.sessionsPerWeek || 0,
+          subscriptionStatus: subscription?.status || 'NO_SUBSCRIPTION',
+          assignedAt: assignment.assignedAt
+        };
+      })
+    );
+
+    console.log(`✅ Customers with details retrieved for maid: ${maidId}`);
+
+    return res.status(200).json({
+      success: true,
+      data: customersWithDetails
+    });
+
+  } catch (error) {
+    console.error('❌ Get maid assigned customers error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   assignMaidToCustomer,
   getCustomerAssignment,
@@ -1438,6 +1529,7 @@ module.exports = {
   getAllCustomerAssignments,
   getCustomerStatus,
   getMyCustomerStatus,
+  getMaidAssignedCustomers,
   removeCustomerAssignment,
   checkMaidStatus,
   getMaidAssignmentRequests,

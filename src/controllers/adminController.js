@@ -1,5 +1,6 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Get all customers with active subscriptions for admin dashboard
 const getActiveCustomers = async (req, res) => {

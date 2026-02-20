@@ -1,8 +1,9 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
 const ratingRecalculationService = require('../services/ratingRecalculationService');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Submit feedback for a completed booking

@@ -1,8 +1,9 @@
+const { getPrismaClient } = require('../utils/database');
 
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('./notificationService');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Enhanced Notification Methods

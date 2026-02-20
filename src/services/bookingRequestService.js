@@ -1,3 +1,4 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const { scheduleAssignmentRequest } = require('../queues/assignmentQueue');
 const { 
@@ -7,7 +8,7 @@ const {
   formatInIST
 } = require('../utils/timeSlotUtils');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Booking Request Service
@@ -29,7 +30,7 @@ const scheduleAllBookingRequests = async () => {
 
   try {
     // Get all active customer-maid assignments
-    const activeAssignments = await prisma.customerMaidAssignment.findMany({
+    const activeAssignments = await getPrismaClient().customerMaidAssignment.findMany({
       where: {
         isActive: true
       },
@@ -193,7 +194,7 @@ const scheduleBookingRequestForAssignment = async (assignment) => {
     }
 
     // Check for existing pending assignment requests for this booking window
-    const existingRequest = await prisma.assignmentRequest.findFirst({
+    const existingRequest = await getPrismaClient().assignmentRequest.findFirst({
       where: {
         maidId: maidId,
         status: 'pending',
@@ -218,7 +219,7 @@ const scheduleBookingRequestForAssignment = async (assignment) => {
     }
 
     // Check for existing booking for this time slot
-    const existingBooking = await prisma.booking.findFirst({
+    const existingBooking = await getPrismaClient().booking.findFirst({
       where: {
         customerId: customerId,
         scheduledAt: {
@@ -314,7 +315,7 @@ const scheduleBookingRequestForAssignment = async (assignment) => {
  */
 const checkCustomerBufferStatus = async (customerId) => {
   try {
-    const subscription = await prisma.subscription.findFirst({
+    const subscription = await getPrismaClient().subscription.findFirst({
       where: {
         status: 'ACTIVE',
         customer: {
@@ -343,7 +344,7 @@ const checkCustomerBufferStatus = async (customerId) => {
       }
     }
 
-    const activeBuffer = await prisma.bufferPeriod.findFirst({
+    const activeBuffer = await getPrismaClient().bufferPeriod.findFirst({
       where: {
         subscription: {
           customer: {
@@ -380,7 +381,7 @@ const checkCustomerBufferStatus = async (customerId) => {
  */
 const getUpcomingRequestsForCustomer = async (customerId) => {
   try {
-    const requests = await prisma.assignmentRequest.findMany({
+    const requests = await getPrismaClient().assignmentRequest.findMany({
       where: {
         booking: {
           customerId: customerId
@@ -419,7 +420,7 @@ const getUpcomingRequestsForCustomer = async (customerId) => {
  */
 const getAllPendingRequests = async () => {
   try {
-    const requests = await prisma.assignmentRequest.findMany({
+    const requests = await getPrismaClient().assignmentRequest.findMany({
       where: {
         status: 'pending',
         expiresAt: {
@@ -458,7 +459,7 @@ const cancelBookingRequest = async (assignmentRequestId) => {
   try {
     console.log(`\n🚫 Cancelling booking request: ${assignmentRequestId}`);
 
-    const request = await prisma.assignmentRequest.findUnique({
+    const request = await getPrismaClient().assignmentRequest.findUnique({
       where: { id: assignmentRequestId },
       include: {
         booking: true
@@ -474,7 +475,7 @@ const cancelBookingRequest = async (assignmentRequestId) => {
     }
 
     // Update assignment request to cancelled
-    await prisma.assignmentRequest.update({
+    await getPrismaClient().assignmentRequest.update({
       where: { id: assignmentRequestId },
       data: {
         status: 'cancelled',
@@ -484,7 +485,7 @@ const cancelBookingRequest = async (assignmentRequestId) => {
 
     // Update associated booking if it exists
     if (request.bookingId) {
-      await prisma.booking.update({
+      await getPrismaClient().booking.update({
         where: { id: request.bookingId },
         data: {
           status: 'CANCELLED',

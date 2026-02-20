@@ -15,7 +15,8 @@ const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
   rejectAssignmentRequest,
   getAllAssignmentRequests,
   testCreateAssignmentRequest,
-  getMyMaidAssignment
+  getMyMaidAssignment,
+  getMaidAssignedCustomers
 } = require('../controllers/customerAssignmentController');
 
  // Customer routes (for customers to check their own status)
@@ -25,6 +26,7 @@ const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
 // Admin routes for customer-maid assignments
 router.post('/assign', authenticateToken, authorizeAdmin, assignMaidToCustomer);
 router.get('/status/:customerId', authenticateToken, authorizeAdmin, getCustomerStatus);
+router.get('/maid/:maidId/customers', authenticateToken, authorizeAdmin, getMaidAssignedCustomers);
 router.get('/:customerId', authenticateToken, authorizeAdmin, getCustomerAssignment);
 router.patch('/:customerId/update', authenticateToken, authorizeAdmin, updateCustomerAssignment);
 router.get('/', authenticateToken, authorizeAdmin, getAllCustomerAssignments);

@@ -1,8 +1,9 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const subscriptionBufferService = require('../services/subscriptionBufferService');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Get all subscription plans
 const getSubscriptionPlans = async (req, res) => {
@@ -91,8 +92,17 @@ const subscribeToPlan = async (req, res) => {
     }
 
     // Calculate subscription dates
-    const startDate = new Date();
-    const endDate = new Date();
+    // Use the requested start date from frontend, or default to today
+    const startDate = requestedStartDate ? new Date(requestedStartDate) : new Date();
+    // Ensure start date is at least today (not in the past)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (startDate < today) {
+      startDate.setTime(today.getTime());
+    }
+    console.log(`✅ Subscription start date: ${startDate.toISOString()} (requested: ${requestedStartDate || 'none'})`);
+    
+    const endDate = new Date(startDate);
     endDate.setMonth(startDate.getMonth() + plan.duration);
 
     // Use front-end calculated final amount (including GST/property config)

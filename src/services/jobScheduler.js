@@ -1,4 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database');
 const {
   scheduleAssignmentRequest,
   scheduleAllAssignments,
@@ -11,7 +11,7 @@ const {
   ASSIGNMENT_REQUEST_HOURS_BEFORE
 } = require('../utils/timeSlotUtils');
 
-const prisma = new PrismaClient();
+// Using getPrismaClient() directly
 
 /**
  * Job Scheduling Service
@@ -60,7 +60,7 @@ class JobScheduler {
       console.log('📋 Scheduling jobs for all active assignments...');
 
       // Get all active customer-maid assignments
-      const activeAssignments = await prisma.customerMaidAssignment.findMany({
+      const activeAssignments = await getPrismaClient().customerMaidAssignment.findMany({
         where: {
           isActive: true
         },
@@ -177,7 +177,7 @@ class JobScheduler {
       }
 
       // Check if already exists for this service time
-      const existingRequest = await prisma.assignmentRequest.findFirst({
+      const existingRequest = await getPrismaClient().assignmentRequest.findFirst({
         where: {
           maidId: maidId,
           status: 'pending',
@@ -277,12 +277,12 @@ class JobScheduler {
       console.log(`🆕 New assignment detected: Customer ${customerId}, Maid ${maidId}`);
 
       // Get customer and maid details
-      const customer = await prisma.user.findUnique({
+      const customer = await getPrismaClient().user.findUnique({
         where: { id: customerId },
         select: { name: true, timeSlot: true }
       });
 
-      const maid = await prisma.maidProfile.findUnique({
+      const maid = await getPrismaClient().maidProfile.findUnique({
         where: { id: maidId },
         include: {
           user: {
@@ -340,7 +340,7 @@ class JobScheduler {
    */
   static async checkCustomerBufferStatus(customerId) {
     try {
-      const subscription = await prisma.subscription.findFirst({
+      const subscription = await getPrismaClient().subscription.findFirst({
         where: {
           status: 'ACTIVE',
           customer: {
@@ -368,7 +368,7 @@ class JobScheduler {
         }
       }
 
-      const activeBuffer = await prisma.bufferPeriod.findFirst({
+      const activeBuffer = await getPrismaClient().bufferPeriod.findFirst({
         where: {
           subscription: {
             customer: {
