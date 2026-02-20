@@ -326,24 +326,28 @@ process.on('SIGTERM', async () => {
   console.log('⚠️  SIGTERM received, shutting down...');
   await cleanup();
   process.exit(143); // 128 + 15 (SIGTERM)
+});
 // Initialization done by initializePrisma()
 
 process.on('SIGINT', async () => {
   console.log('⚠️  SIGINT received, shutting down...');
   await cleanup();
   process.exit(130); // 128 + 2 (SIGINT)
+});
 // Initialization done by initializePrisma()
 
 process.on('unhandledRejection', async (reason, promise) => {
   console.error('❌ Unhandled Rejection:', reason);
   await cleanup();
   process.exit(1);
+});
 // Initialization done by initializePrisma()
 
 process.on('uncaughtException', async (error) => {
   console.error('❌ Uncaught Exception:', error);
   await cleanup();
   process.exit(1);
+});
 // Initialization done by initializePrisma()
 
 // Run with timeout
