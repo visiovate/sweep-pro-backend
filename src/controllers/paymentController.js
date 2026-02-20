@@ -1,8 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
 
-// CACHE BUST: Force reload of razorpayService - ${new Date().toISOString()}
-delete require.cache[require.resolve('../services/razorpayService')];
+// razorpayService is a proper singleton – import it once at module load time.
 const razorpayService = require('../services/razorpayService');
 
 const { razorpayKeyId } = require('../utils/razorpay-credintials');
@@ -298,25 +297,49 @@ const updatePaymentStatus = async (req, res) => {
 const getUserPayments = async (req, res) => {
   try {
     const userId = req.user.id;
-    const payments = await prisma.payment.findMany({
-      where: {
-        customerId: userId
-      },
-      include: {
-        booking: {
-          include: {
-            service: true
+
+    // Pagination parameters with safe defaults and a hard cap
+    const MAX_LIMIT = 100;
+    const DEFAULT_LIMIT = 20;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(req.query.limit) || DEFAULT_LIMIT));
+    const skip = (page - 1) * limit;
+
+    const where = { customerId: userId };
+
+    const [payments, total] = await Promise.all([
+      prisma.payment.findMany({
+        where,
+        include: {
+          booking: {
+            include: {
+              service: true
+            }
           }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit
+      }),
+      prisma.payment.count({ where })
+    ]);
+
+    res.json({
+      data: payments,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
       }
     });
-    res.json(payments);
   } catch (error) {
     console.error('Error fetching user payments:', error);
-    res.status(500).json({ error: 'Failed to fetch user payments' });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user payments',
+      code: 'FETCH_FAILED'
+    });
   }
 };
 

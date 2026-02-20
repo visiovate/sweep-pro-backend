@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { getPrismaClient } = require('../utils/database');
 const { getFirebaseAuth } = require('../config/firebase');
 const { getJwtSecret } = require('../config/validateEnv');
+const logger = require('../utils/logger');
 
 const buildAuthSuccessResponse = (decodedPayload, userRecord = null) => {
   const baseClaims = {
@@ -49,28 +50,55 @@ const buildFirebaseAuthSuccessResponse = (firebaseDecodedToken, userRecord) => {
   };
 };
 
+/**
+ * Extract the bearer token from the Authorization header OR the authToken
+ * HttpOnly cookie (cookie-based auth, M6 hardening).
+ */
+const extractToken = (req) => {
+  const authHeader = req.header('Authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  // Fall back to HttpOnly cookie (set on login/register)
+  if (req.cookies?.authToken) {
+    return req.cookies.authToken;
+  }
+  return null;
+};
+
 const authenticateToken = async (req, res, next) => {
+  // Attach a request ID for traceable structured logs
+  const requestId = req.headers['x-request-id'] || req.id || undefined;
+
   try {
-    const authHeader = req.header('Authorization');
-    console.log('🔐 Auth Debug - Authorization header:', authHeader ? `Bearer ${authHeader.substring(0, 20)}...` : 'MISSING');
-    
-    const token = authHeader?.replace('Bearer ', '');
+    const token = extractToken(req);
 
     if (!token) {
-      console.log('🔐 Auth Debug - Token not found in Authorization header');
-      throw new Error('Token missing');
+      return res.status(401).json({
+        success: false,
+        message: 'Please authenticate.',
+        code: 'TOKEN_MISSING'
+      });
     }
 
-    console.log('🔐 Auth Debug - Token found, length:', token.length);
     let decoded = null;
 
     try {
-      console.log('🔐 Auth Debug - JWT_SECRET configured:', !!process.env.JWT_SECRET);
-      // SECURITY: Use centralized JWT secret getter - NEVER fallback to default
+      // SECURITY: Use centralized JWT secret getter – NEVER fall back to a default
       decoded = jwt.verify(token, getJwtSecret());
-      console.log('🔐 Auth Debug - JWT verified successfully, userId:', decoded?.userId || decoded?.id);
     } catch (jwtError) {
-      console.log('🔐 Auth Debug - JWT verification failed:', jwtError.message);
+      // Distinguish expected expiry from a potentially tampered token
+      if (jwtError.name === 'TokenExpiredError') {
+        // Normal case – log at info, not as an error
+        logger.info('JWT token expired', { requestId, message: jwtError.message });
+      } else if (jwtError.name === 'JsonWebTokenError') {
+        // Could indicate a forgery attempt – log at warn
+        logger.warn('Invalid JWT token (potential security concern)', {
+          requestId,
+          message: jwtError.message
+        });
+      }
+
       // Not a valid JWT. Try Firebase ID token (Google sign-in sessions).
       try {
         const firebaseAuth = getFirebaseAuth();
@@ -114,14 +142,26 @@ const authenticateToken = async (req, res, next) => {
         req.user = buildFirebaseAuthSuccessResponse(firebaseDecodedToken, userRecord);
         return next();
       } catch (firebaseError) {
-        console.log('🔐 Auth Debug - Firebase verification also failed:', firebaseError.message);
-        throw firebaseError;
+        // Firebase verification also failed – the token is definitively invalid
+        logger.warn('Authentication failed: both JWT and Firebase verification rejected the token', {
+          requestId,
+          message: firebaseError.message
+        });
+        return res.status(401).json({
+          success: false,
+          message: 'Please authenticate.',
+          code: 'TOKEN_INVALID'
+        });
       }
     }
 
     if (!decoded?.userId && !decoded?.id) {
-      console.log('🔐 Auth Debug - Token payload invalid, decoded:', decoded);
-      throw new Error('Invalid token payload');
+      logger.warn('JWT payload missing user identifier', { requestId });
+      return res.status(401).json({
+        success: false,
+        message: 'Please authenticate.',
+        code: 'TOKEN_INVALID'
+      });
     }
 
     // If request already has user attached (e.g. previous middleware), skip
@@ -131,7 +171,7 @@ const authenticateToken = async (req, res, next) => {
 
     const sanitizedClaims = buildAuthSuccessResponse(decoded);
 
-    // Optionally refresh user snapshot when token lacks extended info or when enforceFreshUser flag is set
+    // Optionally refresh user snapshot when token lacks role or when forced
     if (process.env.AUTH_FORCE_USER_REFRESH === 'true' || !sanitizedClaims.role) {
       const prisma = getPrismaClient();
       if (!prisma) {
@@ -158,9 +198,17 @@ const authenticateToken = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error('❌ Authentication error:', error?.message || error);
-    console.error('❌ Error stack:', error?.stack);
-    res.status(401).json({ error: 'Please authenticate.' });
+    // Unexpected internal error – log message only in production, full stack in dev
+    logger.error('Unexpected authentication error', {
+      requestId,
+      message: error?.message,
+      ...(process.env.NODE_ENV !== 'production' && { stack: error?.stack })
+    });
+    res.status(500).json({
+      success: false,
+      message: 'Authentication service error.',
+      code: 'AUTH_ERROR'
+    });
   }
 };
 
@@ -168,39 +216,44 @@ const authenticateToken = async (req, res, next) => {
 const auth = authenticateToken;
 
 
-const authorizeAdmin = async (req, res, next) => {
-  try {
-    console.log('User role check:', req.user?.role, 'User ID:', req.user?.id);
-    if (req.user?.role !== 'ADMIN') {
-      console.log('Access denied - user role is:', req.user?.role);
-      throw new Error();
-    }
-    console.log('Admin access granted');
-    next();
-  } catch (error) {
-    res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+const authorizeAdmin = (req, res, next) => {
+  if (req.user?.role !== 'ADMIN') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Admin privileges required.',
+      code: 'FORBIDDEN'
+    });
   }
+  next();
 };
 
-const authorizeMaid = async (req, res, next) => {
-  try {
-    if (req.user?.role !== 'MAID') {
-      throw new Error();
-    }
-    next();
-  } catch (error) {
-    res.status(403).json({ error: 'Access denied. Maid privileges required.' });
+const authorizeMaid = (req, res, next) => {
+  if (req.user?.role !== 'MAID') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Maid privileges required.',
+      code: 'FORBIDDEN'
+    });
   }
+  next();
 };
 
 const checkRole = (roles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Please authenticate.' });
+      return res.status(401).json({
+        success: false,
+        message: 'Please authenticate.',
+        code: 'UNAUTHENTICATED'
+      });
     }
 
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Access denied.' });
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied.',
+        code: 'FORBIDDEN'
+      });
     }
 
     next();
@@ -213,5 +266,5 @@ module.exports = {
   authorizeAdmin,
   authorizeMaid,
   checkRole
-}; 
+};
 

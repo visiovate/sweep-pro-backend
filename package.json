@@ -26,9 +26,6 @@
     "test": "cross-env NODE_ENV=test jest --detectOpenHandles",
     "test:watch": "cross-env NODE_ENV=test jest --watch",
     "test:coverage": "cross-env NODE_ENV=test jest --coverage",
-    "test:assignment": "node src/scripts/test-auto-assignment.js",
-    "test:idempotency": "node src/tests/idempotency-test.js",
-    "test:simulation": "node src/tests/simulation-test.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
@@ -47,6 +44,7 @@
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.61.0",
     "cloudinary": "^2.7.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "date-fns-tz": "^3.2.0",
     "dotenv": "^16.4.5",
@@ -54,6 +52,7 @@
     "express-rate-limit": "^8.2.1",
     "express-validator": "^7.0.1",
     "firebase-admin": "^13.6.0",
+    "helmet": "^8.1.0",
     "html5-qrcode": "^2.3.8",
     "ioredis": "^5.8.2",
     "jsonwebtoken": "^9.0.2",
@@ -67,6 +66,7 @@
     "short-uuid": "^5.2.0",
     "socket.io": "^4.8.1",
     "uuid": "^11.1.0",
+    "winston": "^3.19.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {

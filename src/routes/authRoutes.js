@@ -155,12 +155,21 @@ router.post('/register', registerValidation, async (req, res) => {
       createdAt: createdUser.createdAt
     };
 
+    // M6: Set HttpOnly cookie so the token is not accessible via JS on the client
+    const isSecure = process.env.NODE_ENV === 'production';
+    res.cookie('authToken', token, {
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     res.status(201).json({
       success: true,
       message: `${role.charAt(0) + role.slice(1).toLowerCase()} registered successfully`,
       data: {
         user: userResponse,
-        token
+        token  // Still returned for SPA backward-compat (e.g. Firebase flow)
       }
     });
 
@@ -403,13 +412,14 @@ router.post('/login', loginValidation, async (req, res) => {
     }
 
     // Generate JWT token
+    // SECURITY: Use centralized secret getter – NEVER fall back to a hardcoded default
     const token = jwt.sign(
-      { 
+      {
         userId: user.id,
         id: user.id,
         role: user.role
       },
-      process.env.JWT_SECRET || 'your-secret-key',
+      getJwtSecret(),
       { expiresIn: rememberMe ? '30d' : '24h' }
     );
 
@@ -434,12 +444,21 @@ router.post('/login', loginValidation, async (req, res) => {
       }
     };
 
+    // M6: Set HttpOnly cookie so the token is not accessible via JS on the client
+    const isSecureCookie = process.env.NODE_ENV === 'production';
+    res.cookie('authToken', token, {
+      httpOnly: true,
+      secure: isSecureCookie,
+      sameSite: 'strict',
+      maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000
+    });
+
     res.json({
       success: true,
       message: 'Login successful',
       data: {
         user: userResponse,
-        token
+        token  // Still returned for SPA backward-compat
       }
     });
 
@@ -537,23 +556,18 @@ router.get('/apartments', async (req, res) => {
   }
 });
 
-// Logout endpoint (optional - mainly for clearing client-side token)
-router.post('/logout', authenticateToken, async (req, res) => {
-  try {
-    // In a stateless JWT system, logout is handled client-side by removing the token
-    // This endpoint can be used for logging or additional cleanup if needed
-    
-    res.json({
-      success: true,
-      message: 'Logout successful'
-    });
-  } catch (error) {
-    console.error('Logout error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Logout failed'
-    });
-  }
+// Logout endpoint – clears the HttpOnly auth cookie (M6)
+router.post('/logout', authenticateToken, (req, res) => {
+  // Clear the HttpOnly auth cookie
+  res.clearCookie('authToken', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+  res.json({
+    success: true,
+    message: 'Logout successful'
+  });
 });
 
 // Create test admin user (for development only)

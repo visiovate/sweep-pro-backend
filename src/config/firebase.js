@@ -1,4 +1,47 @@
+/**
+ * Firebase Admin SDK initializer.
+ *
+ * SECURITY NOTE – Firebase key exposure:
+ * =========================================
+ * The server-side Firebase Admin SDK credentials (private key, client email,
+ * project ID) are stored exclusively in environment variables and are NEVER
+ * committed to source control.
+ *
+ * If you are also embedding Firebase CLIENT config in the frontend (e.g.
+ * apiKey, authDomain) you MUST restrict those keys in the Firebase Console:
+ *
+ *  1. Go to https://console.firebase.google.com → Project settings → General
+ *     → Your apps → API key restrictions.
+ *  2. Under "Application restrictions", add your authorised domains
+ *     (e.g. sweepro.in, sweep-pro-frontend.vercel.app).
+ *  3. Under "API restrictions → Restrict key", enable ONLY the APIs your
+ *     app actually uses (Identity Toolkit API, Cloud Messaging, etc.).
+ *  4. Disable any Firebase service you are not using (Cloud Functions,
+ *     Realtime Database, etc.) in the Firebase Console to reduce the attack
+ *     surface.
+ *
+ * Runtime domain check (optional):
+ * If the server detects an unexpected HOST header it logs a warning.  This
+ * does not block requests (responsibility lies with the Firebase Console
+ * restrictions), but provides an audit trail.
+ */
+
 const admin = require('firebase-admin');
+const logger = require('../utils/logger');
+
+// Warn if the request originates from an unrecognised domain (development aid)
+const KNOWN_DOMAINS = (
+  process.env.ALLOWED_DOMAINS ||
+  'localhost,sweepro.in,www.sweepro.in,sweep-pro-frontend.vercel.app'
+).split(',').map(d => d.trim());
+
+const warnIfUnknownDomain = (host) => {
+  if (!host) return;
+  const hostname = host.split(':')[0];
+  if (!KNOWN_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d))) {
+    logger.warn('Firebase: request from unrecognised domain – verify API key restrictions', { hostname });
+  }
+};
 
 // Initialize Firebase Admin SDK
 let firebaseAdmin;
@@ -61,10 +104,10 @@ const initializeFirebaseAdmin = () => {
       projectId: process.env.FIREBASE_PROJECT_ID
     });
 
-    console.log('✅ Firebase Admin SDK initialized successfully');
+    logger.info('Firebase Admin SDK initialized successfully');
     return firebaseAdmin;
   } catch (error) {
-    console.error('❌ Firebase Admin initialization error:', error.message);
+    logger.error('Firebase Admin initialization error', { message: error.message });
     throw error;
   }
 };
@@ -85,7 +128,8 @@ const getFirebaseAuth = () => {
 module.exports = {
   initializeFirebaseAdmin,
   getFirebaseAdmin,
-  getFirebaseAuth
+  getFirebaseAuth,
+  warnIfUnknownDomain
 };
 
 

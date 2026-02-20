@@ -840,36 +840,30 @@ const checkMaidAssignmentConflicts = async (maidId, customerId) => {
       throw new Error(`TIMESLOT_CONFLICT: Maid is already assigned to customer(s) with the same timeslot (${customer.timeSlot}): ${conflictNames}`);
     }
 
-    // Check maid's maximum daily bookings capacity
+    // Check maid's maximum daily bookings capacity.
+    // Also fetch userId here to avoid an N+1 nested query below.
     const maidProfile = await prisma.maidProfile.findUnique({
       where: { id: maidId },
-      select: { maxDailyBookings: true }
+      select: { maxDailyBookings: true, userId: true }
     });
 
     if (maidProfile && existingAssignments.length >= maidProfile.maxDailyBookings) {
       throw new Error(`CAPACITY_EXCEEDED: Maid has reached maximum daily booking capacity (${maidProfile.maxDailyBookings}). Currently assigned to ${existingAssignments.length} customers.`);
     }
 
-    // Additional check: Look for active bookings in the same timeslot
-    if (customer.timeSlot) {
+    // Additional check: look for active future bookings in the same timeslot.
+    // FIX (M4): replaced nested prisma.user.findMany().then() N+1 pattern with a
+    // direct userId reference obtained from the maidProfile query above.
+    if (customer.timeSlot && maidProfile?.userId) {
       const conflictingBookings = await prisma.booking.findMany({
         where: {
-          maidId: {
-            in: await prisma.user.findMany({
-              where: {
-                maidProfile: {
-                  id: maidId
-                }
-              },
-              select: { id: true }
-            }).then(users => users.map(u => u.id))
-          },
+          maidId: maidProfile.userId, // single indexed field lookup – no sub-query
           timeSlot: customer.timeSlot,
           status: {
             in: ['PENDING', 'CONFIRMED', 'ASSIGNED', 'IN_PROGRESS']
           },
           scheduledAt: {
-            gte: new Date() // Only check future bookings
+            gte: new Date()
           }
         },
         include: {
@@ -877,13 +871,14 @@ const checkMaidAssignmentConflicts = async (maidId, customerId) => {
             select: { name: true }
           }
         },
-        take: 5 // Limit to avoid performance issues
+        take: 5
       });
 
       if (conflictingBookings.length > 0) {
         const bookingCustomers = conflictingBookings.map(b => b.customer.name).join(', ');
-        console.warn(`Warning: Maid has existing bookings in timeslot ${customer.timeSlot} with customers: ${bookingCustomers}`);
-        // This is a warning, not a blocking error, as bookings might be on different days
+        // Warning-only: bookings may be on different calendar days
+        // eslint-disable-next-line no-console
+        console.warn(`Maid has ${conflictingBookings.length} existing booking(s) in timeslot ${customer.timeSlot} with: ${bookingCustomers}`);
       }
     }
 

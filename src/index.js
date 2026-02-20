@@ -1,16 +1,21 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 const http = require('http');
 const { WebSocketServer } = require('ws');
 const { v4: uuidv4 } = require('uuid');
+const jwt = require('jsonwebtoken');
+const url = require('url');
 
 // Load environment variables
 dotenv.config();
 
 // SECURITY: Validate environment variables on startup
-const { validateEnvironmentVariables } = require('./config/validateEnv');
+const { validateEnvironmentVariables, getJwtSecret } = require('./config/validateEnv');
 validateEnvironmentVariables();
+const logger = require('./utils/logger');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -47,8 +52,9 @@ const app = express();
 // Create HTTP server
 const server = http.createServer(app);
 
-// Set up WebSocket server
-const wss = new WebSocketServer({ server });
+// Set up WebSocket server with noServer: true so we can perform
+// authentication during the HTTP upgrade handshake (M8)
+const wss = new WebSocketServer({ noServer: true });
 
 // Import database utility
 const { initializePrisma, disconnectDatabase } = require('./utils/database');
@@ -69,6 +75,65 @@ const notificationService = require('./services/notificationService');
 
 // Initialize notification service with WebSocket server
 notificationService.init(wss);
+
+// -------------------------------------------------------------------
+// M8: WebSocket Authentication – JWT verification on upgrade handshake
+// -------------------------------------------------------------------
+/**
+ * Parse a cookie string into a key→value map.
+ * Used to extract the authToken cookie from the WS upgrade request,
+ * which does not go through Express middleware.
+ */
+const parseCookieHeader = (cookieHeader = '') => {
+  return cookieHeader.split(';').reduce((acc, pair) => {
+    const [key, ...val] = pair.trim().split('=');
+    if (key) acc[key.trim()] = decodeURIComponent(val.join('=').trim());
+    return acc;
+  }, {});
+};
+
+server.on('upgrade', (request, socket, head) => {
+  try {
+    // Accept token from query-string or Authorization header or cookie
+    const parsedUrl = url.parse(request.url, true);
+    const queryToken = parsedUrl.query.token;
+    const authHeader = request.headers['authorization'] || '';
+    const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    const cookies = parseCookieHeader(request.headers.cookie);
+    const cookieToken = cookies['authToken'];
+
+    const token = queryToken || headerToken || cookieToken;
+
+    if (!token) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nMissing authentication token');
+      socket.destroy();
+      return;
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, getJwtSecret());
+    } catch (jwtErr) {
+      logger.warn('WebSocket upgrade rejected: invalid token', { message: jwtErr.message });
+      socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nInvalid or expired token');
+      socket.destroy();
+      return;
+    }
+
+    // Attach authenticated user to the WebSocket instance
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      ws.user = {
+        id: decoded.userId || decoded.id,
+        role: decoded.role
+      };
+      wss.emit('connection', ws, request);
+    });
+  } catch (err) {
+    logger.error('WebSocket upgrade error', { message: err.message });
+    socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+    socket.destroy();
+  }
+});
 
 // Middleware
 const allowedOrigins = [
@@ -103,6 +168,15 @@ function isOriginAllowed(origin) {
   );
 }
 
+// SECURITY: Helmet – set secure HTTP response headers (M8 additional hardening)
+app.use(helmet({
+  // Content Security Policy – tighten in production via env override
+  contentSecurityPolicy: process.env.NODE_ENV === 'production'
+    ? undefined      // use helmet defaults in production
+    : false,         // relax in development for tooling (e.g. Vite HMR)
+  crossOriginEmbedderPolicy: false  // required for some embedded resources
+}));
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
@@ -111,7 +185,11 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cache-Control', 'Pragma'],
+  allowedHeaders: [
+    'Content-Type', 'Authorization', 'X-Requested-With', 'Accept',
+    'Origin', 'Cache-Control', 'Pragma',
+    'X-CSRF-Token'  // M7: expose CSRF header to browser
+  ],
   preflightContinue: false,
   optionsSuccessStatus: 200
 }));
@@ -125,18 +203,12 @@ app.options('*', (req, res) => {
     res.header('Access-Control-Allow-Credentials', 'true');
   }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, Pragma');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, Pragma, X-CSRF-Token');
   res.sendStatus(200);
 });
 
-// CORS debugging middleware
-app.use((req, res, next) => {
-  console.log(`🌐 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'No Origin'}`);
-  if (req.method === 'OPTIONS') {
-    console.log('🔍 Preflight request detected');
-  }
-  next();
-});
+// Cookie parser – required for HttpOnly cookie auth (M6) and CSRF (M7)
+app.use(cookieParser());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -164,6 +236,12 @@ app.use((req, res, next) => {
 // SECURITY: Apply global rate limiter to all API routes
 // This provides baseline DDoS protection for all endpoints
 app.use('/api', globalLimiter);
+
+// SECURITY: Apply CSRF protection to all API routes (M7)
+// The double-submit cookie pattern validates X-CSRF-Token header against
+// the csrf-token cookie on all state-changing requests.
+const { csrfProtection } = require('./middleware/csrf');
+app.use('/api', csrfProtection);
 
 // Legacy compatibility - keep for existing code
 function notifyClients(notificationData) {
@@ -227,59 +305,56 @@ app.get('/api/cors-test', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Something went wrong!' });
+  logger.error('Unhandled application error', {
+    message: err.message,
+    path: req.path,
+    method: req.method,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  });
+  res.status(500).json({
+    success: false,
+    message: 'Something went wrong.',
+    code: 'INTERNAL_ERROR'
+  });
 });
 
 // Start server only if not in test environment
 if (process.env.NODE_ENV !== 'test') {
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, async () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📊 Admin Dashboard: http://localhost:${PORT}/admin`);
-    console.log(`🔗 WebSocket server initialized`);
-    
+    logger.info(`Server running on port ${PORT}`);
+    logger.info('WebSocket server ready (JWT authentication enforced on upgrade)');
+
     // Initialize database connection
     try {
       await initializePrisma();
-      console.log('✅ Database initialized successfully');
-      
+      logger.info('Database initialized successfully');
+
       // Initialize Firebase Admin SDK
       try {
         initializeFirebaseAdmin();
-        console.log('✅ Firebase Admin SDK initialized successfully');
       } catch (firebaseError) {
-        console.error('⚠️ Firebase Admin initialization failed:', firebaseError.message);
-        console.log('⚠️ Firebase authentication features will not work');
+        logger.warn('Firebase Admin initialization failed – Firebase auth unavailable', {
+          message: firebaseError.message
+        });
       }
-      
+
       // Test Redis connection
       const redisConnected = await testRedisConnection();
       if (!redisConnected) {
-        console.error('⚠️ Redis connection failed. BullMQ features will not work.');
-        console.log('⚠️ Please ensure Redis is running and configured correctly.');
+        logger.warn('Redis connection failed – BullMQ features will not work');
       }
-      
-      // Initialize BullMQ job scheduler
-      // ⚠️ MOVED: Job scheduler initialization moved to worker (separate npm run worker)
+
       if (redisConnected) {
-        console.log('ℹ️ BullMQ Job Scheduler runs in separate worker process');
-        console.log('📋 Start the background worker with: npm run worker');
+        logger.info('BullMQ Job Scheduler runs in separate worker process (npm run worker)');
       }
-      
-      // Initialize automatic service scheduler after database is ready
-      // ⚠️ MOVED: Automatic service scheduler moved to separate cron service
-      console.log('ℹ️ Automatic service scheduler runs in separate process');
-      
-      // Initialize buffer period scheduler
-      // ⚠️ MOVED: Buffer period scheduler moved to separate cron service
-      console.log('ℹ️ Buffer period scheduler runs in separate process');
-      
-      console.log('✅ All schedulers initialized (running in separate processes)');
-      
+
+      logger.info('All schedulers run in separate processes');
+
     } catch (error) {
-      console.error('❌ Failed to initialize database:', error);
-      console.log('⚠️ Server will continue running but some features may not work');
+      logger.error('Failed to initialize database – some features may not work', {
+        message: error.message
+      });
     }
   });
 }
@@ -293,7 +368,7 @@ const shutdown = async (signal) => {
   isShuttingDown = true;
 
   try {
-    console.log(`${signal} received. Closing HTTP server and Prisma Client...`);
+    logger.info(`${signal} received – closing HTTP server and Prisma client`);
 
     await new Promise((resolve) => {
       server.close(() => resolve());
@@ -306,7 +381,7 @@ const shutdown = async (signal) => {
     try {
       await disconnectDatabase();
     } catch (e) {
-      console.warn('⚠️ Failed to disconnect database:', e?.message || e);
+      logger.warn('Failed to disconnect database during shutdown', { message: e?.message });
     }
   } finally {
     if (signal === 'SIGUSR2') {
