@@ -1,4 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database');
 const crypto = require('crypto');
 
 // CACHE BUST: Force reload of razorpayService - ${new Date().toISOString()}
@@ -8,7 +8,7 @@ const razorpayService = require('../services/razorpayService');
 const { razorpayKeyId } = require('../utils/razorpay-credintials');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
-const prisma = new PrismaClient();
+// Using getPrismaClient() directly
 
 const createPayment = async (req, res) => {
   try {
@@ -53,7 +53,7 @@ const createPayment = async (req, res) => {
 
     // Verify booking or subscription exists and belongs to user
     if (bookingId) {
-      const booking = await prisma.booking.findUnique({
+      const booking = await getPrismaClient().booking.findUnique({
         where: { id: bookingId },
         select: { id: true, customerId: true, finalAmount: true }
       });
@@ -67,7 +67,7 @@ const createPayment = async (req, res) => {
       }
 
       // Check if payment already exists for this booking
-      const existingPayment = await prisma.payment.findFirst({
+      const existingPayment = await getPrismaClient().payment.findFirst({
         where: { bookingId }
       });
 
@@ -80,7 +80,7 @@ const createPayment = async (req, res) => {
 
     if (subscriptionId) {
       // Get customer profile first
-      const customerProfile = await prisma.customerProfile.findUnique({
+      const customerProfile = await getPrismaClient().customerProfile.findUnique({
         where: { userId }
       });
 
@@ -88,7 +88,7 @@ const createPayment = async (req, res) => {
         return res.status(404).json({ error: 'Customer profile not found' });
       }
 
-      const subscription = await prisma.subscription.findUnique({
+      const subscription = await getPrismaClient().subscription.findUnique({
         where: { id: subscriptionId },
         select: { id: true, customerId: true, amount: true }
       });
@@ -104,7 +104,7 @@ const createPayment = async (req, res) => {
       verificationData = { subscriptionId };
     }
 
-    const payment = await prisma.payment.create({
+    const payment = await getPrismaClient().payment.create({
       data: {
         ...verificationData, // Will include either bookingId or subscriptionId
         customerId: userId,
@@ -155,7 +155,7 @@ const getAllPayments = async (req, res) => {
     if (status) where.status = status;
     if (paymentMethod) where.paymentMethod = paymentMethod;
     
-    const payments = await prisma.payment.findMany({
+    const payments = await getPrismaClient().payment.findMany({
       where,
       include: {
         booking: {
@@ -178,7 +178,7 @@ const getAllPayments = async (req, res) => {
       take: parseInt(limit)
     });
     
-    const totalPayments = await prisma.payment.count({ where });
+    const totalPayments = await getPrismaClient().payment.count({ where });
     
     res.json({
       payments,
@@ -198,7 +198,7 @@ const getAllPayments = async (req, res) => {
 const getPaymentById = async (req, res) => {
   try {
     const { id } = req.params;
-    const payment = await prisma.payment.findUnique({
+    const payment = await getPrismaClient().payment.findUnique({
       where: { id },
       include: {
         booking: {
@@ -257,7 +257,7 @@ const updatePaymentStatus = async (req, res) => {
       updateData.refundedAt = new Date();
     }
 
-    const payment = await prisma.payment.update({
+    const payment = await getPrismaClient().payment.update({
       where: { id },
       data: updateData,
       include: {
@@ -298,7 +298,7 @@ const updatePaymentStatus = async (req, res) => {
 const getUserPayments = async (req, res) => {
   try {
     const userId = req.user.id;
-    const payments = await prisma.payment.findMany({
+    const payments = await getPrismaClient().payment.findMany({
       where: {
         customerId: userId
       },
@@ -332,7 +332,7 @@ const verifyPayment = async (req, res) => {
     }
 
     // Find the payment and verify it belongs to the user
-    const payment = await prisma.payment.findUnique({
+    const payment = await getPrismaClient().payment.findUnique({
       where: { id: paymentId },
       include: {
         booking: {
@@ -352,7 +352,7 @@ const verifyPayment = async (req, res) => {
     }
 
     // Update payment with verification details
-    const updatedPayment = await prisma.payment.update({
+    const updatedPayment = await getPrismaClient().payment.update({
       where: { id: paymentId },
       data: {
         status: 'COMPLETED',
@@ -398,20 +398,23 @@ const verifyPayment = async (req, res) => {
 // Create Razorpay order for booking payment
 const createRazorpayBookingOrder = async (req, res) => {
   try {
-    const { bookingId, amount, currency } = req.body;
+    const { bookingId, currency } = req.body;
     const userId = req.user.id;
 
-    if (!bookingId || !amount) {
+    if (!bookingId) {
       return res.status(400).json({ 
-        error: 'Missing required fields: bookingId, amount' 
+        error: 'Missing required field: bookingId' 
       });
     }
 
-    // Verify booking belongs to user
-    const booking = await prisma.booking.findFirst({
+    // Verify booking belongs to user and get the actual amount from database
+    const booking = await getPrismaClient().booking.findFirst({
       where: {
         id: bookingId,
         customerId: userId
+      },
+      include: {
+        service: true
       }
     });
 
@@ -419,8 +422,14 @@ const createRazorpayBookingOrder = async (req, res) => {
       return res.status(404).json({ error: 'Booking not found or unauthorized' });
     }
 
+    // SECURITY: Use amount from database, NOT from request body
+    const amount = booking.finalAmount || booking.totalAmount;
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Invalid booking amount in database' });
+    }
+
     // Check if payment already exists
-    const existingPayment = await prisma.payment.findFirst({
+    const existingPayment = await getPrismaClient().payment.findFirst({
       where: { 
         bookingId,
         status: { in: ['PENDING', 'COMPLETED'] }
@@ -431,7 +440,7 @@ const createRazorpayBookingOrder = async (req, res) => {
       return res.status(409).json({ error: 'Payment already exists for this booking' });
     }
 
-    // Create Razorpay order
+    // Create Razorpay order with validated amount
     const result = await razorpayService.createBookingOrder(bookingId, amount, currency);
 
     res.status(201).json({
@@ -450,23 +459,17 @@ const createRazorpayBookingOrder = async (req, res) => {
 // Create Razorpay order for subscription payment
 const createRazorpaySubscriptionOrder = async (req, res) => {
   try {
-    const { subscriptionId, amount, currency } = req.body;
+    const { subscriptionId, currency } = req.body;
     const userId = req.user.id;
 
-    if (!subscriptionId || !amount) {
+    if (!subscriptionId) {
       return res.status(400).json({ 
-        error: 'Missing required fields: subscriptionId, amount' 
+        error: 'Missing required field: subscriptionId' 
       });
     }
 
-    // Validate amount
-    const parsedAmount = parseFloat(amount);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      return res.status(400).json({ error: 'Invalid amount provided' });
-    }
-
     // Get customer profile
-    const customerProfile = await prisma.customerProfile.findUnique({
+    const customerProfile = await getPrismaClient().customerProfile.findUnique({
       where: { userId }
     });
 
@@ -475,7 +478,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     }
 
     // Verify subscription belongs to user and include relations for razorpayService
-    const subscription = await prisma.subscription.findFirst({
+    const subscription = await getPrismaClient().subscription.findFirst({
       where: {
         id: subscriptionId,
         customerId: customerProfile.id
@@ -510,6 +513,12 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       return res.status(404).json({ error: 'Subscription not found or unauthorized' });
     }
 
+    // SECURITY: Get amount from subscription/plan, NOT from request body
+    const amount = subscription.amount || subscription.plan?.finalPrice || subscription.plan?.basePrice;
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Invalid subscription amount in database' });
+    }
+
     // Allow payment creation for subscriptions in PENDING_PAYMENT status
     // (subscriptions are created in PENDING_PAYMENT status and moved to ACTIVE only after verified payment)
     if (subscription.status !== 'PENDING_PAYMENT') {
@@ -524,7 +533,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     // This ensures payment exists and can be marked FAILED if order creation fails
     console.log(`Creating initial payment record for subscription ${subscriptionId}`);
     
-    let paymentRecord = await prisma.payment.findFirst({
+    let paymentRecord = await getPrismaClient().payment.findFirst({
       where: {
         subscriptionId: subscriptionId,
         status: 'PENDING'
@@ -534,34 +543,34 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
 
     if (!paymentRecord) {
       // Create new payment record with status PENDING
-      paymentRecord = await prisma.payment.create({
+      paymentRecord = await getPrismaClient().payment.create({
         data: {
           subscriptionId: subscriptionId,
           customerId: userId,
-          amount: parsedAmount,
-          finalAmount: parsedAmount,
+          amount: amount,
+          finalAmount: amount,
           paymentMethod: 'CARD',
           status: 'PENDING',
           paymentType: 'SUBSCRIPTION',
           gateway: null  // Gateway will be set to 'razorpay' after order creation
         }
       });
-      console.log(`✅ Created initial payment record: ${paymentRecord.id}`);
+      console.log(`Created initial payment record: ${paymentRecord.id}`);
     } else {
-      // Update existing payment record
-      paymentRecord = await prisma.payment.update({
+      // Update existing payment record with validated amount
+      paymentRecord = await getPrismaClient().payment.update({
         where: { id: paymentRecord.id },
         data: {
-          amount: parsedAmount,
-          finalAmount: parsedAmount,
+          amount: amount,
+          finalAmount: amount,
           updatedAt: new Date()
         }
       });
-      console.log(`✅ Updated existing payment record: ${paymentRecord.id}`);
+      console.log(`Updated existing payment record: ${paymentRecord.id}`);
     }
 
     // Now create Razorpay order (payment record already exists)
-    const result = await razorpayService.createSubscriptionOrder(subscriptionId, parsedAmount, currency);
+    const result = await razorpayService.createSubscriptionOrder(subscriptionId, amount, currency);
 
     res.status(201).json({
       success: true,
@@ -576,7 +585,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     
     // CRITICAL: Mark payment as FAILED if order creation fails
     try {
-      const failedPayment = await prisma.payment.findFirst({
+      const failedPayment = await getPrismaClient().payment.findFirst({
         where: {
           subscriptionId: subscriptionId,
           status: 'PENDING'
@@ -585,7 +594,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       });
       
       if (failedPayment) {
-        await prisma.payment.update({
+        await getPrismaClient().payment.update({
           where: { id: failedPayment.id },
           data: {
             status: 'FAILED',
@@ -749,14 +758,16 @@ const handleRazorpayWebhook = async (req, res) => {
       return res.status(400).json({ error: 'Webhook secret not configured' });
     }
 
-    // Verify webhook signature
-    const body = JSON.stringify(req.body);
+    // SECURITY FIX: Use raw body for signature verification
+    // The raw body is captured by middleware in paymentRoutes.js
+    const body = req.rawBody || JSON.stringify(req.body);
     const expectedSignature = crypto
       .createHmac('sha256', webhookSecret)
       .update(body)
       .digest('hex');
 
     if (expectedSignature !== webhookSignature) {
+      console.error('Webhook signature verification failed');
       return res.status(400).json({ error: 'Invalid webhook signature' });
     }
 
@@ -789,7 +800,7 @@ const handleRazorpayWebhook = async (req, res) => {
 const handlePaymentCaptured = async (paymentEntity) => {
   try {
     // Update payment status in database
-    await prisma.payment.updateMany({
+    await getPrismaClient().payment.updateMany({
       where: { transactionId: paymentEntity.order_id },
       data: {
         status: 'COMPLETED',
@@ -798,7 +809,7 @@ const handlePaymentCaptured = async (paymentEntity) => {
       }
     });
 
-    const payments = await prisma.payment.findMany({
+    const payments = await getPrismaClient().payment.findMany({
       where: {
         transactionId: paymentEntity.order_id,
         status: 'COMPLETED'
@@ -820,7 +831,7 @@ const handlePaymentCaptured = async (paymentEntity) => {
 const handlePaymentFailed = async (paymentEntity) => {
   try {
     // Update payment status in database
-    await prisma.payment.updateMany({
+    await getPrismaClient().payment.updateMany({
       where: { transactionId: paymentEntity.order_id },
       data: {
         status: 'FAILED',
@@ -838,7 +849,7 @@ const handlePaymentFailed = async (paymentEntity) => {
 const handleRefundCreated = async (refundEntity) => {
   try {
     // Update payment with refund information
-    const payment = await prisma.payment.findFirst({
+    const payment = await getPrismaClient().payment.findFirst({
       where: {
         gatewayResponse: {
           path: ['id'],
@@ -851,7 +862,7 @@ const handleRefundCreated = async (refundEntity) => {
       const refundAmount = refundEntity.amount / 100; // Convert from paise
       const refundStatus = refundAmount >= payment.finalAmount ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
       
-      await prisma.payment.update({
+      await getPrismaClient().payment.update({
         where: { id: payment.id },
         data: {
           status: refundStatus,

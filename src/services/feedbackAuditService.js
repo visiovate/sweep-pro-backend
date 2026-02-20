@@ -1,5 +1,6 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Feedback Audit Service
@@ -13,7 +14,7 @@ class FeedbackAuditService {
   async logFeedbackAction(feedbackId, adminId, action, details = {}) {
     try {
       // Get the feedback before the change
-      const feedback = await prisma.feedback.findUnique({
+      const feedback = await getPrismaClient().feedback.findUnique({
         where: { id: feedbackId },
         include: {
           booking: {
@@ -41,7 +42,7 @@ class FeedbackAuditService {
       }
 
       // Prepare audit entry
-      const auditEntry = await prisma.feedbackAudit.create({
+      const auditEntry = await getPrismaClient().feedbackAudit.create({
         data: {
           feedbackId,
           adminId,
@@ -75,7 +76,7 @@ class FeedbackAuditService {
    */
   async getAuditTrail(feedbackId) {
     try {
-      const auditEntries = await prisma.feedbackAudit.findMany({
+      const auditEntries = await getPrismaClient().feedbackAudit.findMany({
         where: { feedbackId },
         include: {
           admin: {
@@ -128,7 +129,7 @@ class FeedbackAuditService {
         where.action = action;
       }
 
-      const auditEntries = await prisma.feedbackAudit.findMany({
+      const auditEntries = await getPrismaClient().feedbackAudit.findMany({
         where,
         include: {
           admin: {
@@ -152,7 +153,7 @@ class FeedbackAuditService {
         skip: offset
       });
 
-      const totalCount = await prisma.feedbackAudit.count({ where });
+      const totalCount = await getPrismaClient().feedbackAudit.count({ where });
 
       return {
         entries: auditEntries,
@@ -188,17 +189,17 @@ class FeedbackAuditService {
       }
 
       // Count by action type
-      const actionCounts = await prisma.feedbackAudit.groupBy({
+      const actionCounts = await getPrismaClient().feedbackAudit.groupBy({
         by: ['action'],
         where,
         _count: true
       });
 
       // Total audit entries
-      const totalAudits = await prisma.feedbackAudit.count({ where });
+      const totalAudits = await getPrismaClient().feedbackAudit.count({ where });
 
       // Most active admins
-      const adminActivity = await prisma.feedbackAudit.groupBy({
+      const adminActivity = await getPrismaClient().feedbackAudit.groupBy({
         by: ['adminId'],
         where,
         _count: true,
@@ -213,7 +214,7 @@ class FeedbackAuditService {
       // Fetch admin details
       const adminDetails = await Promise.all(
         adminActivity.map(async (admin) => {
-          const user = await prisma.user.findUnique({
+          const user = await getPrismaClient().user.findUnique({
             where: { id: admin.adminId },
             select: {
               id: true,

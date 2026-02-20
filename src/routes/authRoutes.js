@@ -8,6 +8,7 @@ const { authenticateToken } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const emailService = require('../services/notification/EmailService');
 const { initializePrisma } = require('../utils/database');
+const { blacklistToken } = require('../utils/tokenBlacklist');
 
 router.post('/register', registerValidation, async (req, res) => {
   try {
@@ -122,7 +123,7 @@ router.post('/register', registerValidation, async (req, res) => {
         id: createdUser.id,
         role: createdUser.role
       },
-      process.env.JWT_SECRET || 'your-secret-key',
+      process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
@@ -400,13 +401,17 @@ router.post('/login', loginValidation, async (req, res) => {
     }
 
     // Generate JWT token
+    if (!process.env.JWT_SECRET) {
+      console.error('FATAL: JWT_SECRET environment variable is not set');
+      return res.status(500).json({ success: false, message: 'Server configuration error' });
+    }
     const token = jwt.sign(
       { 
         userId: user.id,
         id: user.id,
         role: user.role
       },
-      process.env.JWT_SECRET || 'your-secret-key',
+      process.env.JWT_SECRET,
       { expiresIn: rememberMe ? '30d' : '24h' }
     );
 
@@ -534,15 +539,37 @@ router.get('/apartments', async (req, res) => {
   }
 });
 
-// Logout endpoint (optional - mainly for clearing client-side token)
+// Logout endpoint - revokes JWT token by adding it to blacklist
 router.post('/logout', authenticateToken, async (req, res) => {
   try {
-    // In a stateless JWT system, logout is handled client-side by removing the token
-    // This endpoint can be used for logging or additional cleanup if needed
-    
+    const authHeader = req.header('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token required for logout'
+      });
+    }
+
+    // Decode token to get remaining expiration time
+    let expiresIn = 86400; // default 24 hours
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+      if (decoded.exp) {
+        expiresIn = Math.max(0, decoded.exp - Math.floor(Date.now() / 1000));
+      }
+    } catch (e) {
+      // If token can't be decoded, use default expiration time
+    }
+
+    // Add token to blacklist with remaining expiration time
+    const blacklisted = await blacklistToken(token, expiresIn);
+
     res.json({
       success: true,
-      message: 'Logout successful'
+      message: 'Logout successful. Token has been revoked.',
+      blacklisted: blacklisted
     });
   } catch (error) {
     console.error('Logout error:', error);
@@ -553,8 +580,9 @@ router.post('/logout', authenticateToken, async (req, res) => {
   }
 });
 
-// Create test admin user (for development only)
-if (process.env.NODE_ENV !== 'production') {
+// Create test admin user (for development/test only - NOT production)
+// SECURITY: Explicitly check that NODE_ENV is NOT production
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== undefined) {
   router.post('/create-test-admin', async (req, res) => {
     try {
       // Check if test admin already exists

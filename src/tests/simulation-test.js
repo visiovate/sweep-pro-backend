@@ -82,7 +82,7 @@ async function testMidnightSlotCrossing() {
   console.log('\n📋 Test 2: Midnight Slot Crossing');
   console.log('─────────────────────────────────────');
   
-  const prisma = new PrismaClient();
+  const prisma = getPrismaClient();
   
   try {
     // Create booking with scheduledAt tomorrow at 1 AM
@@ -160,7 +160,7 @@ async function testWorkerIndependence() {
   console.log('\n📋 Test 3: Worker Independence (Web Sleep Simulation)');
   console.log('─────────────────────────────────────');
   
-  const prisma = new PrismaClient();
+  const prisma = getPrismaClient();
   
   try {
     // Create a test booking that needs assignment

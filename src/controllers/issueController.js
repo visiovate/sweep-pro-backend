@@ -1,5 +1,6 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 const createIssue = async (req, res) => {
   try {

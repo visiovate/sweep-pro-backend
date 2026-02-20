@@ -1,3 +1,4 @@
+const { getPrismaClient } = require('../utils/database');
 const AutomaticAssignmentService = require('../services/automaticAssignmentService');
 const { formatTimeSlot, parseTimeSlot } = require('../utils/timeSlotUtils');
 
@@ -129,7 +130,7 @@ const testTimeSlotParsing = async (req, res) => {
 const getCustomerTimeSlots = async (req, res) => {
   try {
     const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
+    const prisma = getPrismaClient();
     const { getNextServiceDateTime, calculateRequestTime } = require('../utils/timeSlotUtils');
 
     const activeAssignments = await prisma.customerMaidAssignment.findMany({

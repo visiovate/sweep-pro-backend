@@ -2,7 +2,7 @@ const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
 const { scheduleAllAssignments } = require('../queues/assignmentQueue');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Centralized Cron Job Manager

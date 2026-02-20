@@ -1,8 +1,9 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('./notificationService');
 const feedbackAuditService = require('./feedbackAuditService');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Rating Recalculation Service
@@ -16,7 +17,7 @@ class RatingRecalculationService {
   async recalculateMaidRating(maidId, adminId = null) {
     try {
       // Get all ACTIVE feedback for the maid
-      const feedbacks = await prisma.feedback.findMany({
+      const feedbacks = await getPrismaClient().feedback.findMany({
         where: {
           OR: [
             { ratedMaidId: maidId },
@@ -36,12 +37,12 @@ class RatingRecalculationService {
 
       if (feedbacks.length === 0) {
         // No active feedback, reset rating
-        const maidProfile = await prisma.maidProfile.findUnique({
+        const maidProfile = await getPrismaClient().maidProfile.findUnique({
           where: { userId: maidId }
         });
 
         if (maidProfile) {
-          await prisma.maidProfile.update({
+          await getPrismaClient().maidProfile.update({
             where: { id: maidProfile.id },
             data: {
               rating: 0,
@@ -89,7 +90,7 @@ class RatingRecalculationService {
       const avgBehavior = subRatingCount > 0 ? behaviorSum / subRatingCount : null;
 
       // Get existing maid profile
-      const maidUser = await prisma.user.findUnique({
+      const maidUser = await getPrismaClient().user.findUnique({
         where: { id: maidId },
         include: { maidProfile: true }
       });
@@ -102,7 +103,7 @@ class RatingRecalculationService {
       const ratingDelta = newRating - oldRating;
 
       // Update maid profile with new rating
-      const updatedProfile = await prisma.maidProfile.update({
+      const updatedProfile = await getPrismaClient().maidProfile.update({
         where: { id: maidUser.maidProfile.id },
         data: {
           rating: parseFloat(newRating.toFixed(2)),
@@ -124,7 +125,7 @@ class RatingRecalculationService {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const existingHistory = await prisma.maidRatingHistory.findUnique({
+      const existingHistory = await getPrismaClient().maidRatingHistory.findUnique({
         where: {
           maidId_date: {
             maidId,
@@ -134,7 +135,7 @@ class RatingRecalculationService {
       });
 
       if (existingHistory) {
-        await prisma.maidRatingHistory.update({
+        await getPrismaClient().maidRatingHistory.update({
           where: { id: existingHistory.id },
           data: {
             rating: parseFloat(newRating.toFixed(2)),
@@ -145,7 +146,7 @@ class RatingRecalculationService {
           }
         });
       } else {
-        await prisma.maidRatingHistory.create({
+        await getPrismaClient().maidRatingHistory.create({
           data: {
             maidId,
             date: today,
@@ -161,7 +162,7 @@ class RatingRecalculationService {
       // Notify admin/system if significant change
       if (Math.abs(ratingDelta) > 0.5) {
         try {
-          const admins = await prisma.user.findMany({
+          const admins = await getPrismaClient().user.findMany({
             where: { role: 'ADMIN' },
             select: { id: true }
           });
@@ -209,7 +210,7 @@ class RatingRecalculationService {
    */
   async handleFeedbackStatusChange(feedbackId, newStatus, oldStatus, adminId, reason = '') {
     try {
-      const feedback = await prisma.feedback.findUnique({
+      const feedback = await getPrismaClient().feedback.findUnique({
         where: { id: feedbackId },
         include: {
           booking: {
@@ -230,7 +231,7 @@ class RatingRecalculationService {
       }
 
       // Update feedback status
-      const updatedFeedback = await prisma.feedback.update({
+      const updatedFeedback = await getPrismaClient().feedback.update({
         where: { id: feedbackId },
         data: {
           status: newStatus,
@@ -303,7 +304,7 @@ class RatingRecalculationService {
         throw new Error('Weight must be between 0 and 2');
       }
 
-      const feedback = await prisma.feedback.findUnique({
+      const feedback = await getPrismaClient().feedback.findUnique({
         where: { id: feedbackId },
         include: {
           booking: {
@@ -326,7 +327,7 @@ class RatingRecalculationService {
       }
 
       // Update weight
-      const updatedFeedback = await prisma.feedback.update({
+      const updatedFeedback = await getPrismaClient().feedback.update({
         where: { id: feedbackId },
         data: {
           weight: newWeight,
@@ -364,7 +365,7 @@ class RatingRecalculationService {
       let maidIds;
       if (flaggedOnly) {
         // Get maids with flagged feedback
-        const flaggedFeedbacks = await prisma.feedback.findMany({
+        const flaggedFeedbacks = await getPrismaClient().feedback.findMany({
           where: { verificationFlag: true },
           distinct: ['id'],
           select: {
@@ -378,7 +379,7 @@ class RatingRecalculationService {
         maidIds = [...new Set(flaggedFeedbacks.map(f => f.ratedMaidId || f.booking?.maidId).filter(Boolean))];
       } else {
         // Get all maids with bookings
-        const allMaids = await prisma.maidProfile.findMany({
+        const allMaids = await getPrismaClient().maidProfile.findMany({
           select: { userId: true }
         });
 
@@ -416,7 +417,7 @@ class RatingRecalculationService {
    */
   async calculateRatingImpact(feedbackId, changeType, newValue = null) {
     try {
-      const feedback = await prisma.feedback.findUnique({
+      const feedback = await getPrismaClient().feedback.findUnique({
         where: { id: feedbackId },
         include: {
           booking: {
@@ -438,7 +439,7 @@ class RatingRecalculationService {
       const currentRating = feedback.booking?.maid?.maidProfile?.rating || 0;
 
       // Simulate the change
-      let simulatedFeedbacks = await prisma.feedback.findMany({
+      let simulatedFeedbacks = await getPrismaClient().feedback.findMany({
         where: {
           OR: [
             { ratedMaidId: feedback.ratedMaidId || feedback.booking.maidId },

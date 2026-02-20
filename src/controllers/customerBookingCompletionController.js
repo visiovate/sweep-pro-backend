@@ -1,5 +1,6 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Customer-initiated completion with QR verification
 // Validates that scanned maid ID matches the maid assigned to the booking

@@ -1,7 +1,8 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('./notificationService');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 class MaidSchedulingService {
   constructor() {
@@ -81,7 +82,7 @@ class MaidSchedulingService {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
     
-    return await prisma.booking.findMany({
+    return await getPrismaClient().booking.findMany({
       where: {
         scheduledAt: {
           gte: startOfDay,
@@ -126,7 +127,7 @@ class MaidSchedulingService {
   async isBookingInBufferPeriod(booking) {
     try {
       // Check if customer has active subscription in buffer period
-      const customerProfile = await prisma.customerProfile.findFirst({
+      const customerProfile = await getPrismaClient().customerProfile.findFirst({
         where: { userId: booking.customerId },
         include: {
           subscription: {
@@ -165,7 +166,7 @@ class MaidSchedulingService {
       // Assign the best maid
       const bestMaid = rankedMaids[0];
       
-      const updatedBooking = await prisma.booking.update({
+      const updatedBooking = await getPrismaClient().booking.update({
         where: { id: booking.id },
         data: {
           maidId: bestMaid.id,
@@ -213,7 +214,7 @@ class MaidSchedulingService {
     const bookingDate = booking.scheduledAt;
     const dayOfWeek = bookingDate.toLocaleDateString('en-US', { weekday: 'monday' });
     
-    return await prisma.user.findMany({
+    return await getPrismaClient().user.findMany({
       where: {
         role: { in: ['MAID', 'FLOATING_MAID'] },
         status: 'ACTIVE',
@@ -391,7 +392,7 @@ class MaidSchedulingService {
    */
   async reassignMaidToBooking(bookingId, reason = 'Manual reassignment') {
     try {
-      const booking = await prisma.booking.findUnique({
+      const booking = await getPrismaClient().booking.findUnique({
         where: { id: bookingId },
         include: {
           customer: true,
@@ -405,7 +406,7 @@ class MaidSchedulingService {
       }
 
       // Clear current maid assignment
-      await prisma.booking.update({
+      await getPrismaClient().booking.update({
         where: { id: bookingId },
         data: {
           maidId: null,
@@ -453,13 +454,13 @@ class MaidSchedulingService {
       endDate.setDate(endDate.getDate() + days);
 
       // Get assignment statistics
-      const totalBookings = await prisma.booking.count({
+      const totalBookings = await getPrismaClient().booking.count({
         where: {
           scheduledAt: { gte: startDate, lte: endDate }
         }
       });
 
-      const assignedBookings = await prisma.booking.count({
+      const assignedBookings = await getPrismaClient().booking.count({
         where: {
           scheduledAt: { gte: startDate, lte: endDate },
           maidId: { not: null }
@@ -469,7 +470,7 @@ class MaidSchedulingService {
       const unassignedBookings = totalBookings - assignedBookings;
 
       // Get maid utilization
-      const maidStats = await prisma.user.findMany({
+      const maidStats = await getPrismaClient().user.findMany({
         where: {
           role: { in: ['MAID', 'FLOATING_MAID'] },
           status: 'ACTIVE'

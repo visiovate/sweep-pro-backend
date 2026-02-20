@@ -1,8 +1,9 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
 const { formatInIST } = require('../utils/timeSlotUtils');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Booking Request Controller

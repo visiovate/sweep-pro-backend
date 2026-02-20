@@ -4,7 +4,7 @@ const subscriptionBufferService = require('../services/subscriptionBufferService
 const notificationService = require('../services/notificationService');
 const maidSchedulingService = require('../services/maidSchedulingService');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 class MonthlySubscriptionScheduler {
   constructor() {

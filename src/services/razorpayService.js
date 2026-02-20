@@ -1,18 +1,18 @@
 const { razorpay, razorpayKeyId, razorpayKeySecret } = require('../utils/razorpay-credintials');
 const crypto = require('crypto');
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database');
 const subscriptionBufferService = require('./subscriptionBufferService');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
 const { incrementTimeSlotCount } = require('../controllers/subscriptionController');
 
-const prisma = new PrismaClient();
+// Using getPrismaClient() directly
 
 class RazorpayService {
   
   async createBookingOrder(bookingId, amount, currency = 'INR') {
     try {
-      const booking = await prisma.booking.findUnique({
+      const booking = await getPrismaClient().booking.findUnique({
         where: { id: bookingId },
         include: {
           customer: { select: { id: true, name: true, email: true, phone: true } },
@@ -38,7 +38,7 @@ class RazorpayService {
 
       const order = await razorpay.orders.create(orderOptions);
       
-      await prisma.payment.create({
+      await getPrismaClient().payment.create({
         data: {
           bookingId: bookingId,
           customerId: booking.customerId,
@@ -65,13 +65,13 @@ class RazorpayService {
     if (!paymentRecord) return;
 
     if (paymentRecord.bookingId) {
-      const booking = await prisma.booking.findUnique({
+      const booking = await getPrismaClient().booking.findUnique({
         where: { id: paymentRecord.bookingId },
         select: { id: true, status: true }
       });
 
       if (booking && booking.status !== 'CONFIRMED') {
-        await prisma.booking.update({
+        await getPrismaClient().booking.update({
           where: { id: booking.id },
           data: { status: 'CONFIRMED' }
         });
@@ -79,7 +79,7 @@ class RazorpayService {
     }
 
     if (paymentRecord.subscriptionId) {
-      const currentSubscription = await prisma.subscription.findUnique({
+      const currentSubscription = await getPrismaClient().subscription.findUnique({
         where: { id: paymentRecord.subscriptionId },
         include: {
           plan: { include: { service: true } },
@@ -93,7 +93,7 @@ class RazorpayService {
       const shouldActivate = !wasActive;
 
       const activatedSubscription = shouldActivate
-        ? await prisma.subscription.update({
+        ? await getPrismaClient().subscription.update({
             where: { id: currentSubscription.id },
             data: {
               status: 'ACTIVE',
@@ -106,7 +106,7 @@ class RazorpayService {
           })
         : currentSubscription;
 
-      const existingCycle = await prisma.subscriptionCycle.findFirst({
+      const existingCycle = await getPrismaClient().subscriptionCycle.findFirst({
         where: {
           subscriptionId: activatedSubscription.id,
           startDate: { gte: activatedSubscription.startDate }
@@ -140,7 +140,7 @@ class RazorpayService {
         throw new Error('Razorpay credentials not configured');
       }
 
-      const subscription = await prisma.subscription.findUnique({
+      const subscription = await getPrismaClient().subscription.findUnique({
         where: { id: subscriptionId },
         include: {
           customer: { include: { user: { select: { id: true, name: true, email: true, phone: true } } } },
@@ -163,7 +163,7 @@ class RazorpayService {
       console.log('✅ [PAYMENT] Razorpay order created:', order.id);
 
       // Use raw SQL to bypass Prisma validation issues
-      await prisma.$executeRaw`
+      await getPrismaClient().$executeRaw`
         UPDATE "Payment" 
         SET 
           gateway = 'razorpay',
@@ -184,7 +184,7 @@ class RazorpayService {
       
       // Mark payment as FAILED using raw SQL
       try {
-        await prisma.$executeRaw`
+        await getPrismaClient().$executeRaw`
           UPDATE "Payment"
           SET 
             status = 'FAILED',
@@ -243,7 +243,7 @@ class RazorpayService {
         throw new Error(`Payment status is '${paymentDetails.status}', not 'captured'`);
       }
 
-      const existingPayment = await prisma.payment.findFirst({
+      const existingPayment = await getPrismaClient().payment.findFirst({
         where: { transactionId: razorpay_order_id },
         orderBy: { createdAt: 'desc' }
       });
@@ -262,7 +262,7 @@ class RazorpayService {
         };
       }
       
-      const updatedPayment = await prisma.payment.update({
+      const updatedPayment = await getPrismaClient().payment.update({
         where: { id: existingPayment.id },
         data: {
           status: 'COMPLETED',
@@ -287,14 +287,14 @@ class RazorpayService {
       });
 
       if (updatedPayment.bookingId) {
-        await prisma.booking.update({
+        await getPrismaClient().booking.update({
           where: { id: updatedPayment.bookingId },
           data: { status: 'CONFIRMED' }
         });
       }
 
       if (updatedPayment.subscriptionId) {
-        const subscriptionToActivate = await prisma.subscription.findUnique({
+        const subscriptionToActivate = await getPrismaClient().subscription.findUnique({
           where: { id: updatedPayment.subscriptionId }
         });
 
@@ -312,7 +312,7 @@ class RazorpayService {
           };
         }
 
-        const updatedSubscription = await prisma.subscription.update({
+        const updatedSubscription = await getPrismaClient().subscription.update({
           where: { id: updatedPayment.subscriptionId },
           data: {
             status: 'ACTIVE',
@@ -336,7 +336,7 @@ class RazorpayService {
           // Don't throw - this is a non-critical operation
         }
 
-        const existingCycle = await prisma.subscriptionCycle.findFirst({
+        const existingCycle = await getPrismaClient().subscriptionCycle.findFirst({
           where: { subscriptionId: updatedPayment.subscriptionId, cycleNumber: 1 }
         });
 
@@ -363,7 +363,7 @@ class RazorpayService {
     try {
       const { razorpay_order_id, error_code, error_description } = paymentData;
 
-      const existingPayment = await prisma.payment.findFirst({
+      const existingPayment = await getPrismaClient().payment.findFirst({
         where: { transactionId: razorpay_order_id },
         orderBy: { createdAt: 'desc' }
       });
@@ -372,7 +372,7 @@ class RazorpayService {
         throw new Error('Payment record not found');
       }
 
-      const updatedPayment = await prisma.payment.update({
+      const updatedPayment = await getPrismaClient().payment.update({
         where: { id: existingPayment.id },
         data: {
           status: 'FAILED',
@@ -395,7 +395,7 @@ class RazorpayService {
 
   async processRefund(paymentId, refundAmount, refundReason) {
     try {
-      const payment = await prisma.payment.findUnique({
+      const payment = await getPrismaClient().payment.findUnique({
         where: { id: paymentId },
         include: { booking: true, subscription: true }
       });
@@ -417,7 +417,7 @@ class RazorpayService {
 
       const refundStatus = refundAmount >= payment.finalAmount ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
       
-      const updatedPayment = await prisma.payment.update({
+      const updatedPayment = await getPrismaClient().payment.update({
         where: { id: paymentId },
         data: {
           status: refundStatus,

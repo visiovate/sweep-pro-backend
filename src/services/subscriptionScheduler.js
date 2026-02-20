@@ -1,3 +1,4 @@
+const { getPrismaClient } = require('../utils/database');
 const { Queue } = require('bullmq');
 const { createRedisConnection } = require('../config/redis');
 const { PrismaClient } = require('@prisma/client');
@@ -5,7 +6,7 @@ const subscriptionBufferService = require('./subscriptionBufferService');
 const notificationService = require('./notificationService');
 const maidSchedulingService = require('./maidSchedulingService');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * BullMQ-based Subscription & Buffer Period Scheduler

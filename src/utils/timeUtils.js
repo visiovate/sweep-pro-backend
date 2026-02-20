@@ -65,24 +65,22 @@ function getHoursDifference(futureTime, baseTime = new Date()) {
 }
 
 /**
- * Calculate 20-hour trigger window
+ * Calculate assignment trigger window
  * 
- * Target: 20 hours before service
- * Window: ±15 minutes for cron tolerance
+ * SIMPLIFIED: Find all bookings within the next 20 hours that need assignment
+ * This means: now < service_datetime <= now + 20 hours
  * 
  * @param {Date} now - Current UTC time
- * @returns {Object} - { windowStart, windowEnd, targetTime }
+ * @returns {Object} - { windowStart, windowEnd }
  */
 function get20HourTriggerWindow(now = getCurrentUTC()) {
-  const HOURS_BEFORE = 20;
-  const WINDOW_MARGIN_MS = 15 * 60 * 1000; // ±15 minutes
+  const HOURS_AHEAD = 20;
 
-  const targetTime = new Date(now.getTime() + (HOURS_BEFORE * 60 * 60 * 1000));
-  const windowStart = new Date(targetTime.getTime() - WINDOW_MARGIN_MS);
-  const windowEnd = new Date(targetTime.getTime() + WINDOW_MARGIN_MS);
+  // Window: from now to 20 hours from now
+  const windowStart = now;
+  const windowEnd = new Date(now.getTime() + (HOURS_AHEAD * 60 * 60 * 1000));
 
   return {
-    targetTime,
     windowStart,
     windowEnd,
   };

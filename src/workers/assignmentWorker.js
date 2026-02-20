@@ -24,7 +24,7 @@ const { isDateOnWeeklyOff } = require('../utils/weekdayUtils');
  */
 
 // Initialize Prisma
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Create Redis connection for worker
 const connection = createRedisConnection();

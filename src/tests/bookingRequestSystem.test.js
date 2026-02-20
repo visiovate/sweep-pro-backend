@@ -2,7 +2,7 @@ const request = require('supertest');
 const { PrismaClient } = require('@prisma/client');
 const app = require('../index');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 describe('Booking Request and Completion System', () => {
   let testCustomer, testMaid, testService, testAssignment, testBooking, testAssignmentRequest;

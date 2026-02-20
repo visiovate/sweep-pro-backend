@@ -1,9 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database');
 const { WebSocketServer } = require('ws');
 const jwt = require('jsonwebtoken');
 const cron = require('node-cron');
-
-const prisma = new PrismaClient();
 
 class NotificationService {
   constructor() {
@@ -62,8 +60,12 @@ class NotificationService {
 
   async authenticateClient(ws, token) {
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-      const user = await prisma.user.findUnique({
+      if (!process.env.JWT_SECRET) {
+        ws.close(1011, 'Server configuration error');
+        return;
+      }
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await getPrismaClient().user.findUnique({
         where: { id: decoded.userId || decoded.id },
         include: {
           maidProfile: true,
@@ -167,7 +169,7 @@ class NotificationService {
     console.log(`📊 Sent to ${sentCount} connected admin(s) via WebSocket`);
 
     // Save to admin users in database
-    const adminUsers = await prisma.user.findMany({
+    const adminUsers = await getPrismaClient().user.findMany({
       where: { role: { in: ['ADMIN', 'SUPERVISOR'] } },
       select: { id: true, name: true, email: true }
     });
@@ -199,7 +201,7 @@ class NotificationService {
     });
 
     // Save to all maid users in database
-    const maidUsers = await prisma.user.findMany({
+    const maidUsers = await getPrismaClient().user.findMany({
       where: { role: { in: ['MAID', 'FLOATING_MAID'] } },
       select: { id: true }
     });
@@ -221,7 +223,7 @@ class NotificationService {
   // Save notification to database
   async saveNotificationToDatabase(userId, notification) {
     try {
-      await prisma.notification.create({
+      await getPrismaClient().notification.create({
         data: {
           userId,
           type: notification.type,
@@ -239,7 +241,7 @@ class NotificationService {
 
   // Get unread notifications for a user
   async getUnreadNotifications(userId) {
-    return await prisma.notification.findMany({
+    return await getPrismaClient().notification.findMany({
       where: {
         userId,
         read: false
@@ -252,7 +254,7 @@ class NotificationService {
 
   // Mark notification as read
   async markAsRead(notificationId, userId) {
-    return await prisma.notification.update({
+    return await getPrismaClient().notification.update({
       where: {
         id: notificationId,
         userId
@@ -266,7 +268,7 @@ class NotificationService {
 
   // Mark all notifications as read for a user
   async markAllAsRead(userId) {
-    return await prisma.notification.updateMany({
+    return await getPrismaClient().notification.updateMany({
       where: {
         userId,
         read: false
@@ -1249,7 +1251,7 @@ class NotificationService {
     const dayAfterTomorrow = new Date(tomorrow);
     dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
-    const bookings = await prisma.booking.findMany({
+    const bookings = await getPrismaClient().booking.findMany({
       where: {
         scheduledAt: {
           gte: tomorrow,
@@ -1270,7 +1272,7 @@ class NotificationService {
   }
 
   async sendPaymentReminders() {
-    const pendingPayments = await prisma.payment.findMany({
+    const pendingPayments = await getPrismaClient().payment.findMany({
       where: {
         status: 'PENDING',
         createdAt: {
@@ -1294,7 +1296,7 @@ class NotificationService {
   }
 
   async sendSubscriptionExpiryReminders() {
-    const expiringSubscriptions = await prisma.subscription.findMany({
+    const expiringSubscriptions = await getPrismaClient().subscription.findMany({
       where: {
         status: 'ACTIVE',
         endDate: {
@@ -1318,7 +1320,7 @@ class NotificationService {
   }
 
   async sendPerformanceAlerts() {
-    const maids = await prisma.maidProfile.findMany({
+    const maids = await getPrismaClient().maidProfile.findMany({
       where: {
         status: 'ACTIVE'
       },
@@ -1359,7 +1361,7 @@ class NotificationService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const absentMaids = await prisma.attendance.findMany({
+    const absentMaids = await getPrismaClient().attendance.findMany({
       where: {
         date: today,
         status: 'ABSENT'
@@ -1403,7 +1405,7 @@ class NotificationService {
   // Health check for WebSocket connections
   async healthCheck() {
     const stats = this.getConnectionStats();
-    const recentNotifications = await prisma.notification.count({
+    const recentNotifications = await getPrismaClient().notification.count({
       where: {
         createdAt: {
           gte: new Date(Date.now() - 24 * 60 * 60 * 1000)

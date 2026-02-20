@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { getPrismaClient } = require('../utils/database');
 const { getFirebaseAuth } = require('../config/firebase');
+const { isTokenBlacklisted } = require('../utils/tokenBlacklist');
 
 const buildAuthSuccessResponse = (decodedPayload, userRecord = null) => {
   const baseClaims = {
@@ -51,24 +52,27 @@ const buildFirebaseAuthSuccessResponse = (firebaseDecodedToken, userRecord) => {
 const authenticateToken = async (req, res, next) => {
   try {
     const authHeader = req.header('Authorization');
-    console.log('🔐 Auth Debug - Authorization header:', authHeader ? `Bearer ${authHeader.substring(0, 20)}...` : 'MISSING');
     
     const token = authHeader?.replace('Bearer ', '');
 
     if (!token) {
-      console.log('🔐 Auth Debug - Token not found in Authorization header');
       throw new Error('Token missing');
     }
 
-    console.log('🔐 Auth Debug - Token found, length:', token.length);
+    // Check if token is blacklisted (revoked via logout)
+    const blacklisted = await isTokenBlacklisted(token);
+    if (blacklisted) {
+      throw new Error('Token has been revoked');
+    }
+
     let decoded = null;
 
     try {
-      console.log('🔐 Auth Debug - JWT_SECRET configured:', !!process.env.JWT_SECRET);
-      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-      console.log('🔐 Auth Debug - JWT verified successfully, userId:', decoded?.userId || decoded?.id);
+      if (!process.env.JWT_SECRET) {
+        throw new Error('JWT_SECRET not configured');
+      }
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (jwtError) {
-      console.log('🔐 Auth Debug - JWT verification failed:', jwtError.message);
       // Not a valid JWT. Try Firebase ID token (Google sign-in sessions).
       try {
         const firebaseAuth = getFirebaseAuth();
@@ -112,13 +116,11 @@ const authenticateToken = async (req, res, next) => {
         req.user = buildFirebaseAuthSuccessResponse(firebaseDecodedToken, userRecord);
         return next();
       } catch (firebaseError) {
-        console.log('🔐 Auth Debug - Firebase verification also failed:', firebaseError.message);
         throw firebaseError;
       }
     }
 
     if (!decoded?.userId && !decoded?.id) {
-      console.log('🔐 Auth Debug - Token payload invalid, decoded:', decoded);
       throw new Error('Invalid token payload');
     }
 
@@ -156,8 +158,9 @@ const authenticateToken = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error('❌ Authentication error:', error?.message || error);
-    console.error('❌ Error stack:', error?.stack);
+    if (process.env.DEBUG_AUTH === 'true') {
+      console.error('❌ Authentication error:', error?.message || error);
+    }
     res.status(401).json({ error: 'Please authenticate.' });
   }
 };
@@ -168,12 +171,9 @@ const auth = authenticateToken;
 
 const authorizeAdmin = async (req, res, next) => {
   try {
-    console.log('User role check:', req.user?.role, 'User ID:', req.user?.id);
     if (req.user?.role !== 'ADMIN') {
-      console.log('Access denied - user role is:', req.user?.role);
       throw new Error();
     }
-    console.log('Admin access granted');
     next();
   } catch (error) {
     res.status(403).json({ error: 'Access denied. Admin privileges required.' });

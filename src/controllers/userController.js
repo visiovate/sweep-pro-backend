@@ -1,9 +1,10 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const notificationService = require('../services/notificationService');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Note: Registration is now handled in authRoutes.js
 // This method is kept for backward compatibility if needed

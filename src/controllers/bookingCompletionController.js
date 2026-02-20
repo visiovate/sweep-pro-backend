@@ -1,7 +1,8 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const { formatInIST } = require('../utils/timeSlotUtils');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Booking Completion Controller

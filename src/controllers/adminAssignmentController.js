@@ -1,9 +1,10 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const JobScheduler = require('../services/jobScheduler');
 const { formatInIST } = require('../utils/timeSlotUtils');
 const { runDailyBookingAutomation } = require('../scripts/daily-booking-automation');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Admin Assignment Controller

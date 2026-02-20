@@ -30,7 +30,25 @@ router.post('/razorpay/failure', authenticateToken, handleRazorpayPaymentFailure
 router.get('/razorpay/status/:razorpayPaymentId', authenticateToken, getPaymentStatus);
 
 // Webhook route (no authentication required)
-router.post('/razorpay/webhook', handleRazorpayWebhook);
+// SECURITY FIX: Use express.raw() to capture raw body for signature verification
+// The raw body is stored in req.rawBody and used by handleRazorpayWebhook
+// SECURITY: Set a small size limit for webhook (Razorpay webhooks are typically < 10KB)
+router.post('/razorpay/webhook',
+  express.raw({ type: 'application/json', limit: '256kb' }),
+  (req, res, next) => {
+    // Store raw body for signature verification
+    if (Buffer.isBuffer(req.body)) {
+      req.rawBody = req.body.toString('utf8');
+      try {
+        req.body = JSON.parse(req.rawBody);
+      } catch (e) {
+        return res.status(400).json({ error: 'Invalid JSON in webhook body' });
+      }
+    }
+    next();
+  },
+  handleRazorpayWebhook
+);
 
 // Admin routes
 router.get('/', authenticateToken, authorizeAdmin, getAllPayments);

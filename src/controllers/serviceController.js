@@ -1,5 +1,6 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Create a new service
 const createService = async (req, res) => {

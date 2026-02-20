@@ -6,7 +6,7 @@ const emailTemplates = require('../notifications/email/templates');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 const connection = createRedisConnection();
 
 async function getUserPreferences(userId) {

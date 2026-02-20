@@ -1,3 +1,4 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const { 
   getNextServiceDateTime, 
@@ -5,7 +6,7 @@ const {
   ASSIGNMENT_REQUEST_HOURS_BEFORE 
 } = require('../utils/timeSlotUtils');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Daily Booking Automation Script
@@ -22,7 +23,7 @@ async function runDailyBookingAutomation() {
     console.log(`⏰ Creating booking requests ${ASSIGNMENT_REQUEST_HOURS_BEFORE} hours before service\n`);
 
     // Get default service
-    let defaultService = await prisma.service.findFirst({
+    let defaultService = await getPrismaClient().service.findFirst({
       where: {
         isActive: true,
         isSubscriptionService: true
@@ -30,7 +31,7 @@ async function runDailyBookingAutomation() {
     });
 
     if (!defaultService) {
-      defaultService = await prisma.service.findFirst({
+      defaultService = await getPrismaClient().service.findFirst({
         where: { isActive: true }
       });
     }
@@ -42,7 +43,7 @@ async function runDailyBookingAutomation() {
     console.log(`🎯 Using service: ${defaultService.name} (${defaultService.id})\n`);
 
     // Get all active customer-maid assignments
-    const activeAssignments = await prisma.customerMaidAssignment.findMany({
+    const activeAssignments = await getPrismaClient().customerMaidAssignment.findMany({
       where: { isActive: true },
       include: {
         customer: {
@@ -94,7 +95,7 @@ async function runDailyBookingAutomation() {
         }
 
         // Check if request already exists
-        const existingRequest = await prisma.assignmentRequest.findFirst({
+        const existingRequest = await getPrismaClient().assignmentRequest.findFirst({
           where: {
             maidId: assignment.maidId,
             status: 'pending',
@@ -129,7 +130,7 @@ async function runDailyBookingAutomation() {
         console.log(`🔄 Creating request for ${assignment.customer.name} (${timeSlot})`);
 
         // Create booking
-        const booking = await prisma.booking.create({
+        const booking = await getPrismaClient().booking.create({
           data: {
             customerId: assignment.customerId,
             maidId: assignment.maid.user.id,
@@ -147,7 +148,7 @@ async function runDailyBookingAutomation() {
         });
 
         // Create assignment request
-        const assignmentRequest = await prisma.assignmentRequest.create({
+        const assignmentRequest = await getPrismaClient().assignmentRequest.create({
           data: {
             bookingId: booking.id,
             maidId: assignment.maidId,
@@ -157,7 +158,7 @@ async function runDailyBookingAutomation() {
         });
 
         // Send notification to maid
-        await prisma.notification.create({
+        await getPrismaClient().notification.create({
           data: {
             userId: assignment.maid.user.id,
             type: 'SERVICE_ASSIGNED',
@@ -237,7 +238,7 @@ async function runDailyBookingAutomation() {
     console.error('❌ Daily automation failed:', error);
     throw error;
   } finally {
-    await prisma.$disconnect();
+    await getPrismaClient().$disconnect();
   }
 }
 
@@ -246,7 +247,7 @@ async function runDailyBookingAutomation() {
  */
 async function checkCustomerBufferStatus(customerId) {
   try {
-    const activeBuffer = await prisma.bufferPeriod.findFirst({
+    const activeBuffer = await getPrismaClient().bufferPeriod.findFirst({
       where: {
         subscription: {
           customer: {

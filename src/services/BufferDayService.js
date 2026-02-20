@@ -1,8 +1,9 @@
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database');
 
 class BufferDayService {
   constructor() {
-    this.prisma = new PrismaClient();
+    // Use singleton PrismaClient from database utility
+    // No need to create new instance per class instantiation
     
     // Buffer day allocation rules
     this.bufferAllocationRules = {
@@ -46,7 +47,7 @@ class BufferDayService {
    * Get remaining buffer days for a subscription
    */
   async getRemainingBufferDays(subscriptionId) {
-    const subscription = await this.prisma.subscription.findUnique({
+    const subscription = await getPrismaClient().subscription.findUnique({
       where: { id: subscriptionId },
       select: {
         bufferDaysCount: true,
@@ -112,7 +113,7 @@ class BufferDayService {
     }
 
     // Check if customer is already in buffer period
-    const activeBuffer = await this.prisma.bufferPeriod.findFirst({
+    const activeBuffer = await getPrismaClient().bufferPeriod.findFirst({
       where: {
         subscriptionId,
         status: 'ACTIVE'
@@ -144,7 +145,7 @@ class BufferDayService {
         throw new Error(canRequest.reason);
       }
 
-      const subscription = await this.prisma.subscription.findUnique({
+      const subscription = await getPrismaClient().subscription.findUnique({
         where: { id: subscriptionId },
         include: {
           customer: {
@@ -174,7 +175,7 @@ class BufferDayService {
       console.log(`🛡️ Buffer period dates: ${bufferStartDateOnly.toISOString()} to ${bufferEndDate.toISOString()}`);
 
       // Create buffer period request (PENDING status for admin approval)
-      const bufferPeriod = await this.prisma.bufferPeriod.create({
+      const bufferPeriod = await getPrismaClient().bufferPeriod.create({
         data: {
           subscriptionId,
           startDate: bufferStartDateOnly,
@@ -218,7 +219,7 @@ class BufferDayService {
     try {
       console.log(`🔄 Starting approval process for buffer period: ${bufferPeriodId}`);
       
-      const bufferPeriod = await this.prisma.bufferPeriod.findUnique({
+      const bufferPeriod = await getPrismaClient().bufferPeriod.findUnique({
         where: { id: bufferPeriodId },
         include: {
           subscription: {
@@ -275,7 +276,7 @@ class BufferDayService {
         updatedNotes += `\nAdmin approved by ${adminName} on ${timestamp}: ${adminNotes}`;
       }
       
-      await this.prisma.bufferPeriod.update({
+      await getPrismaClient().bufferPeriod.update({
         where: { id: bufferPeriodId },
         data: {
           status: 'ACTIVE',
@@ -287,7 +288,7 @@ class BufferDayService {
       console.log(`🔄 Step 2: Updating subscription...`);
 
       // Update subscription - deduct buffer days and set buffer period flags
-      await this.prisma.subscription.update({
+      await getPrismaClient().subscription.update({
         where: { id: bufferPeriod.subscriptionId },
         data: {
           isInBufferPeriod: true,
@@ -319,7 +320,7 @@ class BufferDayService {
       console.log(`🔄 Step 4: Sending customer notification...`);
 
       // Notify customer about approval
-      await this.prisma.notification.create({
+      await getPrismaClient().notification.create({
         data: {
           userId: bufferPeriod.subscription.customer.user.id,
           type: 'BUFFER_APPROVED',
@@ -356,7 +357,7 @@ class BufferDayService {
       console.log('🧹 Starting cleanup of malformed buffer notes...');
       
       // Find all buffer periods with malformed notes
-      const malformedRequests = await this.prisma.bufferPeriod.findMany({
+      const malformedRequests = await getPrismaClient().bufferPeriod.findMany({
         where: {
           status: 'ACTIVE',
           notes: {
@@ -380,7 +381,7 @@ class BufferDayService {
           cleanedNotes += '\nAdmin approved by System Cleanup on ' + new Date().toISOString().split('T')[0] + ': Cleaned up malformed request';
         }
 
-        await this.prisma.bufferPeriod.update({
+        await getPrismaClient().bufferPeriod.update({
           where: { id: request.id },
           data: { notes: cleanedNotes }
         });
@@ -405,7 +406,7 @@ class BufferDayService {
    */
   async rejectBufferRequest(bufferPeriodId, adminId, rejectionReason) {
     try {
-      const bufferPeriod = await this.prisma.bufferPeriod.findUnique({
+      const bufferPeriod = await getPrismaClient().bufferPeriod.findUnique({
         where: { id: bufferPeriodId },
         include: {
           subscription: {
@@ -432,7 +433,7 @@ class BufferDayService {
         .replace('STATUS: PENDING_APPROVAL', 'STATUS: REJECTED')
         + `\nAdmin rejected: ${rejectionReason}`;
       
-      await this.prisma.bufferPeriod.update({
+      await getPrismaClient().bufferPeriod.update({
         where: { id: bufferPeriodId },
         data: {
           status: 'CANCELLED',
@@ -441,7 +442,7 @@ class BufferDayService {
       });
 
       // Notify customer about rejection
-      await this.prisma.notification.create({
+      await getPrismaClient().notification.create({
         data: {
           userId: bufferPeriod.subscription.customer.user.id,
           type: 'BUFFER_REJECTED',
@@ -473,7 +474,7 @@ class BufferDayService {
   async getPendingBufferRequests(page = 1, limit = 20) {
     const offset = (page - 1) * limit;
 
-    const requests = await this.prisma.bufferPeriod.findMany({
+    const requests = await getPrismaClient().bufferPeriod.findMany({
       where: {
         status: 'ACTIVE',
         AND: [
@@ -517,7 +518,7 @@ class BufferDayService {
       take: limit
     });
 
-    const totalCount = await this.prisma.bufferPeriod.count({
+    const totalCount = await getPrismaClient().bufferPeriod.count({
       where: { 
         status: 'ACTIVE',
         AND: [
@@ -560,13 +561,13 @@ class BufferDayService {
    */
   async createBufferRequestNotification(subscription, bufferPeriod, reason) {
     // Get all admin users
-    const adminUsers = await this.prisma.user.findMany({
+    const adminUsers = await getPrismaClient().user.findMany({
       where: { role: 'ADMIN' }
     });
 
     // Create notification for each admin
     for (const admin of adminUsers) {
-      await this.prisma.notification.create({
+      await getPrismaClient().notification.create({
         data: {
           userId: admin.id,
           type: 'BUFFER_REQUEST',
@@ -609,7 +610,7 @@ class BufferDayService {
     // Find all bookings within the buffer period
     console.log(`🔍 Executing booking query with subscription ID: ${subscriptionId}`);
     
-    const bookingsToCancel = await this.prisma.booking.findMany({
+    const bookingsToCancel = await getPrismaClient().booking.findMany({
       where: {
         customer: {
           customerProfile: {
@@ -647,7 +648,7 @@ class BufferDayService {
     let cancelledCount = 0;
 
     for (const booking of bookingsToCancel) {
-      await this.prisma.booking.update({
+      await getPrismaClient().booking.update({
         where: { id: booking.id },
         data: {
           status: 'CANCELLED',
@@ -657,7 +658,7 @@ class BufferDayService {
       });
 
       // Notify customer about cancellation
-      await this.prisma.notification.create({
+      await getPrismaClient().notification.create({
         data: {
           userId: booking.customer.id,
           type: 'SERVICE_CANCELLED',
@@ -673,7 +674,7 @@ class BufferDayService {
 
       // Notify assigned maid about cancellation
       if (booking.maidId) {
-        await this.prisma.notification.create({
+        await getPrismaClient().notification.create({
           data: {
             userId: booking.maidId,
             type: 'SERVICE_CANCELLED',
@@ -694,7 +695,7 @@ class BufferDayService {
     console.log(`🚫 Cancelled ${cancelledCount} bookings during buffer period`);
 
     // Update buffer period with cancelled services count
-    await this.prisma.bufferPeriod.updateMany({
+    await getPrismaClient().bufferPeriod.updateMany({
       where: {
         subscriptionId,
         startDate,
@@ -723,7 +724,7 @@ class BufferDayService {
       today.setHours(23, 59, 59, 999); // End of today
 
       // Find all active buffer periods that have ended
-      const expiredBufferPeriods = await this.prisma.bufferPeriod.findMany({
+      const expiredBufferPeriods = await getPrismaClient().bufferPeriod.findMany({
         where: {
           status: 'ACTIVE',
           endDate: { lt: today }
@@ -743,7 +744,7 @@ class BufferDayService {
 
       for (const bufferPeriod of expiredBufferPeriods) {
         // Mark buffer period as completed
-        await this.prisma.bufferPeriod.update({
+        await getPrismaClient().bufferPeriod.update({
           where: { id: bufferPeriod.id },
           data: {
             status: 'COMPLETED',
@@ -752,7 +753,7 @@ class BufferDayService {
         });
 
         // Resume subscription services
-        await this.prisma.subscription.update({
+        await getPrismaClient().subscription.update({
           where: { id: bufferPeriod.subscriptionId },
           data: {
             isInBufferPeriod: false,
@@ -762,7 +763,7 @@ class BufferDayService {
         });
 
         // Notify customer about buffer period completion
-        await this.prisma.notification.create({
+        await getPrismaClient().notification.create({
           data: {
             userId: bufferPeriod.subscription.customer.user.id,
             type: 'BUFFER_ENDED',
@@ -797,7 +798,7 @@ class BufferDayService {
   async getCustomerBufferHistory(subscriptionId, page = 1, limit = 10) {
     const offset = (page - 1) * limit;
 
-    const history = await this.prisma.bufferPeriod.findMany({
+    const history = await getPrismaClient().bufferPeriod.findMany({
       where: {
         subscriptionId
       },
@@ -808,7 +809,7 @@ class BufferDayService {
       take: limit
     });
 
-    const totalCount = await this.prisma.bufferPeriod.count({
+    const totalCount = await getPrismaClient().bufferPeriod.count({
       where: { subscriptionId }
     });
 

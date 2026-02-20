@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const jwt = require('jsonwebtoken');
 const app = require('../index');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Store test data for cleanup
 let testData = {

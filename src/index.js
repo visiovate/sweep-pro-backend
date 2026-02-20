@@ -66,7 +66,7 @@ notificationService.init(wss);
 // Middleware
 const allowedOrigins = [
   'http://localhost:3000',
-  'http://localhost:5173', 
+  'http://localhost:5173',
   'http://localhost:8080',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:5173',
@@ -78,7 +78,8 @@ const allowedOrigins = [
   'https://sweepro.in',
   'https://www.sweepro.in',
   'https://sweep-pro-frontend.vercel.app',
-  'https://www.sweep-pro-frontend.vercel.app'
+  'https://www.sweep-pro-frontend.vercel.app',
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : [])
 ];
 
 const allowedOriginRegexes = [
@@ -86,7 +87,8 @@ const allowedOriginRegexes = [
   /^https:\/\/www\.sweep-pro-frontend(-testing)?\.vercel\.app$/i,
   /^https:\/\/sweep-pro-frontend(-testing)?-[a-z0-9-]+\.vercel\.app$/i,
   /^https:\/\/sweep-pro-frontend(-testing)?-[a-z0-9-]+-[a-z0-9-]+\.vercel\.app$/i,
-  /^https:\/\/sweep-pro-frontend(-testing)?-[a-z0-9]+-visiovate-techs-projects\.vercel\.app$/i
+  /^https:\/\/sweep-pro-frontend(-testing)?-[a-z0-9]+-visiovate-techs-projects\.vercel\.app$/i,
+  ...(process.env.ALLOWED_ORIGIN_REGEXES ? process.env.ALLOWED_ORIGIN_REGEXES.split('|').map(pattern => new RegExp(pattern, 'i')) : [])
 ];
 
 function isOriginAllowed(origin) {
@@ -193,14 +195,56 @@ app.use('/api/events', eventRoutes);
 app.use('/api/terms', termsRoutes);
 
 // Health check route
-app.get('/health', (req, res) => {
-  res.json({
+app.get('/health', async (req, res) => {
+  const healthStatus = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     memory: process.memoryUsage(),
-    version: process.version
-  });
+    version: process.version,
+    dependencies: {
+      database: { status: 'unknown', message: 'Not checked' },
+      redis: { status: 'unknown', message: 'Not checked' }
+    }
+  };
+
+  try {
+    // Check database connectivity
+    const { prismaClient } = require('./utils/database');
+    if (prismaClient) {
+      try {
+        await prismaClient.$queryRaw`SELECT 1`;
+        healthStatus.dependencies.database = { status: 'healthy', message: 'Connected' };
+      } catch (dbError) {
+        healthStatus.dependencies.database = { status: 'unhealthy', message: dbError.message };
+        healthStatus.status = 'degraded';
+      }
+    }
+  } catch (error) {
+    healthStatus.dependencies.database = { status: 'unhealthy', message: 'Failed to check: ' + error.message };
+    healthStatus.status = 'degraded';
+  }
+
+  try {
+    // Check Redis connectivity
+    const redis = require('./config/redis');
+    if (redis && redis.redisClient) {
+      try {
+        await redis.redisClient.ping();
+        healthStatus.dependencies.redis = { status: 'healthy', message: 'Connected' };
+      } catch (redisError) {
+        healthStatus.dependencies.redis = { status: 'unhealthy', message: redisError.message };
+        healthStatus.status = 'degraded';
+      }
+    }
+  } catch (error) {
+    healthStatus.dependencies.redis = { status: 'unhealthy', message: 'Failed to check: ' + error.message };
+    healthStatus.status = 'degraded';
+  }
+
+  // Return appropriate status code
+  const statusCode = healthStatus.status === 'ok' ? 200 : (healthStatus.status === 'degraded' ? 503 : 500);
+  res.status(statusCode).json(healthStatus);
 });
 
 // CORS test endpoint

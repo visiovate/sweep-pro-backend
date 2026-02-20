@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
 const notificationEnhancements = require('../services/notificationEnhancements');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Comprehensive Notification Scheduler

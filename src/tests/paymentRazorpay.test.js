@@ -17,7 +17,7 @@ jest.mock('../services/razorpayService', () => {
 
 const razorpayService = require('../services/razorpayService');
 const app = require('../index');
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 jest.setTimeout(30000);
 

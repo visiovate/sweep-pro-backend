@@ -1,10 +1,11 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const ratingRecalculationService = require('../services/ratingRecalculationService');
 const feedbackAuditService = require('../services/feedbackAuditService');
 const feedbackAnalyticsService = require('../services/feedbackAnalyticsService');
 const notificationService = require('../services/notificationService');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Enhanced Feedback Admin Controllers

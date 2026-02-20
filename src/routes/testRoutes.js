@@ -1,13 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const { getPrismaClient } = require('../utils/database');
 
-const prisma = new PrismaClient();
+// SECURITY: Only enable test routes in non-production environments
+// Explicitly check that NODE_ENV is NOT production (handles undefined case)
+const isTestEnvironment = process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== undefined;
 
-// Only enable in development/test environments
-if (process.env.NODE_ENV !== 'production') {
+if (isTestEnvironment) {
+  const prisma = getPrismaClient();
 
   /**
    * Generate test user data for registration testing

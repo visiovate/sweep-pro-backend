@@ -1,6 +1,7 @@
+const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 async function main() {
   const TOUCH_PLAN_ID = 'sweepro-touch-plan';
@@ -10,8 +11,8 @@ async function main() {
 
   console.log('🔄 Migrating subscription plans to only Sweepro Touch/Lux...');
 
-  const touchPlan = await prisma.servicePlan.findUnique({ where: { id: TOUCH_PLAN_ID } });
-  const luxPlan = await prisma.servicePlan.findUnique({ where: { id: LUX_PLAN_ID } });
+  const touchPlan = await getPrismaClient().servicePlan.findUnique({ where: { id: TOUCH_PLAN_ID } });
+  const luxPlan = await getPrismaClient().servicePlan.findUnique({ where: { id: LUX_PLAN_ID } });
 
   if (!touchPlan || !luxPlan) {
     throw new Error(
@@ -20,7 +21,7 @@ async function main() {
   }
 
   // 1) Any subscription using buffer fields must be on Lux (buffer system is Lux-only)
-  const bufferToLux = await prisma.subscription.updateMany({
+  const bufferToLux = await getPrismaClient().subscription.updateMany({
     where: {
       OR: [
         { isInBufferPeriod: true },
@@ -38,14 +39,14 @@ async function main() {
   console.log(`✅ Subscriptions forced to Lux due to buffer usage: ${bufferToLux.count}`);
 
   // 2) Map legacy plans to the 2 remaining plans
-  const basicStandardToTouch = await prisma.subscription.updateMany({
+  const basicStandardToTouch = await getPrismaClient().subscription.updateMany({
     where: {
       planId: { in: ['basic-plan', 'standard-plan'] }
     },
     data: { planId: TOUCH_PLAN_ID }
   });
 
-  const premiumToLux = await prisma.subscription.updateMany({
+  const premiumToLux = await getPrismaClient().subscription.updateMany({
     where: {
       planId: { in: ['premium-plan'] }
     },
@@ -56,7 +57,7 @@ async function main() {
   console.log(`✅ Subscriptions migrated premium -> Lux: ${premiumToLux.count}`);
 
   // 3) Safety check: confirm no subscriptions still point to legacy plan IDs
-  const remainingLegacyCount = await prisma.subscription.count({
+  const remainingLegacyCount = await getPrismaClient().subscription.count({
     where: {
       planId: { in: LEGACY_PLAN_IDS }
     }
@@ -69,7 +70,7 @@ async function main() {
   }
 
   // 4) Delete legacy plans (now safe)
-  const deleted = await prisma.servicePlan.deleteMany({
+  const deleted = await getPrismaClient().servicePlan.deleteMany({
     where: {
       id: { in: LEGACY_PLAN_IDS }
     }
@@ -85,5 +86,5 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    await getPrismaClient().$disconnect();
   });

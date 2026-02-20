@@ -3,7 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const { notificationQueue } = require('../notifications/queues/notificationQueue');
 const { sleep } = require('../notifications/utils/sleep');
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 const WORKER_ID = process.env.OUTBOX_DISPATCHER_ID || `outbox-dispatcher-${randomUUID()}`;
 const POLL_INTERVAL_MS = parseInt(process.env.OUTBOX_DISPATCHER_POLL_INTERVAL_MS || '2000', 10);
