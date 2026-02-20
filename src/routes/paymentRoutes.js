@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
+// SECURITY: Import webhook signature verifier
+const { razorpayWebhookVerifier } = require('../middleware/webhookSignatureVerifier');
 const {
   createPayment,
   getAllPayments,
@@ -30,6 +32,7 @@ router.post('/razorpay/failure', authenticateToken, handleRazorpayPaymentFailure
 router.get('/razorpay/status/:razorpayPaymentId', authenticateToken, getPaymentStatus);
 
 // Webhook route (no authentication required)
+<<<<<<< HEAD
 // SECURITY FIX: Use express.raw() to capture raw body for signature verification
 // The raw body is stored in req.rawBody and used by handleRazorpayWebhook
 // SECURITY: Set a small size limit for webhook (Razorpay webhooks are typically < 10KB)
@@ -48,6 +51,16 @@ router.post('/razorpay/webhook',
     next();
   },
   handleRazorpayWebhook
+=======
+// SECURITY: CRITICAL - Uses express.raw() to capture raw request body for signature verification
+// The razorpayWebhookVerifier middleware MUST be applied BEFORE express.json()
+// Order matters: raw() -> webhookVerifier -> handler
+router.post(
+  '/razorpay/webhook',
+  express.raw({ type: 'application/json' }),  // Capture raw body for signature verification
+  razorpayWebhookVerifier,                      // Verify HMAC-SHA256 signature using raw body
+  handleRazorpayWebhook                         // Process webhook (signature already verified)
+>>>>>>> development
 );
 
 // Admin routes

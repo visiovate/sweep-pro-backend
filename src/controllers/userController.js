@@ -3,6 +3,8 @@ const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const notificationService = require('../services/notificationService');
+// SECURITY: Import JWT secret getter
+const { getJwtSecret } = require('../config/validateEnv');
 
 const prisma = getPrismaClient();
 
@@ -41,7 +43,8 @@ const login = async (req, res) => {
     }
 
     // Generate JWT token
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET || 'fallback-secret-key');
+    // SECURITY: Use centralized JWT secret getter - NEVER use fallback
+    const token = jwt.sign({ id: user.id }, getJwtSecret());
 
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;

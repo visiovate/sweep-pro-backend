@@ -8,6 +8,8 @@ const { authenticateToken } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const emailService = require('../services/notification/EmailService');
 const { initializePrisma } = require('../utils/database');
+// SECURITY: Import JWT secret getter
+const { getJwtSecret } = require('../config/validateEnv');
 const { blacklistToken } = require('../utils/tokenBlacklist');
 
 router.post('/register', registerValidation, async (req, res) => {
@@ -117,13 +119,14 @@ router.post('/register', registerValidation, async (req, res) => {
     }
 
     // Generate JWT token
+    // SECURITY: Use centralized JWT secret getter - NEVER use fallback
     const token = jwt.sign(
-      { 
+      {
         userId: createdUser.id,
         id: createdUser.id,
         role: createdUser.role
       },
-      process.env.JWT_SECRET,
+      getJwtSecret(),
       { expiresIn: '24h' }
     );
 

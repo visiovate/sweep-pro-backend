@@ -8,6 +8,10 @@ const { v4: uuidv4 } = require('uuid');
 // Load environment variables
 dotenv.config();
 
+// SECURITY: Validate environment variables on startup
+const { validateEnvironmentVariables } = require('./config/validateEnv');
+validateEnvironmentVariables();
+
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -33,6 +37,9 @@ const feedbackRoutes = require('./routes/feedbackRoutes');
 const termsRoutes = require('./routes/termsRoutes');
 const firebaseAuthRoutes = require('./routes/firebaseAuthRoutes');
 const eventRoutes = require('./routes/eventRoutes');
+
+// SECURITY: Import rate limiters
+const { authLimiter, paymentLimiter, globalLimiter } = require('./middleware/rateLimiters');
 
 // Create Express app
 const app = express();
@@ -156,6 +163,10 @@ app.use((req, res, next) => {
   next();
 });
 
+// SECURITY: Apply global rate limiter to all API routes
+// This provides baseline DDoS protection for all endpoints
+app.use('/api', globalLimiter);
+
 // Legacy compatibility - keep for existing code
 function notifyClients(notificationData) {
   wss.clients.forEach((client) => {
@@ -169,13 +180,13 @@ module.exports.notifyClients = notifyClients;
 module.exports.notificationService = notificationService;
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/auth', firebaseAuthRoutes); // Firebase auth routes (login, me, complete-profile, apartments)
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/auth', authLimiter, firebaseAuthRoutes); // Firebase auth routes (login, me, complete-profile, apartments)
 app.use('/api/users', userRoutes);
 app.use('/api/services', serviceRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/booking-completion', bookingCompletionRoutes);
-app.use('/api/payments', paymentRoutes);
+app.use('/api/payments', paymentLimiter, paymentRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/maids', maidRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);

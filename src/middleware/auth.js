@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { getPrismaClient } = require('../utils/database');
 const { getFirebaseAuth } = require('../config/firebase');
 const { isTokenBlacklisted } = require('../utils/tokenBlacklist');
+const { getJwtSecret } = require('../config/validateEnv');
 
 const buildAuthSuccessResponse = (decodedPayload, userRecord = null) => {
   const baseClaims = {

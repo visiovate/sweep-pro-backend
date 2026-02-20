@@ -428,11 +428,21 @@ const createRazorpayBookingOrder = async (req, res) => {
       return res.status(400).json({ error: 'Invalid booking amount in database' });
     }
 
+    // SECURITY CRITICAL: Use server-side booking amount, NEVER trust frontend
+    // The finalAmount is calculated on backend during booking creation
+    const paymentAmount = booking.finalAmount;
+
+    if (!paymentAmount || paymentAmount <= 0) {
+      return res.status(400).json({
+        error: 'Invalid booking amount. Cannot process payment.'
+      });
+    }
+
     // Check if payment already exists
     const existingPayment = await getPrismaClient().payment.findFirst({
       where: { 
         bookingId,
-        status: { in: ['PENDING', 'COMPLETED'] }
+        status: { in: ['PENDING', 'COMPLETED', 'PROCESSING'] }
       }
     });
 
@@ -440,6 +450,9 @@ const createRazorpayBookingOrder = async (req, res) => {
       return res.status(409).json({ error: 'Payment already exists for this booking' });
     }
 
+    // Create Razorpay order with server-side validated amount
+    const currency = 'INR';
+    const result = await razorpayService.createBookingOrder(bookingId, paymentAmount, currency);
     // Create Razorpay order with validated amount
     const result = await razorpayService.createBookingOrder(bookingId, amount, currency);
 
@@ -447,7 +460,10 @@ const createRazorpayBookingOrder = async (req, res) => {
       success: true,
       order: result.order,
       booking: result.booking,
-      key: razorpayKeyId
+      key: razorpayKeyId,
+      // Send back the validated amount for frontend confirmation
+      amount: paymentAmount,
+      currency: currency
     });
 
   } catch (error) {
@@ -520,7 +536,6 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     }
 
     // Allow payment creation for subscriptions in PENDING_PAYMENT status
-    // (subscriptions are created in PENDING_PAYMENT status and moved to ACTIVE only after verified payment)
     if (subscription.status !== 'PENDING_PAYMENT') {
       console.warn(`Attempted payment creation for subscription ${subscriptionId} in ${subscription.status} status`);
       return res.status(409).json({
@@ -529,8 +544,17 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       });
     }
 
+    // SECURITY CRITICAL: Use server-side subscription amount, NEVER trust frontend
+    // The amount is set during subscription creation with plan pricing
+    const paymentAmount = subscription.amount;
+
+    if (!paymentAmount || paymentAmount <= 0) {
+      return res.status(400).json({
+        error: 'Invalid subscription amount. Cannot process payment.'
+      });
+    }
+
     // CRITICAL FIX: Create payment record FIRST before order creation
-    // This ensures payment exists and can be marked FAILED if order creation fails
     console.log(`Creating initial payment record for subscription ${subscriptionId}`);
     
     let paymentRecord = await getPrismaClient().payment.findFirst({
@@ -576,13 +600,16 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       success: true,
       order: result.order,
       subscription: result.subscription,
-      key: razorpayKeyId
+      key: razorpayKeyId,
+      // Send back the validated amount for frontend confirmation
+      amount: paymentAmount,
+      currency: currency
     });
 
   } catch (error) {
     console.error('Error creating Razorpay subscription order:', error);
     console.error('Error stack:', error.stack);
-    
+
     // CRITICAL: Mark payment as FAILED if order creation fails
     try {
       const failedPayment = await getPrismaClient().payment.findFirst({
@@ -592,7 +619,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
         },
         orderBy: { createdAt: 'desc' }
       });
-      
+
       if (failedPayment) {
         await getPrismaClient().payment.update({
           where: { id: failedPayment.id },
@@ -612,8 +639,8 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     } catch (updateError) {
       console.error('Failed to mark payment as FAILED:', updateError.message);
     }
-    
-    res.status(500).json({ 
+
+    res.status(500).json({
       error: 'Failed to create subscription payment order',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -748,6 +775,8 @@ const getPaymentStatus = async (req, res) => {
 };
 
 // Razorpay webhook handler
+// SECURITY: This handler receives ALREADY VERIFIED webhooks from middleware
+// The webhookSignatureVerifier middleware verifies HMAC-SHA256 signature using raw body before this runs
 const handleRazorpayWebhook = async (req, res) => {
   try {
     const webhookSignature = req.headers['x-razorpay-signature'];
@@ -771,28 +800,43 @@ const handleRazorpayWebhook = async (req, res) => {
       return res.status(400).json({ error: 'Invalid webhook signature' });
     }
 
-    const { event, payload } = req.body;
-    
+    console.log(`📬 [WEBHOOK] Received event: ${event}`);
+
     // Handle different webhook events
     switch (event) {
       case 'payment.captured':
-        await handlePaymentCaptured(payload.payment.entity);
+        console.log('💳 [WEBHOOK] Processing payment.captured event');
+        if (payload?.payment?.entity) {
+          await handlePaymentCaptured(payload.payment.entity);
+        }
         break;
+
       case 'payment.failed':
-        await handlePaymentFailed(payload.payment.entity);
+        console.log('❌ [WEBHOOK] Processing payment.failed event');
+        if (payload?.payment?.entity) {
+          await handlePaymentFailed(payload.payment.entity);
+        }
         break;
+
       case 'refund.created':
-        await handleRefundCreated(payload.refund.entity);
+        console.log('🔄 [WEBHOOK] Processing refund.created event');
+        if (payload?.refund?.entity) {
+          await handleRefundCreated(payload.refund.entity);
+        }
         break;
+
       default:
-        console.log(`Unhandled webhook event: ${event}`);
+        console.log(`ℹ️  [WEBHOOK] Unhandled webhook event: ${event}`);
     }
 
-    res.json({ success: true });
+    // Always return 200 OK to prevent Razorpay retry storms
+    res.json({ success: true, message: 'Webhook processed' });
 
   } catch (error) {
-    console.error('Error handling Razorpay webhook:', error);
-    res.status(500).json({ error: 'Failed to process webhook' });
+    console.error('❌ [WEBHOOK] Error processing webhook:', error.message);
+    // Still return 200 to prevent retries, but log the error
+    console.error('❌ [WEBHOOK] Error details:', error);
+    res.json({ success: true, message: 'Webhook processed (with errors)' });
   }
 };
 
