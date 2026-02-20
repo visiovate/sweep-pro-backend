@@ -646,14 +646,17 @@ const worker = new Worker(
 // Worker event listeners
 worker.on('ready', () => {
   console.log('✅ Worker is ready and waiting for jobs');
+});
 // Initialization done by initializePrisma()
 
 worker.on('active', (job) => {
   console.log(`🔄 Worker picked up job ${job.id}: ${job.name}`);
+});
 // Initialization done by initializePrisma()
 
 worker.on('completed', (job, result) => {
   console.log(`✅ Job ${job.id} completed:`, result);
+});
 // Initialization done by initializePrisma()
 
 worker.on('failed', (job, error) => {
