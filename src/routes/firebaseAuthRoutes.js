@@ -100,11 +100,12 @@ router.post('/firebase/login', async (req, res) => {
     );
 
     // M6: Set as HttpOnly cookie (same as email/password login)
+    // CROSS-ORIGIN FIX: SameSite='none' required for cross-origin cookie auth (Vercel + Render)
     const isSecure = process.env.NODE_ENV === 'production';
     res.cookie('authToken', appJwt, {
       httpOnly: true,
       secure: isSecure,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 
@@ -392,11 +393,12 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
       { expiresIn: '24h' }
     );
 
+    // CROSS-ORIGIN FIX: SameSite='none' required for cross-origin cookie auth (Vercel + Render)
     const isSecureCookie = process.env.NODE_ENV === 'production';
     res.cookie('authToken', appJwt, {
       httpOnly: true,
       secure: isSecureCookie,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 

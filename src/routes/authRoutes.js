@@ -157,11 +157,15 @@ router.post('/register', registerValidation, async (req, res) => {
     };
 
     // M6: Set HttpOnly cookie so the token is not accessible via JS on the client
+    // CROSS-ORIGIN FIX: In production, frontend (Vercel) and backend (Render) are on different
+    // domains. SameSite='strict' blocks cookies on cross-site requests entirely, causing all
+    // authenticated API calls to fail with 401. SameSite='none' + Secure=true is required for
+    // cross-origin cookie auth to work.
     const isSecureCookie = process.env.NODE_ENV === 'production';
     res.cookie('authToken', token, {
       httpOnly: true,
       secure: isSecureCookie,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000 // default 24h
     });
 
@@ -449,11 +453,12 @@ router.post('/login', loginValidation, async (req, res) => {
     };
 
     // M6: Set HttpOnly cookie so the token is not accessible via JS on the client
+    // CROSS-ORIGIN FIX: SameSite='none' required for cross-origin cookie auth (Vercel + Render)
     const isSecureCookie = process.env.NODE_ENV === 'production';
     res.cookie('authToken', token, {
       httpOnly: true,
       secure: isSecureCookie,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000
     });
 
@@ -631,10 +636,11 @@ router.post('/logout', async (req, res) => {
   }
 
   // Clear the HttpOnly auth cookie regardless of blacklist outcome
+  // CROSS-ORIGIN FIX: Must use same sameSite config as when cookie was set
   res.clearCookie('authToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   });
   res.json({
     success: true,
