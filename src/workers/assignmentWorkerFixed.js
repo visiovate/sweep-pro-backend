@@ -646,14 +646,17 @@ const worker = new Worker(
 // Worker event listeners
 worker.on('ready', () => {
   console.log('✅ Worker is ready and waiting for jobs');
+});
 // Initialization done by initializePrisma()
 
 worker.on('active', (job) => {
   console.log(`🔄 Worker picked up job ${job.id}: ${job.name}`);
+});
 // Initialization done by initializePrisma()
 
 worker.on('completed', (job, result) => {
   console.log(`✅ Job ${job.id} completed:`, result);
+});
 // Initialization done by initializePrisma()
 
 worker.on('failed', (job, error) => {
@@ -661,14 +664,17 @@ worker.on('failed', (job, error) => {
   if (error.stack) {
     console.error(error.stack);
   }
+});
 // Initialization done by initializePrisma()
 
 worker.on('error', (error) => {
   console.error('❌ Worker error:', error);
+});
 // Initialization done by initializePrisma()
 
 worker.on('stalled', (jobId) => {
   console.warn(`⚠️  Job ${jobId} has stalled`);
+});
 // Initialization done by initializePrisma()
 
 // Graceful shutdown
@@ -695,12 +701,14 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('unhandledRejection', (reason, promise) => {
   console.error('❌ Unhandled Rejection:', reason);
   // Don't exit - let worker continue processing other jobs
+});
 // Initialization done by initializePrisma()
 
 process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
   // Don't exit immediately - attempt graceful shutdown
   shutdown('UNCAUGHT_EXCEPTION');
+});
 // Initialization done by initializePrisma()
 
 console.log('🔄 Worker is running. Waiting for jobs...\n');
