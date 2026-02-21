@@ -132,7 +132,10 @@ router.post('/firebase/login', async (req, res) => {
       success: true,
       message: 'Login successful',
       data: {
-        user: userResponse
+        user: userResponse,
+        // CROSS-ORIGIN FIX: Return app JWT (not Firebase ID token) so the
+        // frontend can use Authorization-header-based auth in cross-origin deployments.
+        token: appJwt
       }
     });
 

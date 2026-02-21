@@ -173,11 +173,12 @@ router.post('/register', registerValidation, async (req, res) => {
       success: true,
       message: `${role.charAt(0) + role.slice(1).toLowerCase()} registered successfully`,
       data: {
-        user: userResponse
-        // C10 FIX: token intentionally NOT returned in body.
-        // It is already set as an HttpOnly cookie above.
-        // Returning it here would allow XSS to exfiltrate the token,
-        // completely defeating the purpose of HttpOnly cookies (M6).
+        user: userResponse,
+        // CROSS-ORIGIN FIX: Also return token in body so the frontend can
+        // store it in localStorage for Authorization-header-based auth.
+        // This fixes auth for cross-origin deployments (Vercel + Render)
+        // where SameSite cookie restrictions prevent the cookie being sent.
+        token: token
       }
     });
 
@@ -466,11 +467,12 @@ router.post('/login', loginValidation, async (req, res) => {
       success: true,
       message: 'Login successful',
       data: {
-        user: userResponse
-        // C10 FIX: token intentionally NOT returned in body.
-        // It is set as an HttpOnly cookie so JS cannot read it (XSS-safe).
-        // Any code that relied on response.data.token must switch to relying
-        // on the cookie being sent automatically with credentials: 'include'.
+        user: userResponse,
+        // CROSS-ORIGIN FIX: Also return token in body so the frontend can
+        // store it in localStorage for Authorization-header-based auth.
+        // This fixes auth for cross-origin deployments (Vercel + Render)
+        // where SameSite cookie restrictions prevent the cookie being sent.
+        token: token
       }
     });
 
