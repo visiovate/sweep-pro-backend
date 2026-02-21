@@ -40,16 +40,16 @@ let assignmentQueue = null;
  */
 async function initializeQueue() {
   console.log('🔌 Connecting to Redis...');
-  
+
   redisConnection = await retryRedisOperation(
     () => createRedisConnection(),
     'Redis connection'
   );
-  
+
   assignmentQueue = new Queue('maid-assignment', {
     connection: redisConnection,
   });
-  
+
   console.log('✅ Redis connected, queue initialized');
 }
 
@@ -156,7 +156,7 @@ async function enqueueAssignmentJob(booking, prisma) {
   if (customer?.customerProfile?.subscription) {
     const subscriptionId = customer.customerProfile.subscription.id;
     const bookingDate = new Date(scheduledAt);
-    
+
     const bufferPeriodForDate = await getPrismaClient().bufferPeriod.findFirst({
       where: {
         subscriptionId,
@@ -165,7 +165,7 @@ async function enqueueAssignmentJob(booking, prisma) {
         endDate: { gte: bookingDate }
       }
     });
-    
+
     if (bufferPeriodForDate) {
       console.log(`⏸️  Skipping booking ${bookingId}: booking date falls in buffer period`);
       return { skipped: true, reason: 'buffer_period_date' };
@@ -240,16 +240,17 @@ async function runCron() {
     await initializePrisma();
     // Initialize connections
     await initializeQueue();
-    
+
     // Find bookings
     const bookings = await findBookingsNeedingAssignment();
     stats.found = bookings.length;
-    
+
     // Process each booking
+    // FIX: `prisma` was never declared in this file — use getPrismaClient() instead
     for (const booking of bookings) {
       try {
-        const result = await enqueueAssignmentJob(booking, prisma);
-        
+        const result = await enqueueAssignmentJob(booking, getPrismaClient());
+
         if (result.skipped) {
           stats.skipped++;
         } else if (result.enqueued) {
@@ -260,7 +261,7 @@ async function runCron() {
         console.error(`❌ Error processing booking ${booking.id}:`, error.message);
       }
     }
-    
+
     const duration = Date.now() - startTime;
     console.log('\n═══════════════════════════════════════════════════════');
     console.log('║   ✅ CRON JOB COMPLETED');
@@ -270,10 +271,10 @@ async function runCron() {
     console.log(`║   Skipped: ${stats.skipped}`);
     console.log(`║   Errors: ${stats.errors}`);
     console.log('═══════════════════════════════════════════════════════\n');
-    
+
     await cleanup();
     process.exit(0); // Success
-    
+
   } catch (error) {
     const duration = Date.now() - startTime;
     console.error('\n═══════════════════════════════════════════════════════');
@@ -282,7 +283,7 @@ async function runCron() {
     console.error(`║   Error: ${error.message}`);
     console.error('═══════════════════════════════════════════════════════\n');
     console.error(error.stack);
-    
+
     await cleanup();
     process.exit(1); // Failure
   }
@@ -293,7 +294,7 @@ async function runCron() {
  */
 async function cleanup() {
   console.log('🧹 Cleaning up connections...');
-  
+
   try {
     if (assignmentQueue) {
       await assignmentQueue.close();
@@ -301,7 +302,7 @@ async function cleanup() {
   } catch (error) {
     console.warn('⚠️  Failed to close queue:', error.message);
   }
-  
+
   try {
     if (redisConnection) {
       await closeRedisConnection(redisConnection);
@@ -309,42 +310,44 @@ async function cleanup() {
   } catch (error) {
     console.warn('⚠️  Failed to close Redis:', error.message);
   }
-  
+
   try {
     await getPrismaClient().$disconnect();
   } catch (error) {
     console.warn('⚠️  Failed to disconnect Prisma:', error.message);
   }
-  
+
   console.log('✅ Cleanup complete');
 }
 
 /**
  * Handle process signals
+ * C5 FIX: All four signal handlers were missing their closing `});`
+ * which caused a SyntaxError that prevented the cron from ever loading.
  */
 process.on('SIGTERM', async () => {
   console.log('⚠️  SIGTERM received, shutting down...');
   await cleanup();
   process.exit(143); // 128 + 15 (SIGTERM)
-// Initialization done by initializePrisma()
+});
 
 process.on('SIGINT', async () => {
   console.log('⚠️  SIGINT received, shutting down...');
   await cleanup();
   process.exit(130); // 128 + 2 (SIGINT)
-// Initialization done by initializePrisma()
+});
 
 process.on('unhandledRejection', async (reason, promise) => {
   console.error('❌ Unhandled Rejection:', reason);
   await cleanup();
   process.exit(1);
-// Initialization done by initializePrisma()
+});
 
 process.on('uncaughtException', async (error) => {
   console.error('❌ Uncaught Exception:', error);
   await cleanup();
   process.exit(1);
-// Initialization done by initializePrisma()
+});
 
 // Run with timeout
 withTimeout(() => runCron(), CRON_TIMEOUT_MS, 'Cron job')

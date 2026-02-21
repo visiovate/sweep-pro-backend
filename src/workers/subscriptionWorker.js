@@ -1,5 +1,5 @@
 const { Worker } = require('bullmq');
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database'); // C4 FIX: was missing, caused ReferenceError on startup
 const { createRedisConnection } = require('../config/redis');
 const { JOB_TYPES } = require('../services/subscriptionScheduler');
 const subscriptionBufferService = require('../services/subscriptionBufferService');
@@ -7,7 +7,8 @@ const notificationService = require('../services/notificationService');
 const maidSchedulingService = require('../services/maidSchedulingService');
 const BufferDayService = require('../services/BufferDayService');
 
-const prisma = getPrismaClient();
+// C4 FIX: getPrismaClient() is now correctly imported above.
+// We call it as a function per-request to always get the live Prisma instance.
 const bufferService = new BufferDayService();
 
 /**
@@ -26,28 +27,28 @@ const processSubscriptionJob = async (job) => {
     switch (job.name) {
       case JOB_TYPES.CHECK_BUFFER_ACTIVATION:
         return await checkBufferPeriodActivation();
-      
+
       case JOB_TYPES.CHECK_BUFFER_COMPLETION:
         return await checkBufferPeriodCompletion();
-      
+
       case JOB_TYPES.PROCESS_RENEWALS:
         return await processSubscriptionRenewals();
-      
+
       case JOB_TYPES.SEND_BUFFER_REMINDERS:
         return await sendBufferPeriodReminders();
-      
+
       case JOB_TYPES.SCHEDULE_MONTHLY_SERVICES:
         return await scheduleMonthlyServices();
-      
+
       case JOB_TYPES.CLEANUP_EXPIRED_DATA:
         return await cleanupExpiredData();
-      
+
       case JOB_TYPES.ASSIGN_DAILY_MAIDS:
         return await runDailyMaidScheduling();
-      
+
       case JOB_TYPES.CHECK_EXPIRED_BUFFER_PERIODS:
         return await checkExpiredBufferPeriods();
-      
+
       default:
         throw new Error(`Unknown job type: ${job.name}`);
     }
@@ -62,16 +63,16 @@ const processSubscriptionJob = async (job) => {
  */
 async function checkBufferPeriodActivation() {
   console.log('🛡️ Checking for buffer period activation...');
-  
+
   try {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+
     // Get last 3 days of current month
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const bufferStartDate = new Date(monthEnd);
     bufferStartDate.setDate(bufferStartDate.getDate() - 2);
-    
+
     if (today.getTime() < bufferStartDate.getTime()) {
       console.log('📅 Not yet time for buffer period activation');
       return { success: true, message: 'Not time yet' };
@@ -112,7 +113,7 @@ async function checkBufferPeriodActivation() {
  */
 async function checkBufferPeriodCompletion() {
   console.log('🔚 Checking for buffer period completion...');
-  
+
   try {
     const bufferPeriodsToEnd = await subscriptionBufferService.getBufferPeriodsToEnd();
     console.log(`🔚 Found ${bufferPeriodsToEnd.length} buffer periods ready to end`);
@@ -145,11 +146,12 @@ async function checkBufferPeriodCompletion() {
  */
 async function processSubscriptionRenewals() {
   console.log('🔄 Processing subscription renewals...');
-  
+
   try {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+
+    const prisma = getPrismaClient();
     const subscriptionsToRenew = await prisma.subscription.findMany({
       where: {
         status: 'ACTIVE',
@@ -207,12 +209,12 @@ async function processSubscriptionRenewals() {
  */
 async function sendBufferPeriodReminders() {
   console.log('📬 Sending buffer period reminders...');
-  
+
   try {
     const now = new Date();
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const bufferStartDate = new Date(monthEnd);
     bufferStartDate.setDate(bufferStartDate.getDate() - 2);
@@ -221,6 +223,7 @@ async function sendBufferPeriodReminders() {
 
     // Check if tomorrow is the buffer start date
     if (tomorrow.toDateString() === bufferStartDate.toDateString()) {
+      const prisma = getPrismaClient();
       const activeSubscriptions = await prisma.subscription.findMany({
         where: {
           status: 'ACTIVE',
@@ -243,6 +246,7 @@ async function sendBufferPeriodReminders() {
     }
 
     // Send reminders for subscriptions currently in buffer period
+    const prisma = getPrismaClient();
     const activeBufferPeriods = await prisma.bufferPeriod.findMany({
       where: {
         status: 'ACTIVE',
@@ -259,7 +263,7 @@ async function sendBufferPeriodReminders() {
 
     for (const bufferPeriod of activeBufferPeriods) {
       const daysLeft = Math.ceil((bufferPeriod.endDate - now) / (1000 * 60 * 60 * 24));
-      
+
       if (daysLeft === 1) {
         try {
           await notificationService.notifyBufferPeriodEnding(bufferPeriod.subscription, daysLeft);
@@ -286,17 +290,18 @@ async function sendBufferPeriodReminders() {
  */
 async function scheduleMonthlyServices() {
   console.log('📅 Scheduling monthly services...');
-  
+
   try {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
+
     // Only run on the 1st of each month
     if (today.getDate() !== 1) {
       console.log('📅 Not the 1st of the month, skipping');
       return { success: true, message: 'Not time yet' };
     }
 
+    const prisma = getPrismaClient();
     const activeSubscriptions = await prisma.subscription.findMany({
       where: {
         status: 'ACTIVE',
@@ -331,11 +336,12 @@ async function scheduleMonthlyServices() {
  */
 async function cleanupExpiredData() {
   console.log('🧹 Starting weekly cleanup of expired data...');
-  
+
   try {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+    const prisma = getPrismaClient();
     const oldCompletedCycles = await prisma.subscriptionCycle.count({
       where: {
         status: 'COMPLETED',
@@ -373,11 +379,11 @@ async function cleanupExpiredData() {
  */
 async function runDailyMaidScheduling() {
   console.log('📊 Running daily maid scheduling...');
-  
+
   try {
     const today = new Date();
     const assignments = await maidSchedulingService.scheduleAndAssignMaids({ date: today });
-    
+
     console.log(`📊 Daily maid scheduling completed. Made ${assignments.length} assignments.`);
 
     if (assignments.length > 0) {
@@ -409,10 +415,10 @@ async function runDailyMaidScheduling() {
  */
 async function checkExpiredBufferPeriods() {
   console.log('🔄 Checking for expired buffer periods...');
-  
+
   try {
     const result = await bufferService.processExpiredBufferPeriods();
-    
+
     if (result.processedCount > 0) {
       console.log(`✅ Processed ${result.processedCount} expired buffer periods`);
     }
@@ -462,7 +468,8 @@ subscriptionWorker.on('error', (err) => {
 const shutdown = async () => {
   console.log('\n🛑 Shutting down subscription worker...');
   await subscriptionWorker.close();
-  await prisma.$disconnect();
+  // C4 FIX: was calling prisma.$disconnect() but prisma was never declared
+  try { await getPrismaClient().$disconnect(); } catch (_) { }
   console.log('✅ Subscription worker shut down gracefully');
   process.exit(0);
 };

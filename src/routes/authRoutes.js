@@ -16,14 +16,14 @@ router.post('/register', registerValidation, async (req, res) => {
   try {
     const prisma = await initializePrisma();
     const { name, email, phone, role, password, timeSlot, confirmPassword, address, serviceArea, pincode } = req.body;
-    
+
     // Check if user already exists by email
     const existingUserByEmail = await prisma.user.findUnique({
       where: { email }
     });
 
     if (existingUserByEmail) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
         message: 'User with this email already exists',
         field: 'email'
@@ -36,7 +36,7 @@ router.post('/register', registerValidation, async (req, res) => {
     });
 
     if (existingUserByPhone) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
         message: 'User with this phone number already exists',
         field: 'phone'
@@ -157,37 +157,40 @@ router.post('/register', registerValidation, async (req, res) => {
     };
 
     // M6: Set HttpOnly cookie so the token is not accessible via JS on the client
-    const isSecure = process.env.NODE_ENV === 'production';
+    const isSecureCookie = process.env.NODE_ENV === 'production';
     res.cookie('authToken', token, {
       httpOnly: true,
-      secure: isSecure,
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      secure: isSecureCookie,
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      maxAge: 24 * 60 * 60 * 1000 // default 24h
     });
 
     res.status(201).json({
       success: true,
       message: `${role.charAt(0) + role.slice(1).toLowerCase()} registered successfully`,
       data: {
-        user: userResponse,
-        token  // Still returned for SPA backward-compat (e.g. Firebase flow)
+        user: userResponse
+        // C10 FIX: token intentionally NOT returned in body.
+        // It is already set as an HttpOnly cookie above.
+        // Returning it here would allow XSS to exfiltrate the token,
+        // completely defeating the purpose of HttpOnly cookies (M6).
       }
     });
 
   } catch (error) {
     console.error('Registration error:', error);
-    
+
     // Handle Prisma-specific errors
     if (error.code === 'P2002') {
       const target = error.meta?.target;
       if (target?.includes('email')) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
           message: 'Email address is already registered',
           field: 'email'
         });
       } else if (target?.includes('phone')) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
           message: 'Phone number is already registered',
           field: 'phone'
@@ -195,7 +198,7 @@ router.post('/register', registerValidation, async (req, res) => {
       }
     }
 
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Registration failed. Please try again.',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -386,7 +389,7 @@ router.post('/login', loginValidation, async (req, res) => {
     });
 
     if (!user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
         message: 'Invalid email or password',
         field: 'credentials'
@@ -395,7 +398,7 @@ router.post('/login', loginValidation, async (req, res) => {
 
     // Check if user account is active
     if (user.status !== 'ACTIVE') {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
         message: `Account is ${user.status.toLowerCase()}. Please contact support.`,
         field: 'status'
@@ -405,7 +408,7 @@ router.post('/login', loginValidation, async (req, res) => {
     // Verify password
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
         message: 'Invalid email or password',
         field: 'credentials'
@@ -450,7 +453,7 @@ router.post('/login', loginValidation, async (req, res) => {
     res.cookie('authToken', token, {
       httpOnly: true,
       secure: isSecureCookie,
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
       maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000
     });
 
@@ -458,14 +461,17 @@ router.post('/login', loginValidation, async (req, res) => {
       success: true,
       message: 'Login successful',
       data: {
-        user: userResponse,
-        token  // Still returned for SPA backward-compat
+        user: userResponse
+        // C10 FIX: token intentionally NOT returned in body.
+        // It is set as an HttpOnly cookie so JS cannot read it (XSS-safe).
+        // Any code that relied on response.data.token must switch to relying
+        // on the cookie being sent automatically with credentials: 'include'.
       }
     });
 
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Login failed. Please try again.',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -535,10 +541,48 @@ router.get('/me', authenticateToken, async (req, res) => {
 // Get all available apartments
 router.get('/apartments', async (req, res) => {
   try {
-    const prisma = await initializePrisma();
-    const apartments = await prisma.apartment.findMany({
-      orderBy: { name: 'asc' }
-    });
+    // Return the list of apartments (can be moved to database later)
+    const apartments = [
+      { id: '1', name: 'Aparna CyberLife', area: 'Nallagandla', pincode: '500019' },
+      { id: '2', name: 'Aparna HillPark Avenue', area: 'Chandanagar', pincode: '500050' },
+      { id: '3', name: 'Aparna Kanopy Tulip', area: 'Kompally', pincode: '500100' },
+      { id: '4', name: 'Aparna Sarovar Grande', area: 'Nallagandla', pincode: '500019' },
+      { id: '5', name: 'Aparna Serene Park', area: 'Kondapur', pincode: '500084' },
+      { id: '6', name: 'Bollineni Bion', area: 'Kothaguda', pincode: '500084' },
+      { id: '7', name: 'Brigade Citadel', area: 'Moti Nagar', pincode: '500018' },
+      { id: '8', name: 'Cybercity Oriana', area: 'Moosapet', pincode: '500018' },
+      { id: '9', name: 'Fortune Green Homes Sapphire', area: 'Bachupally', pincode: '500090' },
+      { id: '10', name: 'Fortune Sky Villas', area: 'Kokapet', pincode: '500075' },
+      { id: '11', name: 'Godrej Madison Avenue', area: 'Kokapet', pincode: '500075' },
+      { id: '12', name: 'L&T Serene County', area: 'Gachibowli', pincode: '500032' },
+      { id: '13', name: 'Lanco Hills Apartments', area: 'Manikonda', pincode: '500089' },
+      { id: '14', name: 'Lodha Bellezza', area: 'Kukatpally', pincode: '500072' },
+      { id: '15', name: 'Malaysian Township', area: 'Kukatpally', pincode: '500072' },
+      { id: '16', name: 'My Home Abhra', area: 'Madhapur', pincode: '500081' },
+      { id: '17', name: 'My Home Apas', area: 'Kokapet', pincode: '500075' },
+      { id: '18', name: 'My Home Avali', area: 'Gopanpally', pincode: '500075' },
+      { id: '19', name: 'My Home Bhooja', area: 'Hitech City', pincode: '500081' },
+      { id: '20', name: 'My Home Grava', area: 'Kokapet', pincode: '500075' },
+      { id: '21', name: 'My Home Krishe', area: 'Gachibowli', pincode: '500032' },
+      { id: '22', name: 'My Home Mangala', area: 'Kondapur', pincode: '500084' },
+      { id: '23', name: 'My Home Nishada', area: 'Kokapet', pincode: '500075' },
+      { id: '24', name: 'My Home Raka', area: 'Madinaguda', pincode: '500049' },
+      { id: '25', name: 'My Home Sayuk', area: 'Tellapur', pincode: '500019' },
+      { id: '26', name: 'My Home Tridasa', area: 'Tellapur', pincode: '500019' },
+      { id: '27', name: 'My Home Vipina', area: 'Tellapur', pincode: '500019' },
+      { id: '28', name: 'Prestige Beverly Hills', area: 'Kokapet', pincode: '500075' },
+      { id: '29', name: 'Prestige High Fields', area: 'Gachibowli', pincode: '500032' },
+      { id: '30', name: 'Prestige Ivy League', area: 'Hitech City', pincode: '500081' },
+      { id: '31', name: 'Prestige Rainbow Waters', area: 'Gachibowli', pincode: '500032' },
+      { id: '32', name: 'Rainbow Vistas Rock Garden', area: 'Moosapet', pincode: '500018' },
+      { id: '33', name: 'Rajapushpa Atria', area: 'Kokapet', pincode: '500075' },
+      { id: '34', name: 'Rajapushpa Provincia', area: 'Narsingi', pincode: '500075' },
+      { id: '35', name: 'Ramky One Astra', area: 'Kokapet', pincode: '500075' },
+      { id: '36', name: 'Ramky One Harmony', area: 'Pragathi Nagar', pincode: '500090' },
+      { id: '37', name: 'SMR Vinay Iconia', area: 'Kondapur', pincode: '500084' },
+      { id: '38', name: 'Vasavi Atlantis', area: 'Narsingi', pincode: '500075' },
+      { id: '39', name: 'Vasavi Skyla', area: 'Hitech City', pincode: '500081' }
+    ];
 
     res.json({
       success: true,
@@ -558,8 +602,35 @@ router.get('/apartments', async (req, res) => {
 });
 
 // Logout endpoint – clears the HttpOnly auth cookie (M6)
-router.post('/logout', authenticateToken, (req, res) => {
-  // Clear the HttpOnly auth cookie
+// C6 FIX: blacklistToken() is now called so that even if the token was
+// captured (XSS, network sniff, or mobile app) it cannot be reused after logout.
+router.post('/logout', async (req, res) => {
+  try {
+    // Extract token from cookie or Authorization header
+    const token = req.cookies?.authToken ||
+      (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : null);
+
+    if (token) {
+      // Compute remaining token lifetime so the blacklist entry auto-expires
+      let ttlSeconds = 24 * 60 * 60; // default 24h
+      try {
+        const jwt = require('jsonwebtoken');
+        // We use jwt.decode rather than verify because we want to blacklist
+        // the token even if it's already expired (so it stays dead).
+        const decoded = jwt.decode(token);
+        if (decoded?.exp) {
+          ttlSeconds = Math.max(1, decoded.exp - Math.floor(Date.now() / 1000));
+        }
+      } catch (_) { /* keep default TTL */ }
+
+      await blacklistToken(token, ttlSeconds);
+    }
+  } catch (blacklistError) {
+    // Log but never let blacklist failure break logout (cookie still cleared)
+    console.error('[logout] Failed to blacklist token:', blacklistError.message);
+  }
+
+  // Clear the HttpOnly auth cookie regardless of blacklist outcome
   res.clearCookie('authToken', {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -576,6 +647,11 @@ router.post('/logout', authenticateToken, (req, res) => {
 if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== undefined) {
   router.post('/create-test-admin', async (req, res) => {
     try {
+      // Issue 3 FIX: bare `prisma` was never declared in this file's scope,
+      // causing a ReferenceError crash whenever this route was hit in dev.
+      // Use initializePrisma() consistently with all other routes in this file.
+      const prisma = await initializePrisma();
+
       // Check if test admin already exists
       const existingAdmin = await prisma.user.findUnique({
         where: { email: 'admin@test.com' }

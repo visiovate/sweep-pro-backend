@@ -1,4 +1,4 @@
-const { getPrismaClient } = require('../utils/database');
+const { getPrismaClient, initializePrisma } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const subscriptionBufferService = require('../services/subscriptionBufferService');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
@@ -8,7 +8,11 @@ const prisma = getPrismaClient();
 // Get all subscription plans
 const getSubscriptionPlans = async (req, res) => {
   try {
-    const plans = await prisma.servicePlan.findMany({
+    // Use initializePrisma() to ensure Prisma is ready on first request,
+    // avoiding a null-dereference crash when the module-level `prisma`
+    // snapshot was taken before the DB connection was established.
+    const db = (await initializePrisma()) || prisma;
+    const plans = await db.servicePlan.findMany({
       where: { isActive: true },
       include: {
         service: true
@@ -101,7 +105,7 @@ const subscribeToPlan = async (req, res) => {
       startDate.setTime(today.getTime());
     }
     console.log(`✅ Subscription start date: ${startDate.toISOString()} (requested: ${requestedStartDate || 'none'})`);
-    
+
     const endDate = new Date(startDate);
     endDate.setMonth(startDate.getMonth() + plan.duration);
 
@@ -366,7 +370,7 @@ const getUserSubscription = async (req, res) => {
 
     if (!subscription) {
       // Return success with null subscription instead of 404 error
-      return res.json({ 
+      return res.json({
         success: true,
         subscription: null,
         message: 'No active subscription found'
@@ -385,7 +389,7 @@ const getUserSubscription = async (req, res) => {
 
       if (!completedPayment) {
         console.warn(`⚠️  CRITICAL: ACTIVE subscription ${subscription.id} has NO completed payment. Reverting to PENDING_PAYMENT.`);
-        
+
         // Revert to PENDING_PAYMENT
         subscription = await prisma.subscription.update({
           where: { id: subscription.id },
@@ -428,9 +432,9 @@ const getUserSubscription = async (req, res) => {
       }
     }
 
-    res.json({ 
+    res.json({
       success: true,
-      subscription 
+      subscription
     });
   } catch (error) {
     console.error('Error fetching subscription:', error);
@@ -496,7 +500,7 @@ const getMonthlySubscriptionStatus = async (req, res) => {
 
     if (!completedPayment) {
       console.warn(`⚠️  CRITICAL: ACTIVE subscription ${subscription.id} has NO completed payment. Reverting to PENDING_PAYMENT.`);
-      
+
       // Revert to PENDING_PAYMENT
       await prisma.subscription.update({
         where: { id: subscription.id },
@@ -560,7 +564,7 @@ const startBufferPeriod = async (req, res) => {
 
     // Check if plan supports buffer system
     if (!subscription.plan.hasBufferSystem) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: 'Your current plan (Sweepro Touch) does not support buffer system. Please upgrade to Sweepro Lux to access buffer functionality.',
         planType: subscription.plan.planType,
         upgradeRequired: true
@@ -573,7 +577,7 @@ const startBufferPeriod = async (req, res) => {
 
     // Check buffer days availability
     if (subscription.bufferDaysUsed >= subscription.bufferDaysCount) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: `You have used all ${subscription.bufferDaysCount} buffer days for this period.`,
         bufferDaysUsed: subscription.bufferDaysUsed,
         bufferDaysTotal: subscription.bufferDaysCount
@@ -591,9 +595,9 @@ const startBufferPeriod = async (req, res) => {
 
   } catch (error) {
     console.error('Error starting buffer period:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: error.message || 'Failed to start buffer period',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -654,8 +658,8 @@ const completeSubscriptionPayment = async (req, res) => {
     const userId = req.user.id;
 
     if (!subscriptionId || !paymentId || !transactionId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: subscriptionId, paymentId, transactionId' 
+      return res.status(400).json({
+        error: 'Missing required fields: subscriptionId, paymentId, transactionId'
       });
     }
 
@@ -846,8 +850,8 @@ const checkSubscriptionStatus = async (req, res) => {
     res.json({
       hasActiveSubscription: !!subscription,
       subscription: subscription || null,
-      message: subscription 
-        ? 'Active subscription found' 
+      message: subscription
+        ? 'Active subscription found'
         : 'No active subscription found. Payment will be required for bookings.'
     });
 
@@ -902,7 +906,7 @@ const updateSubscriptionPlan = async (req, res) => {
     // Validate buffer configuration
     const finalHasBufferSystem = hasBufferSystem !== undefined ? hasBufferSystem : existingPlan.hasBufferSystem;
     const finalBufferDaysAllowed = bufferDaysAllowed !== undefined ? bufferDaysAllowed : existingPlan.bufferDaysAllowed;
-    
+
     if (!finalHasBufferSystem && finalBufferDaysAllowed > 0) {
       return res.status(400).json({
         message: 'Cannot set buffer days for a plan without buffer system enabled'
@@ -980,7 +984,7 @@ const createSubscriptionPlan = async (req, res) => {
     // Validate buffer configuration
     const finalHasBufferSystem = hasBufferSystem || false;
     const finalBufferDaysAllowed = bufferDaysAllowed || 0;
-    
+
     if (!finalHasBufferSystem && finalBufferDaysAllowed > 0) {
       return res.status(400).json({
         message: 'Cannot set buffer days for a plan without buffer system enabled'
@@ -1376,7 +1380,7 @@ const getSubscriptionAnalytics = async (req, res) => {
           inBuffer: subscriptionsInBuffer,
           thisMonth: thisMonthSubscriptions,
           lastMonth: lastMonthSubscriptions,
-          growth: lastMonthSubscriptions > 0 ? 
+          growth: lastMonthSubscriptions > 0 ?
             ((thisMonthSubscriptions - lastMonthSubscriptions) / lastMonthSubscriptions * 100).toFixed(2) : '0'
         },
         bufferPeriods: {
@@ -1479,7 +1483,7 @@ const getTimeSlotCounts = async (req, res) => {
       const existingSlot = existingSlots.find(s => s.timeSlot === slot);
       const count = existingSlot ? existingSlot.count : 0;
       const maxLimit = existingSlot ? existingSlot.maxLimit : MAX_USERS_PER_SLOT;
-      
+
       return {
         timeSlot: slot,
         count: count,
@@ -1500,9 +1504,9 @@ const getTimeSlotCounts = async (req, res) => {
 
   } catch (error) {
     console.error('Error getting time slot counts:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Failed to get time slot counts' 
+      message: 'Failed to get time slot counts'
     });
   }
 };

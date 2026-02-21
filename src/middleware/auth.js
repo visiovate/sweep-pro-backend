@@ -23,6 +23,7 @@ const buildAuthSuccessResponse = (decodedPayload, userRecord = null) => {
 
   return {
     ...baseClaims,
+    role: userRecord.role || baseClaims.role,
     name: userRecord.name,
     email: userRecord.email,
     phone: userRecord.phone,
@@ -56,14 +57,20 @@ const buildFirebaseAuthSuccessResponse = (firebaseDecodedToken, userRecord) => {
  * HttpOnly cookie (cookie-based auth, M6 hardening).
  */
 const extractToken = (req) => {
+  // M6 Hardening: Prioritize the HttpOnly cookie if it exists.
+  // This prevents issues where a stale token stuck in the client's
+  // localStorage is sent via Authorization header and causes a 401,
+  // even after a successful fresh login sets a new cookie.
+  if (req.cookies?.authToken) {
+    return req.cookies.authToken;
+  }
+
+  // Fallback to Authorization header if no cookie is present
   const authHeader = req.header('Authorization');
   if (authHeader?.startsWith('Bearer ')) {
     return authHeader.slice(7).trim();
   }
-  // Fall back to HttpOnly cookie (set on login/register)
-  if (req.cookies?.authToken) {
-    return req.cookies.authToken;
-  }
+
   return null;
 };
 
@@ -162,6 +169,32 @@ const authenticateToken = async (req, res, next) => {
         success: false,
         message: 'Please authenticate.',
         code: 'TOKEN_INVALID'
+      });
+    }
+
+    // C6 FIX: Check token blacklist AFTER successful JWT verification.
+    // This ensures that tokens from logged-out sessions are rejected even if
+    // they are cryptographically valid and not yet expired.
+    // Issue 1 FIX: reuse the outer `token` already extracted at line 75.
+    // Previously a `const token = extractToken(req)` was needlessly re-declared
+    // here, shadowing the outer variable and causing confusion.
+    try {
+      if (await isTokenBlacklisted(token)) {
+        logger.info('Blacklisted token rejected', { requestId });
+        return res.status(401).json({
+          success: false,
+          message: 'Please authenticate.',
+          code: 'TOKEN_REVOKED'
+        });
+      }
+    } catch (blacklistError) {
+      // isTokenBlacklisted fails-closed (returns true) when Redis is down,
+      // so this catch path handles unexpected/internal errors only.
+      logger.warn('Token blacklist check error', { requestId, message: blacklistError.message });
+      return res.status(503).json({
+        success: false,
+        message: 'Authentication service temporarily unavailable.',
+        code: 'AUTH_UNAVAILABLE'
       });
     }
 

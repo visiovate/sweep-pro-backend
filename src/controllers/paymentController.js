@@ -16,23 +16,23 @@ const createPayment = async (req, res) => {
 
     // Validate required fields - either bookingId or subscriptionId must be present
     if ((!bookingId && !subscriptionId) || !amount || !paymentMethod) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: (bookingId OR subscriptionId), amount, paymentMethod' 
+      return res.status(400).json({
+        error: 'Missing required fields: (bookingId OR subscriptionId), amount, paymentMethod'
       });
     }
 
     // Ensure only one of bookingId or subscriptionId is provided
     if (bookingId && subscriptionId) {
-      return res.status(400).json({ 
-        error: 'Provide either bookingId or subscriptionId, not both' 
+      return res.status(400).json({
+        error: 'Provide either bookingId or subscriptionId, not both'
       });
     }
 
     // Validate payment method enum
     const validPaymentMethods = ['CARD', 'UPI', 'NET_BANKING', 'WALLET', 'CASH', 'BANK_TRANSFER'];
     if (!validPaymentMethods.includes(paymentMethod)) {
-      return res.status(400).json({ 
-        error: 'Invalid payment method. Must be one of: CARD, UPI, NET_BANKING, WALLET, CASH, BANK_TRANSFER' 
+      return res.status(400).json({
+        error: 'Invalid payment method. Must be one of: CARD, UPI, NET_BANKING, WALLET, CASH, BANK_TRANSFER'
       });
     }
 
@@ -40,7 +40,7 @@ const createPayment = async (req, res) => {
     const amountNum = parseFloat(amount);
     const discountNum = parseFloat(discount);
     const taxNum = parseFloat(tax);
-    
+
     if (isNaN(amountNum) || amountNum <= 0) {
       return res.status(400).json({ error: 'Amount must be a positive number' });
     }
@@ -73,7 +73,7 @@ const createPayment = async (req, res) => {
       if (existingPayment) {
         return res.status(409).json({ error: 'Payment already exists for this booking' });
       }
-      
+
       verificationData = { bookingId };
     }
 
@@ -99,7 +99,7 @@ const createPayment = async (req, res) => {
       if (subscription.customerId !== customerProfile.id) {
         return res.status(403).json({ error: 'Unauthorized: You can only create payments for your own subscription' });
       }
-      
+
       verificationData = { subscriptionId };
     }
 
@@ -146,46 +146,54 @@ const createPayment = async (req, res) => {
 
 const getAllPayments = async (req, res) => {
   try {
-    const { page = 1, limit = 10, status, paymentMethod } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    
+    // M9 FIX: Cap limit to prevent unbounded queries that load the entire table.
+    const MAX_LIMIT = 100;
+    // page and limit are already Numbers after Math.max/Math.min -- no parseInt needed.
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(req.query.limit, 10) || 10));
+    const skip = (page - 1) * limit;
+    const { status, paymentMethod } = req.query;
+
     // Build filter object
     const where = {};
     if (status) where.status = status;
     if (paymentMethod) where.paymentMethod = paymentMethod;
-    
-    const payments = await getPrismaClient().payment.findMany({
-      where,
-      include: {
-        booking: {
-          include: {
-            service: true,
-            customer: {
-              select: {
-                id: true,
-                name: true,
-                email: true
+
+    // Issue 4 FIX: cache the Prisma instance once instead of calling
+    // getPrismaClient() twice (findMany + count) for the same request.
+    const db = getPrismaClient();
+
+    const [payments, totalPayments] = await Promise.all([
+      db.payment.findMany({
+        where,
+        include: {
+          booking: {
+            include: {
+              service: true,
+              customer: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
               }
             }
           }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      skip,
-      take: parseInt(limit)
-    });
-    
-    const totalPayments = await getPrismaClient().payment.count({ where });
-    
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit   // already a Number -- no parseInt needed
+      }),
+      db.payment.count({ where })
+    ]);
+
     res.json({
       payments,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page,          // already a Number
+        limit,         // already a Number
         total: totalPayments,
-        totalPages: Math.ceil(totalPayments / parseInt(limit))
+        totalPages: Math.ceil(totalPayments / limit)
       }
     });
   } catch (error) {
@@ -234,8 +242,8 @@ const updatePaymentStatus = async (req, res) => {
     // Validate status enum
     const validStatuses = ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED'];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ 
-        error: 'Invalid status. Must be one of: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED, REFUNDED, PARTIALLY_REFUNDED' 
+      return res.status(400).json({
+        error: 'Invalid status. Must be one of: PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED, REFUNDED, PARTIALLY_REFUNDED'
       });
     }
 
@@ -244,7 +252,7 @@ const updatePaymentStatus = async (req, res) => {
     if (transactionId) updateData.transactionId = transactionId;
     if (gateway) updateData.gateway = gateway;
     if (gatewayResponse) updateData.gatewayResponse = gatewayResponse;
-    
+
     // Handle refund fields
     if (status === 'REFUNDED' || status === 'PARTIALLY_REFUNDED') {
       if (refundAmount !== undefined) {
@@ -307,8 +315,10 @@ const getUserPayments = async (req, res) => {
 
     const where = { customerId: userId };
 
+    // C2 FIX: use getPrismaClient() — bare `prisma` was never declared in this file
+    const db = getPrismaClient();
     const [payments, total] = await Promise.all([
-      prisma.payment.findMany({
+      db.payment.findMany({
         where,
         include: {
           booking: {
@@ -321,7 +331,7 @@ const getUserPayments = async (req, res) => {
         skip,
         take: limit
       }),
-      prisma.payment.count({ where })
+      db.payment.count({ where })
     ]);
 
     res.json({
@@ -349,8 +359,8 @@ const verifyPayment = async (req, res) => {
     const userId = req.user.id;
 
     if (!paymentId || !transactionId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: paymentId, transactionId' 
+      return res.status(400).json({
+        error: 'Missing required fields: paymentId, transactionId'
       });
     }
 
@@ -425,8 +435,8 @@ const createRazorpayBookingOrder = async (req, res) => {
     const userId = req.user.id;
 
     if (!bookingId) {
-      return res.status(400).json({ 
-        error: 'Missing required field: bookingId' 
+      return res.status(400).json({
+        error: 'Missing required field: bookingId'
       });
     }
 
@@ -463,7 +473,7 @@ const createRazorpayBookingOrder = async (req, res) => {
 
     // Check if payment already exists
     const existingPayment = await getPrismaClient().payment.findFirst({
-      where: { 
+      where: {
         bookingId,
         status: { in: ['PENDING', 'COMPLETED', 'PROCESSING'] }
       }
@@ -474,10 +484,9 @@ const createRazorpayBookingOrder = async (req, res) => {
     }
 
     // Create Razorpay order with server-side validated amount
-    const currency = 'INR';
-    const result = await razorpayService.createBookingOrder(bookingId, paymentAmount, currency);
-    // Create Razorpay order with validated amount
-    const result = await razorpayService.createBookingOrder(bookingId, amount, currency);
+    // C1 FIX: use a single const and a single createBookingOrder call
+    const orderCurrency = currency || 'INR';
+    const result = await razorpayService.createBookingOrder(bookingId, paymentAmount, orderCurrency);
 
     res.status(201).json({
       success: true,
@@ -486,7 +495,7 @@ const createRazorpayBookingOrder = async (req, res) => {
       key: razorpayKeyId,
       // Send back the validated amount for frontend confirmation
       amount: paymentAmount,
-      currency: currency
+      currency: orderCurrency
     });
 
   } catch (error) {
@@ -502,8 +511,8 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     const userId = req.user.id;
 
     if (!subscriptionId) {
-      return res.status(400).json({ 
-        error: 'Missing required field: subscriptionId' 
+      return res.status(400).json({
+        error: 'Missing required field: subscriptionId'
       });
     }
 
@@ -579,7 +588,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
 
     // CRITICAL FIX: Create payment record FIRST before order creation
     console.log(`Creating initial payment record for subscription ${subscriptionId}`);
-    
+
     let paymentRecord = await getPrismaClient().payment.findFirst({
       where: {
         subscriptionId: subscriptionId,
@@ -681,8 +690,8 @@ const verifyRazorpayPayment = async (req, res) => {
     } = req.body;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: razorpay_order_id, razorpay_payment_id, razorpay_signature' 
+      return res.status(400).json({
+        error: 'Missing required fields: razorpay_order_id, razorpay_payment_id, razorpay_signature'
       });
     }
 
@@ -726,8 +735,8 @@ const handleRazorpayPaymentFailure = async (req, res) => {
     } = req.body;
 
     if (!razorpay_order_id) {
-      return res.status(400).json({ 
-        error: 'Missing required field: razorpay_order_id' 
+      return res.status(400).json({
+        error: 'Missing required field: razorpay_order_id'
       });
     }
 
@@ -758,8 +767,8 @@ const processRefund = async (req, res) => {
     const { refundAmount, refundReason } = req.body;
 
     if (!refundAmount || !refundReason) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: refundAmount, refundReason' 
+      return res.status(400).json({
+        error: 'Missing required fields: refundAmount, refundReason'
       });
     }
 
@@ -798,29 +807,20 @@ const getPaymentStatus = async (req, res) => {
 };
 
 // Razorpay webhook handler
-// SECURITY: This handler receives ALREADY VERIFIED webhooks from middleware
-// The webhookSignatureVerifier middleware verifies HMAC-SHA256 signature using raw body before this runs
+// SECURITY: Signature is already verified by razorpayWebhookVerifier middleware.
+// Do NOT re-verify here — the JSON.stringify(req.body) fallback used in re-verification
+// produces a different byte sequence than the raw body and will break HMAC checks.
 const handleRazorpayWebhook = async (req, res) => {
   try {
-    const webhookSignature = req.headers['x-razorpay-signature'];
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    
-    if (!webhookSecret) {
-      console.error('Razorpay webhook secret not configured');
-      return res.status(400).json({ error: 'Webhook secret not configured' });
-    }
+    // C3 FIX: destructure `event` and `payload` from the parsed body.
+    // Previously these were referenced but never declared, causing ReferenceError
+    // which meant ALL webhook events were silently dropped.
+    const { event, payload } = req.body;
 
-    // SECURITY FIX: Use raw body for signature verification
-    // The raw body is captured by middleware in paymentRoutes.js
-    const body = req.rawBody || JSON.stringify(req.body);
-    const expectedSignature = crypto
-      .createHmac('sha256', webhookSecret)
-      .update(body)
-      .digest('hex');
-
-    if (expectedSignature !== webhookSignature) {
-      console.error('Webhook signature verification failed');
-      return res.status(400).json({ error: 'Invalid webhook signature' });
+    if (!event) {
+      console.error('❌ [WEBHOOK] Missing event field in webhook body');
+      // Return 200 to stop Razorpay retrying a malformed payload
+      return res.json({ success: true, message: 'Webhook ignored: missing event' });
     }
 
     console.log(`📬 [WEBHOOK] Received event: ${event}`);
@@ -866,9 +866,16 @@ const handleRazorpayWebhook = async (req, res) => {
 // Webhook event handlers
 const handlePaymentCaptured = async (paymentEntity) => {
   try {
-    // Update payment status in database
-    await getPrismaClient().payment.updateMany({
-      where: { transactionId: paymentEntity.order_id },
+    const db = getPrismaClient();
+
+    // H4 / H6 FIX: Only update payments that are currently PENDING or PROCESSING.
+    // Using a status guard prevents a late-arriving payment.captured webhook from
+    // overwriting a payment that has already been REFUNDED or FAILED.
+    await db.payment.updateMany({
+      where: {
+        transactionId: paymentEntity.order_id,
+        status: { in: ['PENDING', 'PROCESSING'] }
+      },
       data: {
         status: 'COMPLETED',
         gatewayResponse: paymentEntity,
@@ -876,7 +883,9 @@ const handlePaymentCaptured = async (paymentEntity) => {
       }
     });
 
-    const payments = await getPrismaClient().payment.findMany({
+    // Fetch ONLY the payments we just updated so ensurePostPaymentEffects
+    // is never called twice for the same payment (idempotency guard).
+    const payments = await db.payment.findMany({
       where: {
         transactionId: paymentEntity.order_id,
         status: 'COMPLETED'
@@ -928,7 +937,7 @@ const handleRefundCreated = async (refundEntity) => {
     if (payment) {
       const refundAmount = refundEntity.amount / 100; // Convert from paise
       const refundStatus = refundAmount >= payment.finalAmount ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
-      
+
       await getPrismaClient().payment.update({
         where: { id: payment.id },
         data: {

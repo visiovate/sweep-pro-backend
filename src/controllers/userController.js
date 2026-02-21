@@ -11,49 +11,30 @@ const prisma = getPrismaClient();
 // Note: Registration is now handled in authRoutes.js
 // This method is kept for backward compatibility if needed
 const register = async (req, res) => {
-  return res.status(410).json({ 
+  return res.status(410).json({
     success: false,
     message: 'This registration endpoint is deprecated. Please use /api/auth/register instead.',
     redirectTo: '/api/auth/register'
   });
 };
 
+// Issue 2 FIX: This legacy login was the ONLY remaining place where a JWT was
+// still returned in the JSON response body, making it a bypass for the C10 security
+// fix applied to /api/auth/login (which now sets token in HttpOnly cookie only).
+//
+// This endpoint is deprecated. Clients must migrate to POST /api/auth/login, which:
+//   - Sets the JWT as an HttpOnly, Secure, SameSite=Strict cookie
+//   - Never exposes the raw token to JavaScript (XSS-safe)
+//
+// Keeping the function as a 410 Gone stub avoids breaking the router mount in
+// userRoutes.js while clearly signalling the endpoint should not be used.
 const login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: {
-        customerProfile: true,
-        maidProfile: true,
-        adminProfile: true
-      }
-    });
-
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    // Generate JWT token
-    // SECURITY: Use centralized JWT secret getter - NEVER use fallback
-    const token = jwt.sign({ id: user.id }, getJwtSecret());
-
-    // Remove password from response
-    const { password: _, ...userWithoutPassword } = user;
-
-    res.json({ user: userWithoutPassword, token });
-  } catch (error) {
-    console.error('Error logging in:', error);
-    res.status(500).json({ error: 'Error logging in' });
-  }
+  return res.status(410).json({
+    success: false,
+    message: 'This login endpoint is deprecated and has been disabled for security reasons. '
+      + 'Please use POST /api/auth/login instead.',
+    redirectTo: '/api/auth/login'
+  });
 };
 
 const getProfile = async (req, res) => {

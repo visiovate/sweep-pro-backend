@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const jwt = require('jsonwebtoken');
 const { verifyFirebaseToken, requireFirebaseAuth, requireProfileCompletion } = require('../middleware/firebaseAuth');
 const { initializePrisma } = require('../utils/database');
 const { getFirebaseAuth } = require('../config/firebase');
+const { getJwtSecret } = require('../config/validateEnv');
 const notificationService = require('../services/notificationService');
 
 /**
@@ -25,7 +27,7 @@ router.post('/firebase/login', async (req, res) => {
     // Verify Firebase ID token
     const firebaseAuth = getFirebaseAuth();
     let decodedToken;
-    
+
     try {
       decodedToken = await firebaseAuth.verifyIdToken(idToken);
     } catch (error) {
@@ -82,6 +84,29 @@ router.post('/firebase/login', async (req, res) => {
         console.error('Failed to send registration notification:', notificationError);
       }
     }
+
+    // Issue a standard app JWT so the Firebase user can call all protected
+    // endpoints (bookings, subscriptions, etc.) which use the standard
+    // `authenticateToken` middleware. Without this, Firebase users could only
+    // call /auth/firebase/* routes and would get 401/500 on everything else.
+    const appJwt = jwt.sign(
+      {
+        userId: user.id,
+        id: user.id,
+        role: user.role
+      },
+      getJwtSecret(),
+      { expiresIn: '24h' }
+    );
+
+    // M6: Set as HttpOnly cookie (same as email/password login)
+    const isSecure = process.env.NODE_ENV === 'production';
+    res.cookie('authToken', appJwt, {
+      httpOnly: true,
+      secure: isSecure,
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
 
     // Prepare user response
     const userResponse = {
@@ -353,6 +378,28 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
       }
     });
 
+    // M6: Re-issue JWT cookie because the initial Firebase OAuth login
+    // set the role to `null`. Now that the profile is complete and the
+    // role is determined, we must issue a new token with the correct role
+    // to prevent 403 Forbidden errors when fetching dashboard data.
+    const appJwt = jwt.sign(
+      {
+        userId: finalUser.id,
+        id: finalUser.id,
+        role: finalUser.role
+      },
+      getJwtSecret(),
+      { expiresIn: '24h' }
+    );
+
+    const isSecureCookie = process.env.NODE_ENV === 'production';
+    res.cookie('authToken', appJwt, {
+      httpOnly: true,
+      secure: isSecureCookie,
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     // Prepare response
     const userResponse = {
       id: finalUser.id,
@@ -386,7 +433,7 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
 
   } catch (error) {
     console.error('Complete profile error:', error);
-    
+
     // Handle Prisma-specific errors
     if (error.code === 'P2002') {
       const target = error.meta?.target;

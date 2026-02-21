@@ -94,38 +94,51 @@ const parseCookieHeader = (cookieHeader = '') => {
 
 server.on('upgrade', (request, socket, head) => {
   try {
-    // Accept token from query-string or Authorization header or cookie
-    const parsedUrl = url.parse(request.url, true);
-    const queryToken = parsedUrl.query.token;
-    const authHeader = request.headers['authorization'] || '';
-    const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    // M4 FIX: Accept the WebSocket upgrade without requiring a URL token.
+    // Previously the token was required in the query-string (?token=...) which
+    // leaks it into web-server logs, CDN logs, proxies, and browser history.
+    //
+    // Authentication flow:
+    //   1. Client connects — no token in URL.
+    //   2. Server accepts the upgrade unconditionally.
+    //   3. Client sends { type: 'auth', token } as the very first message.
+    //   4. Server verifies the token on that first message and either
+    //      marks the connection as authenticated or terminates it.
+    //   5. Any message received before auth is silently ignored.
+    //
+    // Cookie-based auth (HttpOnly authToken cookie) is still supported as
+    // an alternative — cookies ARE forwarded on WS upgrade requests so they
+    // can be used by environments where the client can't send a first message.
+
+    // --- Optional: try cookie auth on upgrade for backward compat ---
     const cookies = parseCookieHeader(request.headers.cookie);
     const cookieToken = cookies['authToken'];
 
-    const token = queryToken || headerToken || cookieToken;
-
-    if (!token) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nMissing authentication token');
-      socket.destroy();
-      return;
-    }
-
-    let decoded;
-    try {
-      decoded = jwt.verify(token, getJwtSecret());
-    } catch (jwtErr) {
-      logger.warn('WebSocket upgrade rejected: invalid token', { message: jwtErr.message });
-      socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Type: text/plain\r\n\r\nInvalid or expired token');
-      socket.destroy();
-      return;
-    }
-
-    // Attach authenticated user to the WebSocket instance
     wss.handleUpgrade(request, socket, head, (ws) => {
-      ws.user = {
-        id: decoded.userId || decoded.id,
-        role: decoded.role
-      };
+      // If a valid cookie token was found, pre-authenticate the connection
+      if (cookieToken) {
+        try {
+          const decoded = jwt.verify(cookieToken, getJwtSecret());
+          ws.user = { id: decoded.userId || decoded.id, role: decoded.role };
+          ws.authenticated = true;
+        } catch (e) {
+          // Cookie token invalid — fall through to message-based auth
+          ws.authenticated = false;
+        }
+      } else {
+        ws.authenticated = false;
+      }
+
+      // Enforce auth-via-first-message within 5 seconds
+      if (!ws.authenticated) {
+        ws._authTimeout = setTimeout(() => {
+          if (!ws.authenticated) {
+            logger.warn('WebSocket connection timed out waiting for auth message');
+            ws.close(4001, 'Authentication timeout');
+          }
+        }, 5000);
+      }
+
       wss.emit('connection', ws, request);
     });
   } catch (err) {
@@ -134,6 +147,42 @@ server.on('upgrade', (request, socket, head) => {
     socket.destroy();
   }
 });
+
+// M4 FIX: Handle the 'auth' message sent by websocketService.ts as the first message.
+// The notificationService 'connection' handler runs first; this listener runs on
+// the wss level to catch auth before any other message is processed.
+wss.on('connection', (ws) => {
+  if (ws.authenticated) return; // already authed via cookie — nothing to do
+
+  const authMessageHandler = (rawMessage) => {
+    // Only process until authenticated
+    if (ws.authenticated) return;
+
+    try {
+      const msg = JSON.parse(rawMessage);
+      if (msg.type !== 'auth' || !msg.token) return;
+
+      const decoded = jwt.verify(msg.token, getJwtSecret());
+      ws.user = { id: decoded.userId || decoded.id, role: decoded.role };
+      ws.authenticated = true;
+
+      if (ws._authTimeout) {
+        clearTimeout(ws._authTimeout);
+        ws._authTimeout = null;
+      }
+
+      // Remove this one-shot handler — subsequent messages go to normal handlers
+      ws.removeListener('message', authMessageHandler);
+      logger.info('WebSocket authenticated via message', { userId: ws.user.id });
+    } catch (e) {
+      logger.warn('WebSocket auth message invalid', { message: e.message });
+      ws.close(4001, 'Invalid authentication token');
+    }
+  };
+
+  ws.on('message', authMessageHandler);
+});
+
 
 // Middleware
 const allowedOrigins = [

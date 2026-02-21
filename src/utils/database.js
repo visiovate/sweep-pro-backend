@@ -1,40 +1,45 @@
 const { PrismaClient } = require('@prisma/client');
 
-let prisma = null;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3;
+
+// Eagerly instantiate Prisma so that getPrismaClient() always returns a valid
+// instance, avoiding null-reference errors in controllers that import it at module level.
+// Connection is still made lazily on the first query, or when initializePrisma() is called.
+let prisma = new PrismaClient({
+  log: ['error', 'warn'],
+  errorFormat: 'pretty',
+});
 
 /**
  * Initialize Prisma client with retry logic
  */
 async function initializePrisma() {
-  if (prisma) {
-    return prisma;
-  }
-
   try {
-    console.log('🔄 Initializing database connection...');
-    prisma = new PrismaClient({
-      log: ['error', 'warn'],
-      errorFormat: 'pretty',
-    });
+    // Check if already connected (optimization)
+    if (connectionAttempts === 0) {
+      // If we haven't tried connecting yet, assume we need to
+      console.log('🔄 Initializing database connection...');
+    }
 
     // Test the connection
     await prisma.$connect();
-    console.log('✅ Database connected successfully');
+
+    if (connectionAttempts === 0) {
+      console.log('✅ Database connected successfully');
+    }
     connectionAttempts = 0;
     return prisma;
   } catch (error) {
     connectionAttempts++;
     console.error(`❌ Database connection failed (attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}):`, error.message);
-    
+
     if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
       console.log(`🔄 Retrying database connection in 5 seconds...`);
       await new Promise(resolve => setTimeout(resolve, 5000));
       return initializePrisma();
     } else {
       console.error('❌ Max database connection attempts reached. Please check your DATABASE_URL and database server.');
-      prisma = null;
       throw error;
     }
   }
@@ -44,9 +49,6 @@ async function initializePrisma() {
  * Get Prisma client instance
  */
 function getPrismaClient() {
-  if (!prisma) {
-    console.warn('⚠️ Prisma client not initialized. Call initializePrisma() first.');
-  }
   return prisma;
 }
 
@@ -108,11 +110,11 @@ async function executeWithErrorHandling(operation, operationName = 'Database ope
     return await operation(prisma);
   } catch (error) {
     console.error(`❌ ${operationName} failed:`, error.message);
-    
+
     // If it's a connection error, try to reinitialize
-    if (error.message.includes('Can\'t reach database server') || 
-        error.message.includes('Connection refused') ||
-        error.message.includes('Database connection not available')) {
+    if (error.message.includes('Can\'t reach database server') ||
+      error.message.includes('Connection refused') ||
+      error.message.includes('Database connection not available')) {
       console.log('🔄 Attempting to reconnect to database...');
       try {
         await initializePrisma();
@@ -123,7 +125,7 @@ async function executeWithErrorHandling(operation, operationName = 'Database ope
         throw retryError;
       }
     }
-    
+
     throw error;
   }
 }

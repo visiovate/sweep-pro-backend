@@ -21,9 +21,24 @@ const crypto = require('crypto');
 // Methods that mutate state and therefore require CSRF validation
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-// Routes that should bypass CSRF (e.g. server-to-server webhooks)
+// Routes that should bypass CSRF (e.g. server-to-server webhooks, session bootstrap)
 const CSRF_EXEMPT_PATHS = [
-  '/api/payments/razorpay/webhook'
+  // Webhook: signed by Razorpay with HMAC — no browser session involved
+  '/api/payments/razorpay/webhook',
+
+  // Session bootstrap endpoints: CSRF cannot be enforced here because
+  // the csrf-token cookie does not yet exist before the first login.
+  // These endpoints are their OWN anti-CSRF mechanism:
+  //   - /auth/login: protected by password
+  //   - /auth/register: protected by email uniqueness
+  //   - /auth/firebase/login: protected by Firebase ID token signed by Google
+  //   - /auth/forgot-password / reset-password: protected by OTP/token
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/firebase/login',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/api/auth/logout',
 ];
 
 /**
@@ -50,8 +65,11 @@ const csrfProtection = (req, res, next) => {
     return next();
   }
 
-  // Exempt paths (e.g. incoming webhooks from payment providers)
-  if (CSRF_EXEMPT_PATHS.some(p => req.path.startsWith(p))) {
+  // Exempt paths (e.g. incoming webhooks, session bootstrap endpoints).
+  // Use req.originalUrl (the full path) so this works regardless of where
+  // the middleware is mounted. req.path strips the mount prefix.
+  const fullPath = req.originalUrl.split('?')[0]; // strip query string
+  if (CSRF_EXEMPT_PATHS.some(p => fullPath.startsWith(p))) {
     return next();
   }
 
