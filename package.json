@@ -21,6 +21,7 @@
     "cron:assignment": "node src/cron/assignmentCron.js",
     "cron:expired": "node src/cron/expiredRequestsCron.js",
     "cron:subscriptions": "node src/cron/subscriptionCron.js",
+    "cron:bookings": "node src/cron/bookingCreationCron.js",
     "cron:dev": "nodemon src/cron/assignmentCron.js",
     "build": "npm run prisma:generate",
     "test": "cross-env NODE_ENV=test jest --detectOpenHandles",

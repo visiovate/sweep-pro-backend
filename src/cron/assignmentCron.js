@@ -2,7 +2,7 @@
  * Assignment Cron Job - Production Ready
  * 
  * This cron job:
- * 1. Runs once and exits (no loops)
+ * 1. Creates tomorrow's bookings from active subscriptions (idempotent)
  * 2. Queries DB for bookings needing assignment requests (20h before slot)
  * 3. Enqueues jobs into BullMQ worker queue
  * 4. Handles DB/Redis errors with proper exit codes
@@ -22,6 +22,7 @@ const {
   get20HourTriggerWindow,
   formatDateTimeForLog,
 } = require('../utils/timeUtils');
+const { createBookingsForTomorrow } = require('./bookingCreationCron');
 
 // Constants
 const CRON_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes max runtime
@@ -238,6 +239,17 @@ async function runCron() {
   try {
     // Initialize Prisma database connection
     await initializePrisma();
+
+    // Step 1: Create tomorrow's bookings (idempotent — safe to run repeatedly)
+    console.log('📅 Step 1: Ensuring tomorrow\'s bookings exist...\n');
+    try {
+      const bookingStats = await createBookingsForTomorrow();
+      console.log(`\n📊 Booking creation: ${bookingStats.created} created, ${bookingStats.skippedExists} already existed\n`);
+    } catch (err) {
+      console.error('⚠️  Booking creation failed (continuing with assignment):', err.message);
+    }
+
+    // Step 2: Find bookings needing assignment and enqueue
     // Initialize connections
     await initializeQueue();
 
@@ -246,10 +258,9 @@ async function runCron() {
     stats.found = bookings.length;
 
     // Process each booking
-    // FIX: `prisma` was never declared in this file — use getPrismaClient() instead
     for (const booking of bookings) {
       try {
-        const result = await enqueueAssignmentJob(booking, getPrismaClient());
+        const result = await enqueueAssignmentJob(booking, prisma);
 
         if (result.skipped) {
           stats.skipped++;
@@ -322,32 +333,34 @@ async function cleanup() {
 
 /**
  * Handle process signals
- * C5 FIX: All four signal handlers were missing their closing `});`
- * which caused a SyntaxError that prevented the cron from ever loading.
  */
 process.on('SIGTERM', async () => {
   console.log('⚠️  SIGTERM received, shutting down...');
   await cleanup();
   process.exit(143); // 128 + 15 (SIGTERM)
 });
+// Initialization done by initializePrisma()
 
 process.on('SIGINT', async () => {
   console.log('⚠️  SIGINT received, shutting down...');
   await cleanup();
   process.exit(130); // 128 + 2 (SIGINT)
 });
+// Initialization done by initializePrisma()
 
 process.on('unhandledRejection', async (reason, promise) => {
   console.error('❌ Unhandled Rejection:', reason);
   await cleanup();
   process.exit(1);
 });
+// Initialization done by initializePrisma()
 
 process.on('uncaughtException', async (error) => {
   console.error('❌ Uncaught Exception:', error);
   await cleanup();
   process.exit(1);
 });
+// Initialization done by initializePrisma()
 
 // Run with timeout
 withTimeout(() => runCron(), CRON_TIMEOUT_MS, 'Cron job')

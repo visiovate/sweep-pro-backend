@@ -89,6 +89,28 @@ class CronManager {
         console.error('❌ Expired request handler failed:', error);
       }
     });
+
+    // Every 15 minutes: Escalate unapproved assignments within 2 hours of service
+    this.addJob('unapproved-assignment-escalation', '*/15 * * * *', async () => {
+      console.log('⚡ Running unapproved assignment escalation...');
+      try {
+        const result = await this.escalateUnapprovedAssignments();
+        console.log(`✅ Escalation completed: ${result.escalated} assignments escalated`);
+      } catch (error) {
+        console.error('❌ Unapproved assignment escalation failed:', error);
+      }
+    });
+
+    // Every 30 minutes: Mark past-due unassigned bookings as INCOMPLETE
+    this.addJob('past-due-incomplete-bookings', '*/30 * * * *', async () => {
+      console.log('📛 Running past-due incomplete bookings check...');
+      try {
+        const result = await this.markPastDueBookingsIncomplete();
+        console.log(`✅ Incomplete bookings check completed: ${result.marked} bookings marked`);
+      } catch (error) {
+        console.error('❌ Past-due incomplete bookings check failed:', error);
+      }
+    });
   }
 
   /**
@@ -214,7 +236,7 @@ class CronManager {
     const job = cron.schedule(pattern, async () => {
       const startTime = Date.now();
       console.log(`🕐 Starting cron job: ${name}`);
-      
+
       try {
         await task();
         const duration = Date.now() - startTime;
@@ -222,7 +244,7 @@ class CronManager {
       } catch (error) {
         const duration = Date.now() - startTime;
         console.error(`❌ Cron job ${name} failed after ${duration}ms:`, error);
-        
+
         // Log error details for debugging
         console.error('Error details:', {
           name,
@@ -347,7 +369,7 @@ class CronManager {
         // Mark as expired and trigger reassignment
         await prisma.assignmentRequest.update({
           where: { id: request.id },
-          data: { 
+          data: {
             status: 'expired',
             respondedAt: now
           }
@@ -385,6 +407,167 @@ class CronManager {
   async checkBufferPeriodCompletion() {
     // Implementation for buffer period completion
     return { completed: 0 };
+  }
+
+  /**
+   * Escalate unapproved assignment requests within 2 hours of service
+   */
+  async escalateUnapprovedAssignments() {
+    const now = new Date();
+    const twoHoursFromNow = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+
+    // Find pending assignment requests where booking service time is within 2 hours
+    const urgentRequests = await prisma.assignmentRequest.findMany({
+      where: {
+        status: 'pending',
+        expiresAt: { gte: now },
+        booking: {
+          scheduledAt: {
+            gt: now,
+            lte: twoHoursFromNow,
+          },
+        },
+      },
+      include: {
+        booking: {
+          include: {
+            customer: { select: { id: true, name: true } },
+            service: { select: { id: true, name: true } },
+          },
+        },
+        maid: {
+          include: { user: { select: { id: true, name: true } } },
+        },
+      },
+    });
+
+    let escalated = 0;
+    for (const request of urgentRequests) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.assignmentRequest.update({
+            where: { id: request.id },
+            data: {
+              status: 'expired',
+              respondedAt: now,
+              rejectionReason: 'Auto-escalated: no response 2 hours before service',
+            },
+          });
+
+          await tx.booking.update({
+            where: { id: request.bookingId },
+            data: {
+              assignmentStatus: 'REJECTED',
+              rejectionReason: 'Auto-escalated: no maid response 2 hours before service',
+              maidId: null,
+              reassignmentCount: { increment: 1 },
+            },
+          });
+
+          // Notify admins
+          const admins = await tx.user.findMany({
+            where: { role: 'ADMIN' },
+            select: { id: true },
+          });
+
+          if (admins.length > 0) {
+            await tx.notification.createMany({
+              data: admins.map(admin => ({
+                userId: admin.id,
+                type: 'REASSIGNMENT_REQUIRED',
+                title: 'Urgent: Assignment Auto-Escalated',
+                message: `Assignment for ${request.booking.customer?.name || 'Customer'} was not responded to. Immediate reassignment required.`,
+                data: {
+                  bookingId: request.bookingId,
+                  reason: 'AUTO_ESCALATED_2HR',
+                },
+              })),
+            });
+          }
+        });
+        escalated++;
+      } catch (error) {
+        console.error(`Failed to escalate request ${request.id}:`, error);
+      }
+    }
+
+    return { escalated };
+  }
+
+  /**
+   * Mark past-due unassigned bookings as INCOMPLETE
+   */
+  async markPastDueBookingsIncomplete() {
+    const now = new Date();
+
+    const pastDueBookings = await prisma.booking.findMany({
+      where: {
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        maidId: null,
+        scheduledAt: { lt: now },
+      },
+      include: {
+        customer: { select: { id: true, name: true } },
+        service: { select: { id: true, name: true } },
+      },
+      take: 100,
+    });
+
+    let marked = 0;
+    for (const booking of pastDueBookings) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.booking.update({
+            where: { id: booking.id },
+            data: {
+              status: 'INCOMPLETE',
+              assignmentStatus: 'REJECTED',
+              rejectionReason: 'Service time passed without maid assignment',
+            },
+          });
+
+          // Cancel pending assignment requests
+          await tx.assignmentRequest.updateMany({
+            where: { bookingId: booking.id, status: 'pending' },
+            data: { status: 'expired', respondedAt: now },
+          });
+
+          // Notify admins
+          const admins = await tx.user.findMany({
+            where: { role: 'ADMIN' },
+            select: { id: true },
+          });
+
+          if (admins.length > 0) {
+            await tx.notification.createMany({
+              data: admins.map(admin => ({
+                userId: admin.id,
+                type: 'BOOKING_OVERDUE',
+                title: 'Booking Marked Incomplete',
+                message: `Booking for ${booking.customer?.name || 'Customer'} marked as INCOMPLETE - service time passed without assignment.`,
+                data: { bookingId: booking.id, reason: 'PAST_DUE_NO_ASSIGNMENT' },
+              })),
+            });
+          }
+
+          // Notify customer
+          await tx.notification.create({
+            data: {
+              userId: booking.customerId,
+              type: 'BOOKING_STATUS_CHANGED',
+              title: 'Booking Incomplete',
+              message: 'We were unable to assign a maid for your scheduled service. Our team will contact you to reschedule.',
+              data: { bookingId: booking.id, status: 'INCOMPLETE' },
+            },
+          });
+        });
+        marked++;
+      } catch (error) {
+        console.error(`Failed to mark booking ${booking.id} as INCOMPLETE:`, error);
+      }
+    }
+
+    return { marked };
   }
 
   /**
@@ -434,10 +617,10 @@ class CronManager {
     try {
       // Check database connection
       await prisma.$queryRaw`SELECT 1`;
-      
+
       // Check Redis connection (if available)
       // await redis.ping();
-      
+
       return { status: 'healthy' };
     } catch (error) {
       console.error('Health check failed:', error);
@@ -450,12 +633,12 @@ class CronManager {
    */
   stop() {
     console.log('🛑 Stopping all cron jobs...');
-    
+
     for (const [name, job] of this.jobs) {
       job.stop();
       console.log(`✅ Stopped cron job: ${name}`);
     }
-    
+
     this.jobs.clear();
     this.isRunning = false;
     console.log('✅ All cron jobs stopped');

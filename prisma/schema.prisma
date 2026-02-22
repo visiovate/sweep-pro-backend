@@ -869,6 +869,7 @@ enum BookingStatus {
   CANCELLED
   RESCHEDULED
   NO_SHOW
+  INCOMPLETE
 }
 
 enum BookingPriority {
