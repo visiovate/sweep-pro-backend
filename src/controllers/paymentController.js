@@ -3,6 +3,7 @@ const crypto = require('crypto');
 
 // razorpayService is a proper singleton – import it once at module load time.
 const razorpayService = require('../services/razorpayService');
+const { generateInvoicePDF, generateInvoiceNumber } = require('../services/invoiceService');
 
 const { razorpayKeyId } = require('../utils/razorpay-credintials');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
@@ -703,10 +704,25 @@ const verifyRazorpayPayment = async (req, res) => {
       payment_method
     });
 
+    // Auto-generate invoice number if not already set
+    let invoiceNumber = result.payment?.invoiceNumber;
+    if (!invoiceNumber && result.payment?.id) {
+      invoiceNumber = generateInvoiceNumber();
+      try {
+        await getPrismaClient().payment.update({
+          where: { id: result.payment.id },
+          data: { invoiceNumber }
+        });
+        console.log(`📄 [INVOICE] Generated invoice ${invoiceNumber} for payment ${result.payment.id}`);
+      } catch (invErr) {
+        console.warn('⚠️  [INVOICE] Could not save invoice number:', invErr.message);
+      }
+    }
+
     res.json({
       success: true,
       message: 'Payment verified successfully',
-      payment: result.payment
+      payment: { ...result.payment, invoiceNumber }
     });
 
   } catch (error) {
@@ -896,6 +912,21 @@ const handlePaymentCaptured = async (paymentEntity) => {
 
     for (const payment of payments) {
       await razorpayService.ensurePostPaymentEffects(payment);
+
+      // Auto-generate invoice number if not already set
+      if (!payment.invoiceNumber) {
+        try {
+          const invoiceNum = generateInvoiceNumber();
+          await db.payment.update({
+            where: { id: payment.id },
+            data: { invoiceNumber: invoiceNum }
+          });
+          console.log(`📄 [INVOICE] Generated invoice ${invoiceNum} for payment ${payment.id}`);
+        } catch (invErr) {
+          // Non-fatal – invoiceNumber column may not be migrated yet
+          console.warn('⚠️  [INVOICE] Could not save invoice number:', invErr.message);
+        }
+      }
     }
 
     console.log(`Payment captured: ${paymentEntity.id}`);
@@ -958,6 +989,88 @@ const handleRefundCreated = async (refundEntity) => {
   }
 };
 
+// ─── Invoice Download ────────────────────────────────────────────────────────
+// GET /payments/:id/invoice  (authenticated; must be the payment owner or admin)
+const downloadInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
+
+    // Ownership check
+    if (!isAdmin) {
+      const payment = await getPrismaClient().payment.findUnique({
+        where: { id },
+        select: { customerId: true, status: true }
+      });
+      if (!payment) return res.status(404).json({ error: 'Payment not found' });
+      if (payment.customerId !== userId) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+    }
+
+    const pdfBuffer = await generateInvoicePDF(id);
+
+    // Also stamp the invoice number into the DB (idempotent)
+    const stored = await getPrismaClient().payment.findUnique({
+      where: { id },
+      select: { invoiceNumber: true }
+    });
+    let invoiceNum = stored?.invoiceNumber;
+    if (!invoiceNum) {
+      invoiceNum = generateInvoiceNumber();
+      try {
+        await getPrismaClient().payment.update({
+          where: { id },
+          data: { invoiceNumber: invoiceNum }
+        });
+      } catch (_) { /* column may not exist yet */ }
+    }
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="Invoice-${invoiceNum || id.slice(0, 8)}.pdf"`,
+      'Content-Length': pdfBuffer.length
+    });
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating invoice:', error);
+    res.status(500).json({ error: 'Failed to generate invoice' });
+  }
+};
+
+// GET /payments/:id/invoice/view  (same auth; returns PDF inline for browser preview)
+const viewInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const isAdmin = req.user.role === 'ADMIN';
+
+    if (!isAdmin) {
+      const payment = await getPrismaClient().payment.findUnique({
+        where: { id },
+        select: { customerId: true }
+      });
+      if (!payment) return res.status(404).json({ error: 'Payment not found' });
+      if (payment.customerId !== userId) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+    }
+
+    const pdfBuffer = await generateInvoicePDF(id);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'inline',
+      'Content-Length': pdfBuffer.length
+    });
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error generating invoice preview:', error);
+    res.status(500).json({ error: 'Failed to generate invoice' });
+  }
+};
+
 module.exports = {
   createPayment,
   getAllPayments,
@@ -971,5 +1084,7 @@ module.exports = {
   handleRazorpayPaymentFailure,
   processRefund,
   getPaymentStatus,
-  handleRazorpayWebhook
+  handleRazorpayWebhook,
+  downloadInvoice,
+  viewInvoice
 };

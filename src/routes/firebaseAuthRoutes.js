@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const { verifyFirebaseToken, requireFirebaseAuth, requireProfileCompletion } = require('../middleware/firebaseAuth');
+const { authenticateToken } = require('../middleware/auth');
 const { initializePrisma } = require('../utils/database');
 const { getFirebaseAuth } = require('../config/firebase');
 const { getJwtSecret } = require('../config/validateEnv');
@@ -231,7 +232,7 @@ router.get('/firebase/me', verifyFirebaseToken, async (req, res) => {
  * Requires: Firebase ID token, profile_completed = false
  * Body: { phone: string, role: 'CUSTOMER' | 'MAID', apartment_id?: string, address?: string, pincode?: string }
  */
-router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) => {
+router.post('/firebase/complete-profile', authenticateToken, async (req, res) => {
   try {
     const prisma = await initializePrisma();
     const { phone, apartment_id, role, address, pincode } = req.body;
@@ -244,7 +245,18 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
       });
     }
 
-    if (req.user.profile_completed) {
+    // Fetch fresh profile_completed status from DB
+    // (JWT claims may not carry this field after the initial Firebase login)
+    const existingUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, profile_completed: true }
+    });
+
+    if (!existingUser) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    if (existingUser.profile_completed) {
       return res.status(400).json({
         success: false,
         error: 'Profile is already completed'
@@ -432,7 +444,9 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
       success: true,
       message: 'Profile completed successfully',
       data: {
-        user: userResponse
+        user: userResponse,
+        // Return the new role-bearing JWT so the frontend can update its stored token
+        token: appJwt
       }
     });
 
@@ -459,7 +473,7 @@ router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) 
   }
 });
 
-router.put('/firebase/update-profile', requireFirebaseAuth, async (req, res) => {
+router.put('/firebase/update-profile', authenticateToken, async (req, res) => {
   try {
     const prisma = await initializePrisma();
     if (!req.user) {

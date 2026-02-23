@@ -14,7 +14,9 @@ const {
   handleRazorpayPaymentFailure,
   processRefund,
   getPaymentStatus,
-  handleRazorpayWebhook
+  handleRazorpayWebhook,
+  downloadInvoice,
+  viewInvoice
 } = require('../controllers/paymentController');
 
 // Customer routes
@@ -47,6 +49,11 @@ router.post('/razorpay/webhook',
   },
   handleRazorpayWebhook
 );
+
+// Invoice routes (customer: own payments; admin: any payment)
+// NOTE: These must come BEFORE the /:id route to avoid conflict
+router.get('/:id/invoice', authenticateToken, downloadInvoice);
+router.get('/:id/invoice/view', authenticateToken, viewInvoice);
 
 // Admin routes
 // C8 / H2 FIX: authorizeAdmin added to getPaymentById and updatePaymentStatus.

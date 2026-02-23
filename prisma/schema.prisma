@@ -390,6 +390,7 @@ model Payment {
   transactionId   String?
   gatewayResponse Json?
   paymentType     PaymentType   @default(BOOKING)
+  invoiceNumber   String?       @unique // e.g. INV-202602-00034
   refundAmount    Float?
   refundReason    String?
   refundedAt      DateTime?
@@ -403,6 +404,7 @@ model Payment {
   @@index([status])
   @@index([transactionId])
   @@index([subscriptionId])
+  @@index([invoiceNumber])
 }
 
 model Subscription {
