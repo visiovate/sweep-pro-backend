@@ -269,17 +269,79 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
     // (JWT claims may not carry this field after the initial Firebase login)
     const existingUser = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, profile_completed: true }
+      include: {
+        customerProfile: true,
+        maidProfile: true,
+        adminProfile: true
+      }
     });
 
     if (!existingUser) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
+    // IDEMPOTENT FIX: If profile is already completed, return the existing user
+    // instead of erroring. This handles the production race condition where:
+    // 1. Frontend calls completeProfile endpoint
+    // 2. Backend updates DB and returns response
+    // 3. Frontend's response processing fails/times out
+    // 4. Frontend retries completeProfile
+    // 5. Without this fix: Backend returns 400, frontend treats as error
+    // 6. With this fix: Backend returns the completed user, frontend proceeds smoothly
+    //
+    // NOTE: We still validate input if not already completed, to catch typos
+    // on first submission. But if already done, we accept re-submission gracefully.
     if (existingUser.profile_completed) {
-      return res.status(400).json({
-        success: false,
-        error: 'Profile is already completed'
+      console.log(`[POST /auth/firebase/complete-profile] Profile already completed for user ${req.user.id}. Returning existing user (idempotent).`);
+      
+      const userResponse = {
+        id: existingUser.id,
+        firebase_uid: existingUser.firebase_uid,
+        email: existingUser.email,
+        name: existingUser.name,
+        phone: existingUser.phone,
+        role: existingUser.role,
+        apartment_id: existingUser.apartment_id,
+        address: existingUser.address,
+        locality: existingUser.locality,
+        pincode: existingUser.pincode,
+        profile_completed: existingUser.profile_completed,
+        status: existingUser.status,
+        createdAt: existingUser.createdAt,
+        updatedAt: existingUser.updatedAt,
+        profiles: {
+          customer: existingUser.customerProfile,
+          maid: existingUser.maidProfile,
+          admin: existingUser.adminProfile
+        }
+      };
+
+      // Re-issue a fresh JWT anyway (ensures token is valid and has latest role)
+      const appJwt = jwt.sign(
+        {
+          userId: existingUser.id,
+          id: existingUser.id,
+          role: existingUser.role
+        },
+        getJwtSecret(),
+        { expiresIn: '24h' }
+      );
+
+      const isSecureCookie = process.env.NODE_ENV === 'production';
+      res.cookie('authToken', appJwt, {
+        httpOnly: true,
+        secure: isSecureCookie,
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 24 * 60 * 60 * 1000
+      });
+
+      return res.json({
+        success: true,
+        message: 'Profile already completed',
+        data: {
+          user: userResponse,
+          token: appJwt
+        }
       });
     }
 
