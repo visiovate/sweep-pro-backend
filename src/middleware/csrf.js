@@ -36,6 +36,7 @@ const CSRF_EXEMPT_PATHS = [
   '/api/auth/login',
   '/api/auth/register',
   '/api/auth/firebase/login',
+  '/api/auth/firebase/complete-profile',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
   '/api/auth/logout',

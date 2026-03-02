@@ -16,7 +16,7 @@ const notificationService = require('../services/notificationService');
 router.post('/firebase/login', async (req, res) => {
   try {
     const prisma = await initializePrisma();
-    const { idToken } = req.body;
+    const { idToken, intent } = req.body;
 
     if (!idToken) {
       return res.status(400).json({
@@ -40,6 +40,7 @@ router.post('/firebase/login', async (req, res) => {
     }
 
     // Check if user exists in database
+    let isNewUser = false;
     let user = await prisma.user.findFirst({
       where: {
         OR: [
@@ -54,8 +55,17 @@ router.post('/firebase/login', async (req, res) => {
       }
     });
 
-    // If user doesn't exist, create one
+    // If user doesn't exist, handle or create it based on intent
     if (!user) {
+      if (intent === 'login') {
+        return res.status(404).json({
+          success: false,
+          error: 'We could not find an account for this Google email. Please sign up instead.',
+          isNewUser: true
+        });
+      }
+
+      isNewUser = true;
       // Extract name from Firebase token
       const name = decodedToken.name || decodedToken.display_name || decodedToken.email?.split('@')[0] || 'User';
 
@@ -83,6 +93,15 @@ router.post('/firebase/login', async (req, res) => {
         await notificationService.notifyUserRegistration(user);
       } catch (notificationError) {
         console.error('Failed to send registration notification:', notificationError);
+      }
+    } else {
+      // If user DOES exist, block signup logic if they are already fully signed up
+      if (intent === 'signup' && user.profile_completed) {
+        return res.status(400).json({
+          success: false,
+          error: 'You already have an account. Please sign in instead.',
+          isNewUser: false
+        });
       }
     }
 
@@ -136,7 +155,8 @@ router.post('/firebase/login', async (req, res) => {
         user: userResponse,
         // CROSS-ORIGIN FIX: Return app JWT (not Firebase ID token) so the
         // frontend can use Authorization-header-based auth in cross-origin deployments.
-        token: appJwt
+        token: appJwt,
+        isNewUser: isNewUser
       }
     });
 
