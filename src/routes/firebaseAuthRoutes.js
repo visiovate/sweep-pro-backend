@@ -407,6 +407,27 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
 
     if (role === 'CUSTOMER') {
       updateData.apartment_id = apartment_id;
+
+      // BUG FIX: Resolve apartment details and store as human-readable address fields.
+      // Without this, 'address' stays null and the Profile page shows no address.
+      // The apartment_id is a UUID reference to the Apartment table — look it up
+      // and denormalise the name/area/pincode onto the User row so every downstream
+      // query (profile page, stats, dashboard) can read it without a join.
+      try {
+        const apartment = await prisma.apartment.findUnique({
+          where: { id: apartment_id }
+        });
+        if (apartment) {
+          updateData.address  = `${apartment.name} - ${apartment.area}`;
+          updateData.locality = apartment.area;
+          updateData.pincode  = apartment.pincode;
+        } else {
+          console.warn(`[complete-profile] Apartment not found for id=${apartment_id}`);
+        }
+      } catch (aptErr) {
+        // Non-fatal: apartment lookup failure must not block profile completion
+        console.warn('[complete-profile] Could not resolve apartment details:', aptErr.message);
+      }
     }
 
     if (role === 'MAID') {
