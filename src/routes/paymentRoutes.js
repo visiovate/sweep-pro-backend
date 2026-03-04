@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
+const { razorpayWebhookVerifier } = require('../middleware/webhookSignatureVerifier');
+const { paymentLimiter } = require('../middleware/rateLimiter');
 const {
   createPayment,
   getAllPayments,
@@ -24,29 +26,19 @@ router.post('/', authenticateToken, createPayment);
 router.get('/my-payments', authenticateToken, getUserPayments);
 router.post('/verify', authenticateToken, verifyPayment);
 
-// Razorpay routes
-router.post('/razorpay/booking/create-order', authenticateToken, createRazorpayBookingOrder);
-router.post('/razorpay/subscription/create-order', authenticateToken, createRazorpaySubscriptionOrder);
-router.post('/razorpay/verify', authenticateToken, verifyRazorpayPayment);
+// Razorpay routes - all protected with rate limiting to prevent payment spam
+router.post('/razorpay/booking/create-order', paymentLimiter, authenticateToken, createRazorpayBookingOrder);
+router.post('/razorpay/subscription/create-order', paymentLimiter, authenticateToken, createRazorpaySubscriptionOrder);
+router.post('/razorpay/verify', paymentLimiter, authenticateToken, verifyRazorpayPayment);
 router.post('/razorpay/failure', authenticateToken, handleRazorpayPaymentFailure);
 router.get('/razorpay/status/:razorpayPaymentId', authenticateToken, getPaymentStatus);
 
-// Webhook route (no authentication required)
-// SECURITY: Use express.raw() to capture raw body for HMAC signature verification.
-// The raw body is stored in req.rawBody before JSON parsing.
+// Webhook route (no authentication — Razorpay signs with HMAC-SHA256)
+// SECURITY: razorpayWebhookVerifier reads raw body, verifies signature with
+// timing-safe comparison, then parses JSON.  Never re-verify inside the handler.
 router.post('/razorpay/webhook',
   express.raw({ type: 'application/json', limit: '256kb' }),
-  (req, res, next) => {
-    if (Buffer.isBuffer(req.body)) {
-      req.rawBody = req.body.toString('utf8');
-      try {
-        req.body = JSON.parse(req.rawBody);
-      } catch (e) {
-        return res.status(400).json({ error: 'Invalid JSON in webhook body' });
-      }
-    }
-    next();
-  },
+  razorpayWebhookVerifier,
   handleRazorpayWebhook
 );
 
