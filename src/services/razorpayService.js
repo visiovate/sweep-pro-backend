@@ -22,10 +22,25 @@ class RazorpayService {
 
       if (!booking) throw new Error('Booking not found');
 
+      // IDEMPOTENCY: If an order already exists for this booking (e.g. network
+      // retry), return it instead of creating a duplicate Razorpay order.
+      const existingOrder = await getPrismaClient().payment.findFirst({
+        where: { bookingId, status: { in: ['PENDING', 'PROCESSING'] }, transactionId: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        select: { transactionId: true, gatewayResponse: true }
+      });
+
+      if (existingOrder?.transactionId) {
+        console.warn(`[IDEMPOTENCY] Returning existing Razorpay order ${existingOrder.transactionId} for booking ${bookingId}`);
+        return { success: true, order: existingOrder.gatewayResponse, booking };
+      }
+
+      // receipt must be unique per merchant; use a stable hash of the bookingId
+      // (no Date.now() — deterministic so retries don't create new orders)
       const orderOptions = {
         amount: Math.round(amount * 100),
         currency: currency,
-        receipt: `bk_${bookingId.substring(0, 8)}_${Date.now()}`,
+        receipt: `bk_${bookingId.replace(/-/g, '').substring(0, 30)}`,
         notes: {
           bookingId: bookingId,
           customerId: booking.customerId,
@@ -150,10 +165,12 @@ class RazorpayService {
 
       if (!subscription) throw new Error('Subscription not found');
 
+      // IDEMPOTENCY: stable receipt — no Date.now() — so retries map to the
+      // same Razorpay order instead of creating duplicates.
       const order = await razorpay.orders.create({
         amount: Math.round(amount * 100),
-        currency: currency,
-        receipt: `sub_${subscriptionId.substring(0, 8)}_${Date.now()}`,
+        currency: currency || 'INR',
+        receipt: `sub_${subscriptionId.replace(/-/g, '').substring(0, 30)}`,
         notes: {
           subscriptionId: subscriptionId,
           paymentType: 'SUBSCRIPTION'
@@ -261,15 +278,39 @@ class RazorpayService {
           note: 'Payment was already processed'
         };
       }
-      
-      const updatedPayment = await getPrismaClient().payment.update({
-        where: { id: existingPayment.id },
+
+      // ATOMIC IDEMPOTENCY GUARD: only update if status is still not COMPLETED.
+      // If two concurrent verify calls race, only one will update count=1; the
+      // other will get count=0 and safely return the already-completed record.
+      const updateResult = await getPrismaClient().payment.updateMany({
+        where: {
+          id: existingPayment.id,
+          status: { not: 'COMPLETED' }          // atomic guard
+        },
         data: {
           status: 'COMPLETED',
           paymentMethod: this.mapRazorpayMethod(payment_method || paymentDetails.method),
           gatewayResponse: paymentDetails,
           updatedAt: new Date()
-        },
+        }
+      });
+
+      // If nothing was updated, someone else just completed it — fetch & return
+      if (updateResult.count === 0) {
+        console.warn(`Payment ${razorpay_order_id} concurrently completed — returning existing`);
+        const completedPayment = await getPrismaClient().payment.findUnique({
+          where: { id: existingPayment.id },
+          include: {
+            booking: { include: { customer: { select: { id: true, name: true, email: true, phone: true } }, service: true } },
+            subscription: { include: { customer: { include: { user: { select: { id: true, name: true, email: true, phone: true } } } }, plan: { include: { service: true } } } }
+          }
+        });
+        return { success: true, payment: completedPayment, razorpayPayment: paymentDetails, note: 'Payment was already processed' };
+      }
+
+      // Fetch the full updated record (updateMany doesn't return the record)
+      const updatedPayment = await getPrismaClient().payment.findUnique({
+        where: { id: existingPayment.id },
         include: {
           booking: {
             include: {
@@ -368,8 +409,25 @@ class RazorpayService {
         orderBy: { createdAt: 'desc' }
       });
 
+      // Gracefully handle missing record — the Razorpay order may have been
+      // created before a DB payment record existed (e.g. network failure).
       if (!existingPayment) {
-        throw new Error('Payment record not found');
+        console.warn(`[FAILURE] No payment record for order ${razorpay_order_id} — ignoring`);
+        return {
+          success: false,
+          payment: null,
+          error: { code: error_code, description: error_description }
+        };
+      }
+
+      // Idempotency: don't overwrite a COMPLETED payment with FAILED
+      if (existingPayment.status === 'COMPLETED') {
+        console.warn(`[FAILURE] Payment ${razorpay_order_id} already COMPLETED — ignoring failure`);
+        return {
+          success: false,
+          payment: existingPayment,
+          error: { code: error_code, description: error_description }
+        };
       }
 
       const updatedPayment = await getPrismaClient().payment.update({
