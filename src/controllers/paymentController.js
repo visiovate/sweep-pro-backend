@@ -627,16 +627,16 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     }
 
     // Now create Razorpay order (payment record already exists)
-    const result = await razorpayService.createSubscriptionOrder(subscriptionId, amount, currency);
+    const orderCurrency = currency || 'INR';
+    const result = await razorpayService.createSubscriptionOrder(subscriptionId, amount, orderCurrency);
 
     res.status(201).json({
       success: true,
       order: result.order,
       subscription: result.subscription,
       key: razorpayKeyId,
-      // Send back the validated amount for frontend confirmation
       amount: paymentAmount,
-      currency: currency
+      currency: orderCurrency
     });
 
   } catch (error) {
