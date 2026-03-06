@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { authenticateToken } = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
 const { verifyFirebaseToken, requireFirebaseAuth, requireProfileCompletion } = require('../middleware/firebaseAuth');
-const { authenticateToken } = require('../middleware/auth');
 const { initializePrisma } = require('../utils/database');
 const { getFirebaseAuth } = require('../config/firebase');
 const { getJwtSecret } = require('../config/validateEnv');
@@ -293,7 +293,7 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
     // on first submission. But if already done, we accept re-submission gracefully.
     if (existingUser.profile_completed) {
       console.log(`[POST /auth/firebase/complete-profile] Profile already completed for user ${req.user.id}. Returning existing user (idempotent).`);
-      
+
       const userResponse = {
         id: existingUser.id,
         firebase_uid: existingUser.firebase_uid,
@@ -418,9 +418,9 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
           where: { id: apartment_id }
         });
         if (apartment) {
-          updateData.address  = `${apartment.name} - ${apartment.area}`;
+          updateData.address = `${apartment.name} - ${apartment.area}`;
           updateData.locality = apartment.area;
-          updateData.pincode  = apartment.pincode;
+          updateData.pincode = apartment.pincode;
         } else {
           console.warn(`[complete-profile] Apartment not found for id=${apartment_id}`);
         }

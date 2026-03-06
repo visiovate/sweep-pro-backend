@@ -1,0 +1,102 @@
+﻿
+=== PENDING/CONFIRMED BOOKINGS ===
+
+ID: 204be4a0... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: PENDING | assignmentStatus: ASSIGNED_PENDING_RESPONSE | assignment_sent: true | maidId: 614bb77e...
+ID: cc5fa85a... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: PENDING | assignmentStatus: ASSIGNED_PENDING_RESPONSE | assignment_sent: true | maidId: e43f6cd7...
+ID: fd474632... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: PENDING | assignmentStatus: ASSIGNED_PENDING_RESPONSE | assignment_sent: true | maidId: ec7d5e1b...
+ID: 6d3ad7fb... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: CONFIRMED | assignmentStatus: PENDING_ASSIGNMENT | assignment_sent: false | maidId: cbc934f3...
+ID: f2e94429... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: CONFIRMED | assignmentStatus: PENDING_ASSIGNMENT | assignment_sent: false | maidId: 0f5d900a...
+ID: 1a181415... | scheduledAt: Mon Feb 23 2026 08:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 13:30:00 GMT+0530 (India Standard Time) | status: CONFIRMED | assignmentStatus: PENDING_ASSIGNMENT | assignment_sent: false | maidId: 614bb77e...
+ID: bc4e2bc4... | scheduledAt: Mon Feb 23 2026 06:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 11:30:00 GMT+0530 (India Standard Time) | status: PENDING | assignmentStatus: ASSIGNED_PENDING_RESPONSE | assignment_sent: true | maidId: 614bb77e...
+ID: bf5b1389... | scheduledAt: Mon Feb 23 2026 06:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 11:30:00 GMT+0530 (India Standard Time) | status: CONFIRMED | assignmentStatus: PENDING_ASSIGNMENT | assignment_sent: false | maidId: cbc934f3...
+ID: bdda18c2... | scheduledAt: Fri Feb 06 2026 08:00:00 GMT+0530 (India Standard Time) | slot_date: Fri Feb 06 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 08:00:00 GMT+0530 (India Standard Time) | status: CONFIRMED | assignmentStatus: PENDING_ASSIGNMENT | assignment_sent: false | maidId: null
+ID: be28c205... | scheduledAt: Fri Feb 06 2026 06:00:00 GMT+0530 (India Standard Time) | slot_date: Fri Feb 06 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 06:00:00 GMT+0530 (India Standard Time) | status: CONFIRMED | assignmentStatus: PENDING_ASSIGNMENT | assignment_sent: false | maidId: null
+
+Total: 10
+
+=== ALL BOOKINGS (recent 20) ===
+
+ID: 1a181415... | scheduledAt: Mon Feb 23 2026 08:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 13:30:00 GMT+0530 (India Standard Time) | status: CONFIRMED | sent: false | maid: 614bb77e...
+ID: bf5b1389... | scheduledAt: Mon Feb 23 2026 06:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 11:30:00 GMT+0530 (India Standard Time) | status: CONFIRMED | sent: false | maid: cbc934f3...
+ID: bc4e2bc4... | scheduledAt: Mon Feb 23 2026 06:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 11:30:00 GMT+0530 (India Standard Time) | status: PENDING | sent: true | maid: 614bb77e...
+ID: f2e94429... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: CONFIRMED | sent: false | maid: 0f5d900a...
+ID: cc5fa85a... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: PENDING | sent: true | maid: e43f6cd7...
+ID: 6d3ad7fb... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: CONFIRMED | sent: false | maid: cbc934f3...
+ID: fd474632... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: PENDING | sent: true | maid: ec7d5e1b...
+ID: 204be4a0... | scheduledAt: Mon Feb 23 2026 09:00:00 GMT+0530 (India Standard Time) | slot_date: Mon Feb 23 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 14:30:00 GMT+0530 (India Standard Time) | status: PENDING | sent: true | maid: 614bb77e...
+ID: bdda18c2... | scheduledAt: Fri Feb 06 2026 08:00:00 GMT+0530 (India Standard Time) | slot_date: Fri Feb 06 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 08:00:00 GMT+0530 (India Standard Time) | status: CONFIRMED | sent: false | maid: null
+ID: be28c205... | scheduledAt: Fri Feb 06 2026 06:00:00 GMT+0530 (India Standard Time) | slot_date: Fri Feb 06 2026 05:30:00 GMT+0530 (India Standard Time) | slot_time: Thu Jan 01 1970 06:00:00 GMT+0530 (India Standard Time) | status: CONFIRMED | sent: false | maid: null
+
+=== ACTIVE SUBSCRIPTIONS ===
+
+node : Error: 
+At line:1 char:1
++ node scripts/debug-bookings.js 2>&1 | Out-File -FilePath scripts/debu ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Error: :String) [], RemoteExcepti 
+   on
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Invalid `p.subscription.findMany()` invocation in
+C:\Users\pondu\OneDrive\Desktop\Visovate\sweep-pro\sweep-pro-backend\scripts\de
+bug-bookings.js:51:43
+
+  48 }
+  49 
+  50 console.log('\n=== ACTIVE SUBSCRIPTIONS ===\n');
+ΓåÆ 51 const subs = await p.subscription.findMany({
+       where: {
+         status: "ACTIVE"
+       },
+       select: {
+         id: true,
+         selectedDays: true,
+         ~~~~~~~~~~~~
+         selectedTimeSlot: true,
+         startDate: true,
+         customerProfile: {
+           select: {
+             user: {
+               select: {
+                 name: true
+               }
+             }
+           }
+         },
+     ?   customerId?: true,
+     ?   planId?: true,
+     ?   status?: true,
+     ?   endDate?: true,
+     ?   billingCycle?: true,
+     ?   amount?: true,
+     ?   discount?: true,
+     ?   autoRenew?: true,
+     ?   nextBillDate?: true,
+     ?   currentCycleStart?: true,
+     ?   currentCycleEnd?: true,
+     ?   bufferDaysCount?: true,
+     ?   bufferDaysUsed?: true,
+     ?   isInBufferPeriod?: true,
+     ?   bufferStartDate?: true,
+     ?   bufferEndDate?: true,
+     ?   isPaused?: true,
+     ?   pausedAt?: true,
+     ?   resumeAt?: true,
+     ?   pauseReason?: true,
+     ?   totalCycles?: true,
+     ?   completedCycles?: true,
+     ?   lastRenewalDate?: true,
+     ?   createdAt?: true,
+     ?   updatedAt?: true,
+     ?   payments?: true,
+     ?   customer?: true,
+     ?   plan?: true,
+     ?   cycles?: true,
+     ?   bufferPeriods?: true,
+     ?   _count?: true
+       },
+       take: 10
+     })
+
+Unknown field `selectedDays` for select statement on model `Subscription`. 
+Available options are marked with ?.
