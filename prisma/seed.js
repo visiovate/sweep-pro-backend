@@ -36,7 +36,7 @@ async function main() {
       where: { email: 'admin@sweepro.com' },
       update: {},
       create: {
-       email: 'admin@sweepro.com',
+        email: 'admin@sweepro.com',
         name: 'Admin User',
         password: hashedAdminPassword,
         phone: '9876543210',
@@ -287,6 +287,69 @@ async function main() {
 
     // Only Sweepro Touch and Sweepro Lux plans are kept
 
+    // Generate 10 additional maids dynamically
+    console.log('Generating 10 additional maids...');
+    const hashedExtraMaidPassword = await bcrypt.hash('maid123', 10);
+    const extraMaids = [
+      { name: 'Aarohi Verma', email: 'maid11@sweepro.com', phone: '9123456811', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Aarohi' },
+      { name: 'Kavya Singh', email: 'maid12@sweepro.com', phone: '9123456812', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Kavya' },
+      { name: 'Ananya Patel', email: 'maid13@sweepro.com', phone: '9123456813', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ananya' },
+      { name: 'Diya Reddy', email: 'maid14@sweepro.com', phone: '9123456814', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Diya' },
+      { name: 'Neha Gupta', email: 'maid15@sweepro.com', phone: '9123456815', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Neha' },
+      { name: 'Sneha Deshmukh', email: 'maid16@sweepro.com', phone: '9123456816', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sneha' },
+      { name: 'Pooja Iyer', email: 'maid17@sweepro.com', phone: '9123456817', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Pooja' },
+      { name: 'Riya Das', email: 'maid18@sweepro.com', phone: '9123456818', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Riya' },
+      { name: 'Megha Kumar', email: 'maid19@sweepro.com', phone: '9123456819', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Megha' },
+      { name: 'Ishita Joshi', email: 'maid20@sweepro.com', phone: '9123456820', pImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ishita' }
+    ];
+
+    for (const [index, m] of extraMaids.entries()) {
+      const newMaid = await prisma.user.upsert({
+        where: { email: m.email },
+        update: {},
+        create: {
+          email: m.email,
+          name: m.name,
+          password: hashedExtraMaidPassword,
+          phone: m.phone,
+          role: 'MAID',
+          status: 'ACTIVE',
+          address: `${100 + index} Random Lane, Worker Area`,
+          city: 'Bangalore',
+          state: 'Karnataka',
+          pincode: '560002',
+          latitude: 12.9716 + (Math.random() * 0.01),
+          longitude: 77.5946 + (Math.random() * 0.01),
+          profileImage: m.pImage,
+          bio: 'Professional cleaner with excellent track record.',
+          gender: 'Female',
+          isProfilePublic: true,
+          maidProfile: {
+            create: {
+              skills: ['house_cleaning', 'kitchen_cleaning', 'bathroom_cleaning'],
+              languages: ['English', 'Hindi'],
+              availability: {
+                monday: { start: '08:00', end: '18:00' },
+                tuesday: { start: '08:00', end: '18:00' },
+                wednesday: { start: '08:00', end: '18:00' },
+                thursday: { start: '08:00', end: '18:00' },
+                friday: { start: '08:00', end: '18:00' },
+                saturday: { start: '09:00', end: '15:00' }
+              },
+              rating: Number((4.0 + Math.random()).toFixed(1)),
+              totalRatings: Math.floor(Math.random() * 50) + 5,
+              status: 'ACTIVE',
+              hourlyRate: 150.0 + (index * 5),
+              serviceRadius: 5.0,
+              experienceYears: Math.floor(Math.random() * 5) + 2,
+              isVerified: true,
+              verificationDate: new Date()
+            }
+          }
+        }
+      });
+    }
+
     console.log('✅ Database seeded successfully!');
     console.log('📄 Created:');
     console.log('- Admin user: admin@sweepro.com (password: admin123)');
@@ -298,14 +361,14 @@ async function main() {
 
     // Create subscriptions for all customers
     console.log('\n📋 Creating subscriptions and payments for customers...');
-    
+
     // Subscribe customer1 to Sweepro Touch plan
     const customer1Profile = await ensureCustomerProfile(customer.id);
-    
+
     const subscriptionEndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const subscriptionStartDate = new Date();
-    
-    
+
+
     const subscription1 = await prisma.subscription.upsert({
       where: { customerId: customer1Profile.id },
       update: {
@@ -338,7 +401,7 @@ async function main() {
         currentCycleEnd: subscriptionEndDate
       }
     });
-    
+
     // Create subscription payment for customer1
     await prisma.payment.create({
       data: {
@@ -355,7 +418,7 @@ async function main() {
         transactionId: 'txn_touch_' + Date.now()
       }
     });
-    
+
     console.log('✅ Created subscription and payment for customer@sweepro.com (Sweepro Touch Plan)');
 
     // Get maid profile for assignment
@@ -468,10 +531,10 @@ async function main() {
     });
     // Subscribe customer2 to Sweepro Lux plan
     const customer2Profile = await ensureCustomerProfile(user2.id);
-    
+
     const subscription2EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const subscription2StartDate = new Date();
-    
+
     const subscription2 = await prisma.subscription.upsert({
       where: { customerId: customer2Profile.id },
       update: {
@@ -504,7 +567,7 @@ async function main() {
         currentCycleEnd: subscription2EndDate
       }
     });
-    
+
     // Create subscription payment for customer2
     await prisma.payment.create({
       data: {
@@ -521,7 +584,7 @@ async function main() {
         transactionId: 'txn_lux_' + Date.now()
       }
     });
-    
+
     console.log('✅ Created subscription and payment for customer2@sweepro.com (Sweepro Lux Plan)');
 
     // Get maid2 profile and assign to customer2
@@ -635,10 +698,10 @@ async function main() {
     });
     // Subscribe customer3 to Sweepro Touch plan
     const customer3Profile = await ensureCustomerProfile(user3.id);
-    
+
     const subscription3EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const subscription3StartDate = new Date();
-    
+
     const subscription3 = await prisma.subscription.upsert({
       where: { customerId: customer3Profile.id },
       update: {
@@ -665,7 +728,7 @@ async function main() {
         nextBillDate: subscription3EndDate
       }
     });
-    
+
     // Create subscription payment for customer3
     await prisma.payment.create({
       data: {
@@ -682,7 +745,7 @@ async function main() {
         transactionId: 'txn_standard_' + Date.now()
       }
     });
-    
+
     console.log('✅ Created subscription and payment for customer3@sweepro.com (Sweepro Touch Plan)');
 
     await prisma.booking.create({
@@ -753,7 +816,7 @@ async function main() {
     });
     // Subscribe customer4 to Sweepro Touch plan
     const customer4Profile = await ensureCustomerProfile(user4.id);
-    
+
     const subscription4EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const subscription4StartDate = new Date();
     const subscription4 = await prisma.subscription.upsert({
@@ -782,7 +845,7 @@ async function main() {
         nextBillDate: subscription4EndDate
       }
     });
-    
+
     // Create subscription payment for customer4
     await prisma.payment.create({
       data: {
@@ -799,7 +862,7 @@ async function main() {
         transactionId: 'txn_basic2_' + Date.now()
       }
     });
-    
+
     console.log('✅ Created subscription and payment for customer4@sweepro.com (Sweepro Touch Plan)');
 
     await prisma.booking.create({
@@ -870,7 +933,7 @@ async function main() {
     });
     // Subscribe customer5 to Sweepro Lux plan
     const customer5Profile = await ensureCustomerProfile(user5.id);
-    
+
     const subscription5EndDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const subscription5StartDate = new Date();
     const subscription5 = await prisma.subscription.upsert({
@@ -899,7 +962,7 @@ async function main() {
         nextBillDate: subscription5EndDate
       }
     });
-    
+
     // Create subscription payment for customer5
     await prisma.payment.create({
       data: {
@@ -916,7 +979,7 @@ async function main() {
         transactionId: 'txn_premium2_' + Date.now()
       }
     });
-    
+
     console.log('✅ Created subscription and payment for customer5@sweepro.com (Sweepro Lux Plan)');
 
     await prisma.booking.create({
@@ -943,10 +1006,10 @@ async function main() {
     console.log('  • customer3@sweepro.com: Sweepro Touch Plan');
     console.log('  • customer4@sweepro.com: Sweepro Touch Plan');
     console.log('  • customer5@sweepro.com: Sweepro Lux Plan');
-    
+
     // Create additional test users for comprehensive testing
     console.log('\n🔄 Creating additional test data...');
-    
+
     // Customer with pending subscription payment
     const customerPending = await prisma.user.upsert({
       where: { email: 'pending@sweepro.com' },
@@ -969,9 +1032,9 @@ async function main() {
         }
       }
     });
-    
+
     const pendingCustomerProfile = await ensureCustomerProfile(customerPending.id);
-    
+
     // Create pending subscription
     const pendingSubscription = await prisma.subscription.upsert({
       where: { customerId: pendingCustomerProfile.id },
@@ -989,7 +1052,7 @@ async function main() {
         nextBillDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
     });
-    
+
     // Create pending payment for subscription
     await prisma.payment.create({
       data: {
@@ -1005,7 +1068,7 @@ async function main() {
         gateway: 'razorpay'
       }
     });
-    
+
     // Create some failed and refunded payments for testing
     await prisma.payment.create({
       data: {
@@ -1022,7 +1085,7 @@ async function main() {
         transactionId: 'txn_failed_' + Date.now()
       }
     });
-    
+
     await prisma.payment.create({
       data: {
         subscriptionId: subscription2.id,
@@ -1041,13 +1104,13 @@ async function main() {
         refundedAt: new Date()
       }
     });
-    
+
     console.log('✅ Created pending subscription for pending@sweepro.com');
     console.log('✅ Created test payments with different statuses (FAILED, REFUNDED)');
-    
+
     // Create diverse booking statuses for testing filtering functionality
     console.log('\n🔄 Creating diverse booking statuses for testing filters...');
-    
+
     // Create COMPLETED bookings (past dates)
     await prisma.booking.create({
       data: {
@@ -1387,7 +1450,7 @@ async function main() {
 
     // Now create comprehensive buffer period test scenarios
     console.log('\n🛡️ Creating buffer period test scenarios...');
-    
+
     // Clean up any existing buffer period test data to prevent conflicts
     await prisma.bufferPeriod.deleteMany({
       where: {
@@ -1402,7 +1465,7 @@ async function main() {
         }
       }
     });
-    
+
     // Clean up existing subscription cycles for buffer test users
     await prisma.subscriptionCycle.deleteMany({
       where: {
@@ -1417,14 +1480,14 @@ async function main() {
         }
       }
     });
-    
+
     // Calculate dates for buffer period testing
     const now = new Date();
     const currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0); // Last day of current month
-    
+
     // Customer with active buffer period (last 3 days of month)
     const bufferCustomer = await prisma.user.upsert({
       where: { email: 'buffer@sweepro.com' },
@@ -1447,9 +1510,9 @@ async function main() {
         }
       }
     });
-    
+
     const bufferCustomerProfile = await ensureCustomerProfile(bufferCustomer.id);
-    
+
     // Create subscription with current buffer period
     const bufferSubscription = await prisma.subscription.upsert({
       where: { customerId: bufferCustomerProfile.id },
@@ -1476,7 +1539,7 @@ async function main() {
         completedCycles: 2
       }
     });
-    
+
     // Create current subscription cycle
     const bufferCurrentCycle = await prisma.subscriptionCycle.upsert({
       where: {
@@ -1503,7 +1566,7 @@ async function main() {
         amount: sweepProLuxPlan.finalPrice
       }
     });
-    
+
     // Create active buffer period
     await prisma.bufferPeriod.create({
       data: {
@@ -1520,7 +1583,7 @@ async function main() {
         notes: 'Automatic end-of-month buffer period'
       }
     });
-    
+
     // Create historical buffer periods for this customer
     await prisma.bufferPeriod.create({
       data: {
@@ -1538,7 +1601,7 @@ async function main() {
         notes: 'Customer requested break for travel'
       }
     });
-    
+
     await prisma.bufferPeriod.create({
       data: {
         subscriptionId: bufferSubscription.id,
@@ -1555,7 +1618,7 @@ async function main() {
         notes: 'Admin pause for maid training'
       }
     });
-    
+
     // Customer with expired subscription needing renewal
     const expiredCustomer = await prisma.user.upsert({
       where: { email: 'expired@sweepro.com' },
@@ -1578,9 +1641,9 @@ async function main() {
         }
       }
     });
-    
+
     const expiredCustomerProfile = await ensureCustomerProfile(expiredCustomer.id);
-    
+
     // Create expired subscription
     const expiredSubscription = await prisma.subscription.upsert({
       where: { customerId: expiredCustomerProfile.id },
@@ -1603,7 +1666,7 @@ async function main() {
         completedCycles: 1
       }
     });
-    
+
     // Customer with cancelled subscription during buffer period
     const cancelledCustomer = await prisma.user.upsert({
       where: { email: 'cancelled@sweepro.com' },
@@ -1626,9 +1689,9 @@ async function main() {
         }
       }
     });
-    
+
     const cancelledCustomerProfile = await ensureCustomerProfile(cancelledCustomer.id);
-    
+
     // Create cancelled subscription
     const cancelledSubscription = await prisma.subscription.upsert({
       where: { customerId: cancelledCustomerProfile.id },
@@ -1651,7 +1714,7 @@ async function main() {
         completedCycles: 0
       }
     });
-    
+
     // Create cancelled buffer period
     await prisma.bufferPeriod.create({
       data: {
@@ -1668,7 +1731,7 @@ async function main() {
         notes: 'Buffer period cancelled due to subscription cancellation'
       }
     });
-    
+
     // Customer with paused subscription
     const pausedCustomer = await prisma.user.upsert({
       where: { email: 'paused@sweepro.com' },
@@ -1691,9 +1754,9 @@ async function main() {
         }
       }
     });
-    
+
     const pausedCustomerProfile = await ensureCustomerProfile(pausedCustomer.id);
-    
+
     // Create paused subscription
     const pausedSubscription = await prisma.subscription.upsert({
       where: { customerId: pausedCustomerProfile.id },
@@ -1720,10 +1783,10 @@ async function main() {
         completedCycles: 0
       }
     });
-    
+
     // Create comprehensive booking scenarios for buffer testing
     console.log('\n📅 Creating comprehensive booking scenarios...');
-    
+
     // Past completed bookings (successful services)
     for (let i = 7; i >= 1; i--) {
       await prisma.booking.create({
@@ -1750,7 +1813,7 @@ async function main() {
         }
       });
     }
-    
+
     // Buffer period skipped bookings
     for (let i = 1; i <= 2; i++) {
       await prisma.booking.create({
@@ -1775,7 +1838,7 @@ async function main() {
         }
       });
     }
-    
+
     // Upcoming scheduled bookings (post buffer period)
     for (let i = 1; i <= 5; i++) {
       await prisma.booking.create({
@@ -1798,10 +1861,10 @@ async function main() {
         }
       });
     }
-    
+
     // Create payment history for all subscriptions
     console.log('\n💰 Creating comprehensive payment history...');
-    
+
     // Buffer customer payments
     await prisma.payment.create({
       data: {
@@ -1818,7 +1881,7 @@ async function main() {
         transactionId: 'txn_buffer_' + Date.now()
       }
     });
-    
+
     // Expired customer payments (last payment failed)
     await prisma.payment.create({
       data: {
@@ -1835,7 +1898,7 @@ async function main() {
         transactionId: 'txn_expired_failed_' + Date.now()
       }
     });
-    
+
     // Previous successful payment for expired customer
     await prisma.payment.create({
       data: {
@@ -1852,7 +1915,7 @@ async function main() {
         transactionId: 'txn_expired_success_' + (Date.now() - 86400000)
       }
     });
-    
+
     // Cancelled customer refund
     await prisma.payment.create({
       data: {
@@ -1872,7 +1935,7 @@ async function main() {
         refundedAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000)
       }
     });
-    
+
     // Paused customer payment (will be processed when resumed)
     await prisma.payment.create({
       data: {
@@ -1888,24 +1951,24 @@ async function main() {
         gateway: 'razorpay'
       }
     });
-    
+
     // Create some daily scheduled services to show automatic scheduling
     console.log('\n🤖 Creating automatically scheduled services...');
-    
+
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     // Create automatic daily services for active customers
     const activeCustomers = [customer, user2, user3, user4, user5];
-    
+
     for (let i = 0; i < activeCustomers.length; i++) {
       const cust = activeCustomers[i];
-      
+
       // Create service for today (in progress or completed)
       const serviceTime = new Date(today);
       serviceTime.setHours(9 + i, 0, 0, 0); // Different times for each customer
-      
+
       await prisma.booking.create({
         data: {
           customerId: cust.id,
@@ -1929,11 +1992,11 @@ async function main() {
           specialInstructions: 'Automatic daily service from subscription'
         }
       });
-      
+
       // Create service for tomorrow (scheduled)
       const tomorrowService = new Date(tomorrow);
       tomorrowService.setHours(9 + i, 0, 0, 0);
-      
+
       await prisma.booking.create({
         data: {
           customerId: cust.id,
@@ -1955,12 +2018,12 @@ async function main() {
         }
       });
     }
-    
+
     console.log('✅ Created automatically scheduled daily services for demonstration');
-    
+
     // Create new customers with Sweepro Touch and Sweepro Lux plans
     console.log('\n🆕 Creating customers with new Sweepro Touch and Sweepro Lux plans...');
-    
+
     // Customer with Sweepro Touch plan - 2BHK Apartment
     const touchCustomer = await prisma.user.upsert({
       where: { email: 'touch@sweepro.com' },
@@ -1986,9 +2049,9 @@ async function main() {
         }
       }
     });
-    
+
     const touchCustomerProfile = await ensureCustomerProfile(touchCustomer.id);
-    
+
     const touchSubscription = await prisma.subscription.upsert({
       where: { customerId: touchCustomerProfile.id },
       update: {},
@@ -2008,7 +2071,7 @@ async function main() {
         currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
     });
-    
+
     await prisma.payment.create({
       data: {
         subscriptionId: touchSubscription.id,
@@ -2024,9 +2087,9 @@ async function main() {
         transactionId: 'txn_touch_' + Date.now()
       }
     });
-    
+
     console.log('✅ Created Sweepro Touch subscription for touch@sweepro.com (₹4,050/month - No Buffer System)');
-    
+
     // Customer with Sweepro Lux plan - 4BHK Bungalow
     const luxCustomer = await prisma.user.upsert({
       where: { email: 'lux@sweepro.com' },
@@ -2052,9 +2115,9 @@ async function main() {
         }
       }
     });
-    
+
     const luxCustomerProfile = await ensureCustomerProfile(luxCustomer.id);
-    
+
     const luxSubscription = await prisma.subscription.upsert({
       where: { customerId: luxCustomerProfile.id },
       update: {},
@@ -2075,7 +2138,7 @@ async function main() {
         currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
     });
-    
+
     await prisma.payment.create({
       data: {
         subscriptionId: luxSubscription.id,
@@ -2091,12 +2154,12 @@ async function main() {
         transactionId: 'txn_lux_' + Date.now()
       }
     });
-    
+
     console.log('✅ Created Sweepro Lux subscription for lux@sweepro.com (₹6,800/month - 5 Buffer Days)');
-    
+
     // Create more diverse test users with different house types
     console.log('\n🏠 Creating diverse customers with various property types...');
-    
+
     // 1BHK Apartment - Touch Plan
     const touch1bhk = await prisma.user.upsert({
       where: { email: 'touch.1bhk@sweepro.com' },
@@ -2122,9 +2185,9 @@ async function main() {
         }
       }
     });
-    
+
     const touch1bhkProfile = await ensureCustomerProfile(touch1bhk.id);
-    
+
     await prisma.subscription.upsert({
       where: { customerId: touch1bhkProfile.id },
       update: {},
@@ -2144,7 +2207,7 @@ async function main() {
         currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
     });
-    
+
     // 3BHK Apartment - Lux Plan
     const lux3bhk = await prisma.user.upsert({
       where: { email: 'lux.3bhk@sweepro.com' },
@@ -2170,9 +2233,9 @@ async function main() {
         }
       }
     });
-    
+
     const lux3bhkProfile = await ensureCustomerProfile(lux3bhk.id);
-    
+
     // Create active Lux subscription for lux.3bhk and keep reference for payments/bookings
     const lux3Subscription = await prisma.subscription.upsert({
       where: { customerId: lux3bhkProfile.id },
@@ -2266,7 +2329,7 @@ async function main() {
         finalAmount: 200.0
       }
     });
-    
+
     // 2BHK Bungalow - Lux Plan
     const luxBungalow = await prisma.user.upsert({
       where: { email: 'lux.bungalow@sweepro.com' },
@@ -2292,9 +2355,9 @@ async function main() {
         }
       }
     });
-    
+
     const luxBungalowProfile = await ensureCustomerProfile(luxBungalow.id);
-    
+
     await prisma.subscription.upsert({
       where: { customerId: luxBungalowProfile.id },
       update: {},
@@ -2315,7 +2378,7 @@ async function main() {
         currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
     });
-    
+
     // 3BHK Bungalow - Lux Plan (Premium)
     const luxPremiumBungalow = await prisma.user.upsert({
       where: { email: 'lux.premium@sweepro.com' },
@@ -2341,9 +2404,9 @@ async function main() {
         }
       }
     });
-    
+
     const luxPremiumProfile = await ensureCustomerProfile(luxPremiumBungalow.id);
-    
+
     await prisma.subscription.upsert({
       where: { customerId: luxPremiumProfile.id },
       update: {},
@@ -2364,13 +2427,13 @@ async function main() {
         currentCycleEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       }
     });
-    
+
     console.log('✅ Created 4 additional diverse customers:');
     console.log('  • touch.1bhk@sweepro.com - 1BHK Apartment, 650 sqft (₹3,500/month)');
     console.log('  • lux.3bhk@sweepro.com - 3BHK Apartment, 1800 sqft (₹5,800/month + Buffer)');
     console.log('  • lux.bungalow@sweepro.com - 2BHK Bungalow, 2200 sqft (₹6,200/month + Buffer)');
     console.log('  • lux.premium@sweepro.com - 3BHK Bungalow, 3000 sqft (₹7,500/month + Buffer)');
-    
+
     console.log('\n✅ Comprehensive seed data created successfully!');
     console.log('\n🧪 Test Scenarios Available:');
     console.log('\n📋 NEW SUBSCRIPTION PLANS:');
@@ -2387,34 +2450,34 @@ async function main() {
     console.log('- cancelled@sweepro.com: CANCELLED subscription');
     console.log('- paused@sweepro.com: SUSPENDED subscription');
     console.log('- pending@sweepro.com: PENDING_PAYMENT subscription');
-    
+
     console.log('\n🛡️ BUFFER PERIOD SCENARIOS:');
     console.log('- buffer@sweepro.com has ACTIVE buffer period (last 3 days of month)');
     console.log('- Historical buffer periods with different reasons (CUSTOMER_REQUEST, ADMIN_PAUSE)');
     console.log('- cancelled@sweepro.com has CANCELLED buffer period');
     console.log('- All buffer periods have realistic service skipping data');
-    
+
     console.log('\n📅 BOOKING SCENARIOS:');
     console.log('- Past completed bookings for all customers');
     console.log('- Buffer-skipped bookings (cancelled due to buffer period)');
     console.log('- Upcoming confirmed bookings (post-buffer period)');
     console.log('- Various booking statuses: COMPLETED, CANCELLED, CONFIRMED, ASSIGNED, IN_PROGRESS, etc.');
-    
+
     console.log('\n💳 PAYMENT SCENARIOS:');
     console.log('- Successful subscription payments');
     console.log('- Failed renewal payments');
     console.log('- Refunded payments for cancelled subscriptions');
     console.log('- Pending payments for paused subscriptions');
-    
+
     console.log('\n🤖 AUTOMATIC SCHEDULING FEATURES:');
     console.log('- Daily services are automatically scheduled for all active subscriptions');
     console.log('- No manual booking required - services run automatically');
     console.log('- Maids are assigned automatically by the system');
     console.log('- Buffer periods automatically pause scheduled services');
     console.log('- Services resume automatically after buffer period ends');
-    
+
     console.log('\n📬 Creating sample notifications for testing...');
-    
+
     const notifications = [
       // Customer Notifications (Unread)
       {
@@ -2555,7 +2618,7 @@ async function main() {
     console.log('  • Customer: 5 notifications (3 unread, 2 read)');
     console.log('  • Maid: 3 notifications (2 unread, 1 read)');
     console.log('  • Admin: 4 notifications (2 unread, 2 read)');
-    
+
     // Seed apartments
     const apartments = [
       { name: 'Aparna CyberLife', area: 'Nallagandla', pincode: '500019' },
@@ -2595,9 +2658,9 @@ async function main() {
     for (const apartment of apartments) {
       await prisma.apartment.create({ data: apartment });
     }
-    
+
     console.log(`✅ Created ${apartments.length} apartments`);
-    
+
     console.log('\n🎯 TESTING RECOMMENDATIONS:');
     console.log('1. Login as any customer to see automatically scheduled services (no booking buttons)');
     console.log('2. Login as buffer@sweepro.com to request buffer days for pausing services');
@@ -2615,7 +2678,7 @@ async function main() {
     console.log('13. Test WebSocket real-time delivery at ws://localhost:3000');
     console.log('14. Admin can send test notifications and broadcasts');
     console.log('15. Import Postman collection from: postman/Sweep-Pro-Notifications.postman_collection.json');
-    
+
   } catch (error) {
     console.error('❌ Error seeding database:', error);
     throw error;
