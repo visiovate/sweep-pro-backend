@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { authenticateToken } = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
 const { verifyFirebaseToken, requireFirebaseAuth, requireProfileCompletion } = require('../middleware/firebaseAuth');
 const { initializePrisma } = require('../utils/database');
@@ -227,7 +228,7 @@ router.get('/firebase/me', verifyFirebaseToken, async (req, res) => {
  * Requires: Firebase ID token, profile_completed = false
  * Body: { phone: string, role: 'CUSTOMER' | 'MAID', apartment_id?: string, address?: string, pincode?: string }
  */
-router.post('/firebase/complete-profile', requireFirebaseAuth, async (req, res) => {
+router.post('/firebase/complete-profile', authenticateToken, async (req, res) => {
   try {
     const prisma = await initializePrisma();
     const { phone, apartment_id, role, address, pincode } = req.body;
