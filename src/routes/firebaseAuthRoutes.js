@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
 const { verifyFirebaseToken, requireFirebaseAuth, requireProfileCompletion } = require('../middleware/firebaseAuth');
+const { authenticateToken } = require('../middleware/auth');
 const { initializePrisma } = require('../utils/database');
 const { getFirebaseAuth } = require('../config/firebase');
 const { getJwtSecret } = require('../config/validateEnv');
@@ -16,7 +17,7 @@ const notificationService = require('../services/notificationService');
 router.post('/firebase/login', async (req, res) => {
   try {
     const prisma = await initializePrisma();
-    const { idToken } = req.body;
+    const { idToken, intent } = req.body;
 
     if (!idToken) {
       return res.status(400).json({
@@ -40,6 +41,7 @@ router.post('/firebase/login', async (req, res) => {
     }
 
     // Check if user exists in database
+    let isNewUser = false;
     let user = await prisma.user.findFirst({
       where: {
         OR: [
@@ -54,8 +56,17 @@ router.post('/firebase/login', async (req, res) => {
       }
     });
 
-    // If user doesn't exist, create one
+    // If user doesn't exist, handle or create it based on intent
     if (!user) {
+      if (intent === 'login') {
+        return res.status(404).json({
+          success: false,
+          error: 'We could not find an account for this Google email. Please sign up instead.',
+          isNewUser: true
+        });
+      }
+
+      isNewUser = true;
       // Extract name from Firebase token
       const name = decodedToken.name || decodedToken.display_name || decodedToken.email?.split('@')[0] || 'User';
 
@@ -84,6 +95,15 @@ router.post('/firebase/login', async (req, res) => {
       } catch (notificationError) {
         console.error('Failed to send registration notification:', notificationError);
       }
+    } else {
+      // If user DOES exist, block signup logic if they are already fully signed up
+      if (intent === 'signup' && user.profile_completed) {
+        return res.status(400).json({
+          success: false,
+          error: 'You already have an account. Please sign in instead.',
+          isNewUser: false
+        });
+      }
     }
 
     // Issue a standard app JWT so the Firebase user can call all protected
@@ -101,11 +121,12 @@ router.post('/firebase/login', async (req, res) => {
     );
 
     // M6: Set as HttpOnly cookie (same as email/password login)
+    // CROSS-ORIGIN FIX: SameSite='none' required for cross-origin cookie auth (Vercel + Render)
     const isSecure = process.env.NODE_ENV === 'production';
     res.cookie('authToken', appJwt, {
       httpOnly: true,
       secure: isSecure,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 
@@ -132,7 +153,11 @@ router.post('/firebase/login', async (req, res) => {
       success: true,
       message: 'Login successful',
       data: {
-        user: userResponse
+        user: userResponse,
+        // CROSS-ORIGIN FIX: Return app JWT (not Firebase ID token) so the
+        // frontend can use Authorization-header-based auth in cross-origin deployments.
+        token: appJwt,
+        isNewUser: isNewUser
       }
     });
 
@@ -241,10 +266,83 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
       });
     }
 
-    if (req.user.profile_completed) {
-      return res.status(400).json({
-        success: false,
-        error: 'Profile is already completed'
+    // Fetch fresh profile_completed status from DB
+    // (JWT claims may not carry this field after the initial Firebase login)
+    const existingUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: {
+        customerProfile: true,
+        maidProfile: true,
+        adminProfile: true
+      }
+    });
+
+    if (!existingUser) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // IDEMPOTENT FIX: If profile is already completed, return the existing user
+    // instead of erroring. This handles the production race condition where:
+    // 1. Frontend calls completeProfile endpoint
+    // 2. Backend updates DB and returns response
+    // 3. Frontend's response processing fails/times out
+    // 4. Frontend retries completeProfile
+    // 5. Without this fix: Backend returns 400, frontend treats as error
+    // 6. With this fix: Backend returns the completed user, frontend proceeds smoothly
+    //
+    // NOTE: We still validate input if not already completed, to catch typos
+    // on first submission. But if already done, we accept re-submission gracefully.
+    if (existingUser.profile_completed) {
+      console.log(`[POST /auth/firebase/complete-profile] Profile already completed for user ${req.user.id}. Returning existing user (idempotent).`);
+      
+      const userResponse = {
+        id: existingUser.id,
+        firebase_uid: existingUser.firebase_uid,
+        email: existingUser.email,
+        name: existingUser.name,
+        phone: existingUser.phone,
+        role: existingUser.role,
+        apartment_id: existingUser.apartment_id,
+        address: existingUser.address,
+        locality: existingUser.locality,
+        pincode: existingUser.pincode,
+        profile_completed: existingUser.profile_completed,
+        status: existingUser.status,
+        createdAt: existingUser.createdAt,
+        updatedAt: existingUser.updatedAt,
+        profiles: {
+          customer: existingUser.customerProfile,
+          maid: existingUser.maidProfile,
+          admin: existingUser.adminProfile
+        }
+      };
+
+      // Re-issue a fresh JWT anyway (ensures token is valid and has latest role)
+      const appJwt = jwt.sign(
+        {
+          userId: existingUser.id,
+          id: existingUser.id,
+          role: existingUser.role
+        },
+        getJwtSecret(),
+        { expiresIn: '24h' }
+      );
+
+      const isSecureCookie = process.env.NODE_ENV === 'production';
+      res.cookie('authToken', appJwt, {
+        httpOnly: true,
+        secure: isSecureCookie,
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 24 * 60 * 60 * 1000
+      });
+
+      return res.json({
+        success: true,
+        message: 'Profile already completed',
+        data: {
+          user: userResponse,
+          token: appJwt
+        }
       });
     }
 
@@ -310,6 +408,27 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
 
     if (role === 'CUSTOMER') {
       updateData.apartment_id = apartment_id;
+
+      // BUG FIX: Resolve apartment details and store as human-readable address fields.
+      // Without this, 'address' stays null and the Profile page shows no address.
+      // The apartment_id is a UUID reference to the Apartment table — look it up
+      // and denormalise the name/area/pincode onto the User row so every downstream
+      // query (profile page, stats, dashboard) can read it without a join.
+      try {
+        const apartment = await prisma.apartment.findUnique({
+          where: { id: apartment_id }
+        });
+        if (apartment) {
+          updateData.address  = `${apartment.name} - ${apartment.area}`;
+          updateData.locality = apartment.area;
+          updateData.pincode  = apartment.pincode;
+        } else {
+          console.warn(`[complete-profile] Apartment not found for id=${apartment_id}`);
+        }
+      } catch (aptErr) {
+        // Non-fatal: apartment lookup failure must not block profile completion
+        console.warn('[complete-profile] Could not resolve apartment details:', aptErr.message);
+      }
     }
 
     if (role === 'MAID') {
@@ -393,11 +512,12 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
       { expiresIn: '24h' }
     );
 
+    // CROSS-ORIGIN FIX: SameSite='none' required for cross-origin cookie auth (Vercel + Render)
     const isSecureCookie = process.env.NODE_ENV === 'production';
     res.cookie('authToken', appJwt, {
       httpOnly: true,
       secure: isSecureCookie,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
 
@@ -428,7 +548,9 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
       success: true,
       message: 'Profile completed successfully',
       data: {
-        user: userResponse
+        user: userResponse,
+        // Return the new role-bearing JWT so the frontend can update its stored token
+        token: appJwt
       }
     });
 
@@ -455,7 +577,7 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
   }
 });
 
-router.put('/firebase/update-profile', requireFirebaseAuth, async (req, res) => {
+router.put('/firebase/update-profile', authenticateToken, async (req, res) => {
   try {
     const prisma = await initializePrisma();
     if (!req.user) {

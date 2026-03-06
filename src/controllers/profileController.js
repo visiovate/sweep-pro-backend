@@ -83,6 +83,43 @@ const getCompleteProfile = async (req, res) => {
       data: { lastActive: new Date() }
     });
 
+    // BUG FIX: Back-fill address for CUSTOMER accounts that completed profile
+    // before the apartment-resolution fix was deployed.  Those users have an
+    // apartment_id (UUID) stored but address = null, so the Profile page showed
+    // no address at all.  On the first read after this deploy we resolve the
+    // name/area/pincode from the Apartment table and persist it so the next
+    // request is already correct without this extra query.
+    if (user.role === 'CUSTOMER' && user.apartment_id && !user.address) {
+      try {
+        const apartment = await prisma.apartment.findUnique({
+          where: { id: user.apartment_id }
+        });
+        if (apartment) {
+          const resolvedAddress  = `${apartment.name} - ${apartment.area}`;
+          const resolvedLocality = apartment.area;
+          const resolvedPincode  = apartment.pincode;
+
+          // Persist so future reads are instant (one-time migration per user)
+          await prisma.user.update({
+            where: { id: userId },
+            data: {
+              address:  resolvedAddress,
+              locality: resolvedLocality,
+              pincode:  resolvedPincode
+            }
+          });
+
+          // Patch the in-memory object so the current response reflects it
+          user.address  = resolvedAddress;
+          user.locality = resolvedLocality;
+          user.pincode  = resolvedPincode;
+        }
+      } catch (aptErr) {
+        // Non-fatal — the profile still loads, just without the resolved address
+        console.warn('[getCompleteProfile] Could not resolve apartment address:', aptErr.message);
+      }
+    }
+
     // Remove password from response
     const { password, ...userWithoutPassword } = user;
 
@@ -668,12 +705,19 @@ async function calculateProfileStats(userId, role) {
       }
     });
 
-    // Calculate profile completeness
+    // Calculate profile completeness.
+    // BUG FIX: CUSTOMER users store their location as apartment_id, not address.
+    // Previously checking only user.address meant customers always had a lower
+    // completeness score even after a valid profile completion.
+    const locationField = (user.role === 'CUSTOMER')
+      ? (user.address || user.apartment_id)   // either resolved text or raw UUID counts
+      : user.address;                          // MAID stores free-text address
+
     const fields = [
       user.name,
       user.email,
       user.phone,
-      user.address,
+      locationField,
       user.profileImage,
       user.bio
     ];
