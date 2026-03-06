@@ -687,7 +687,8 @@ if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== undefined)
           role: 'ADMIN',
           password: hashedPassword,
           address: 'Admin Office, Test City',
-          status: 'ACTIVE'
+          status: 'ACTIVE',
+          profile_completed: true
         }
       });
 
