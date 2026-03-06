@@ -1,0 +1,21 @@
+=== PENDING/CONFIRMED BOOKINGS ===
+{"id":"204be4a0","scheduledAt":"2026-02-23T03:30:00.000Z","slot_date":"2026-02-23T00:00:00.000Z","slot_time":"1970-01-01T09:00:00.000Z","status":"PENDING","asgStatus":"ASSIGNED_PENDING_RESPONSE","sent":true,"maid":"614bb77e"}
+{"id":"cc5fa85a","scheduledAt":"2026-02-23T03:30:00.000Z","slot_date":"2026-02-23T00:00:00.000Z","slot_time":"1970-01-01T09:00:00.000Z","status":"PENDING","asgStatus":"ASSIGNED_PENDING_RESPONSE","sent":true,"maid":"e43f6cd7"}
+{"id":"fd474632","scheduledAt":"2026-02-23T03:30:00.000Z","slot_date":"2026-02-23T00:00:00.000Z","slot_time":"1970-01-01T09:00:00.000Z","status":"PENDING","asgStatus":"ASSIGNED_PENDING_RESPONSE","sent":true,"maid":"ec7d5e1b"}
+{"id":"6d3ad7fb","scheduledAt":"2026-02-23T03:30:00.000Z","slot_date":"2026-02-23T00:00:00.000Z","slot_time":"1970-01-01T09:00:00.000Z","status":"CONFIRMED","asgStatus":"PENDING_ASSIGNMENT","sent":false,"maid":"cbc934f3"}
+{"id":"f2e94429","scheduledAt":"2026-02-23T03:30:00.000Z","slot_date":"2026-02-23T00:00:00.000Z","slot_time":"1970-01-01T09:00:00.000Z","status":"CONFIRMED","asgStatus":"PENDING_ASSIGNMENT","sent":false,"maid":"0f5d900a"}
+{"id":"1a181415","scheduledAt":"2026-02-23T02:30:00.000Z","slot_date":"2026-02-23T00:00:00.000Z","slot_time":"1970-01-01T08:00:00.000Z","status":"CONFIRMED","asgStatus":"PENDING_ASSIGNMENT","sent":false,"maid":"614bb77e"}
+{"id":"bc4e2bc4","scheduledAt":"2026-02-23T00:30:00.000Z","slot_date":"2026-02-23T00:00:00.000Z","slot_time":"1970-01-01T06:00:00.000Z","status":"PENDING","asgStatus":"ASSIGNED_PENDING_RESPONSE","sent":true,"maid":"614bb77e"}
+{"id":"bf5b1389","scheduledAt":"2026-02-23T00:30:00.000Z","slot_date":"2026-02-23T00:00:00.000Z","slot_time":"1970-01-01T06:00:00.000Z","status":"CONFIRMED","asgStatus":"PENDING_ASSIGNMENT","sent":false,"maid":"cbc934f3"}
+{"id":"bdda18c2","scheduledAt":"2026-02-06T02:30:00.000Z","slot_date":"2026-02-06T00:00:00.000Z","slot_time":"1970-01-01T02:30:00.000Z","status":"CONFIRMED","asgStatus":"PENDING_ASSIGNMENT","sent":false,"maid":null}
+{"id":"be28c205","scheduledAt":"2026-02-06T00:30:00.000Z","slot_date":"2026-02-06T00:00:00.000Z","slot_time":"1970-01-01T00:30:00.000Z","status":"CONFIRMED","asgStatus":"PENDING_ASSIGNMENT","sent":false,"maid":null}
+Total: 10
+
+=== PENDING ASSIGNMENT REQUESTS ===
+Count: 4
+{"id":"21130daf","booking":"204be4a0","maid":"c4c6fca1","expires":"2026-02-22T19:14:04.994Z"}
+{"id":"897e6cbc","booking":"cc5fa85a","maid":"65f1c106","expires":"2026-02-22T19:14:11.495Z"}
+{"id":"a64b8b29","booking":"bc4e2bc4","maid":"c4c6fca1","expires":"2026-02-22T19:14:08.484Z"}
+{"id":"ef6c870b","booking":"fd474632","maid":"8bfd11e5","expires":"2026-02-22T19:14:14.521Z"}
+
+Current UTC: 2026-02-22T18:44:35.635Z
