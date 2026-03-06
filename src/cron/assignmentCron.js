@@ -65,19 +65,34 @@ async function findBookingsNeedingAssignment() {
   const now = getCurrentUTC();
   const { windowStart, windowEnd } = get20HourTriggerWindow(now);
 
-  console.log(`📅 Trigger window (now to 20h ahead):`);
-  console.log(`   Start: ${formatDateTimeForLog(windowStart)}`);
-  console.log(`   End:   ${formatDateTimeForLog(windowEnd)}`);
+  const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
 
-  // Fetch all eligible bookings (we'll filter combined datetime in JS for simplicity)
+  console.log(`📅 Trigger window (now to 20h ahead):`);
+  console.log(`   Start: ${formatDateTimeForLog(windowStart)} (${DAY_NAMES[windowStart.getDay()]})`);
+  console.log(`   End:   ${formatDateTimeForLog(windowEnd)} (${DAY_NAMES[windowEnd.getDay()]})`);
+
+  // Calculate tomorrow's date range (UTC)
+  const tomorrowStart = new Date(now);
+  tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+  tomorrowStart.setUTCHours(0, 0, 0, 0);
+  const tomorrowEnd = new Date(tomorrowStart);
+  tomorrowEnd.setUTCHours(23, 59, 59, 999);
+  const tomorrowDayName = DAY_NAMES[tomorrowStart.getDay()];
+  const tomorrowDateStr = tomorrowStart.toISOString().split('T')[0];
+
+  console.log(`\n📆 Tomorrow's bookings: ${tomorrowDateStr} (${tomorrowDayName})`);
+
+  // Fetch tomorrow's pending/confirmed bookings (including already assigned) for full visibility
   const bookings = await retryPrismaOperation(
     () => getPrismaClient().booking.findMany({
       where: {
-        assignment_sent: false,
         status: {
           in: ['PENDING', 'CONFIRMED'],
         },
-        maidId: null,
+        scheduledAt: {
+          gte: tomorrowStart,
+          lte: tomorrowEnd,
+        },
       },
       include: {
         customer: {
@@ -112,26 +127,50 @@ async function findBookingsNeedingAssignment() {
     'Find eligible bookings'
   );
 
-  // Filter bookings by combined slot_date + slot_time within trigger window
-  const eligibleBookings = bookings.filter(booking => {
+  console.log(`📋 Found ${bookings.length} booking(s) for tomorrow`);
+
+  // Filter and categorize bookings
+  const eligibleBookings = [];
+  let alreadyExistsCount = 0;
+  let skippedCount = 0;
+
+  if (bookings.length > 0) {
+    console.log('');
+  }
+
+  bookings.forEach((booking) => {
     // Combine slot_date + slot_time
     const serviceDateTime = combineSlotDateTime(booking.slot_date, booking.slot_time) ||
       booking.scheduledAt;
 
+    const customerName = booking.customer?.name || 'Unknown';
+    const timeStr = serviceDateTime.toISOString().split('T')[1].substring(0, 5);
+    const bookingIdShort = booking.id.substring(0, 8);
+    const isBuffer = booking.customer?.customerProfile?.subscription?.isInBufferPeriod;
+
+    // Check if assignment already sent or maid already assigned
+    if (booking.assignment_sent || booking.maidId) {
+      console.log(`  📋 ${customerName} -- already exists (${bookingIdShort}...) @ ${timeStr} UTC`);
+      alreadyExistsCount++;
+      return;
+    }
+
     // Check if within trigger window
     const isEligible = serviceDateTime >= windowStart && serviceDateTime <= windowEnd;
 
-    if (!isEligible && booking.slot_date && booking.slot_time) {
-      console.log(
-        `⏭️  Booking ${booking.id}: service at ${formatDateTimeForLog(serviceDateTime)} ` +
-        `is outside trigger window`
-      );
+    if (isBuffer) {
+      console.log(`  ⏸️  ${customerName} -- buffer period (${bookingIdShort}...) @ ${timeStr} UTC`);
+      skippedCount++;
+    } else if (isEligible) {
+      console.log(`  ✅ ${customerName} -- ELIGIBLE for assignment (${bookingIdShort}...) @ ${timeStr} UTC`);
+      eligibleBookings.push(booking);
+    } else {
+      console.log(`  ⏭️  ${customerName} -- outside window (${bookingIdShort}...) @ ${timeStr} UTC`);
+      skippedCount++;
     }
-
-    return isEligible;
   });
 
-  console.log(`📋 Found ${eligibleBookings.length} booking(s) in trigger window`);
+  console.log(`\n📊 Summary: ${eligibleBookings.length} eligible, ${alreadyExistsCount} already exist, ${skippedCount} skipped`);
   return eligibleBookings;
 }
 
@@ -145,10 +184,11 @@ async function findBookingsNeedingAssignment() {
  */
 async function enqueueAssignmentJob(booking, prisma) {
   const { id: bookingId, customerId, customer, service, scheduledAt } = booking;
+  const customerName = customer?.name || 'Unknown';
 
   // Skip if customer is in buffer period (subscription-level flag)
   if (customer?.customerProfile?.subscription?.isInBufferPeriod) {
-    console.log(`⏸️  Skipping booking ${bookingId}: customer in buffer period`);
+    console.log(`⏸️  Skipping ${customerName} (${bookingId.substring(0, 8)}…): customer in buffer period`);
     return { skipped: true, reason: 'buffer_period' };
   }
 
@@ -167,7 +207,7 @@ async function enqueueAssignmentJob(booking, prisma) {
     });
 
     if (bufferPeriodForDate) {
-      console.log(`⏸️  Skipping booking ${bookingId}: booking date falls in buffer period`);
+      console.log(`⏸️  Skipping ${customerName} (${bookingId.substring(0, 8)}…): booking date falls in buffer period`);
       return { skipped: true, reason: 'buffer_period_date' };
     }
   }
@@ -209,7 +249,7 @@ async function enqueueAssignmentJob(booking, prisma) {
       `Enqueue job for booking ${bookingId}`
     );
 
-    console.log(`✅ Enqueued assignment job for booking ${bookingId}`);
+    console.log(`✅ Enqueued assignment job: ${customerName} → ${service?.name || 'Service'} (${bookingId.substring(0, 8)}…)`);
     return { enqueued: true };
 
   } catch (error) {
