@@ -1086,6 +1086,145 @@ const deleteSubscriptionPlan = async (req, res) => {
   }
 };
 
+// Admin: Get subscription by ID with full details
+const getSubscriptionById = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const { id } = req.params;
+
+    const subscription = await prisma.subscription.findUnique({
+      where: { id },
+      include: {
+        customer: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                address: true,
+                addressLine: true,
+                city: true,
+                state: true,
+                pincode: true,
+                landmark: true,
+                locality: true,
+                apartment_id: true,
+                profileImage: true,
+                timeSlot: true,
+                createdAt: true,
+              }
+            }
+          }
+        },
+        plan: {
+          include: {
+            service: true
+          }
+        },
+        cycles: {
+          orderBy: { startDate: 'desc' },
+          take: 5,
+        },
+        bufferPeriods: {
+          orderBy: { startDate: 'desc' },
+          take: 5,
+        },
+        payments: {
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            amount: true,
+            finalAmount: true,
+            status: true,
+            paymentMethod: true,
+            transactionId: true,
+            createdAt: true,
+          }
+        },
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ message: 'Subscription not found' });
+    }
+
+    // Get recent bookings for this customer
+    const recentBookings = await prisma.booking.findMany({
+      where: {
+        customerId: subscription.customer?.userId,
+        isSubscriptionBased: true,
+      },
+      orderBy: { scheduledAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        status: true,
+        scheduledAt: true,
+        completedAt: true,
+        service: { select: { name: true } },
+        maid: { select: { name: true } },
+      }
+    });
+
+    res.json({
+      success: true,
+      data: { ...subscription, recentBookings }
+    });
+  } catch (error) {
+    console.error('Error fetching subscription details:', error);
+    res.status(500).json({ message: 'Failed to fetch subscription details' });
+  }
+};
+
+// Admin: Cancel a subscription
+const adminCancelSubscription = async (req, res) => {
+  try {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const subscription = await prisma.subscription.findUnique({
+      where: { id },
+      include: { customer: { include: { user: { select: { name: true, email: true } } } } }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ message: 'Subscription not found' });
+    }
+
+    if (subscription.status === 'CANCELLED' || subscription.status === 'EXPIRED') {
+      return res.status(400).json({ message: `Subscription is already ${subscription.status.toLowerCase()}` });
+    }
+
+    const updated = await prisma.subscription.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+        pauseReason: reason || 'Cancelled by admin',
+        updatedAt: new Date(),
+      }
+    });
+
+    res.json({
+      success: true,
+      data: updated,
+      message: 'Subscription cancelled successfully'
+    });
+  } catch (error) {
+    console.error('Error cancelling subscription:', error);
+    res.status(500).json({ message: 'Failed to cancel subscription' });
+  }
+};
+
 // Admin: Get all subscription cycles
 const getSubscriptionCycles = async (req, res) => {
   try {
@@ -1628,6 +1767,8 @@ module.exports = {
   getTimeSlotCounts,
   incrementTimeSlotCount,
   isTimeSlotAvailable,
+  getSubscriptionById,
+  adminCancelSubscription,
   AVAILABLE_TIME_SLOTS,
   MAX_USERS_PER_SLOT
 };

@@ -507,7 +507,43 @@ const getBookingById = async (req, res) => {
             id: true,
             name: true,
             email: true,
-            phone: true
+            phone: true,
+            address: true,
+            addressLine: true,
+            city: true,
+            state: true,
+            pincode: true,
+            landmark: true,
+            locality: true,
+            apartment_id: true,
+            profileImage: true,
+            customerProfile: {
+              select: {
+                subscription: {
+                  select: {
+                    id: true,
+                    status: true,
+                    startDate: true,
+                    endDate: true,
+                    billingCycle: true,
+                    amount: true,
+                    isInBufferPeriod: true,
+                    bufferDaysUsed: true,
+                    bufferDaysCount: true,
+                    plan: {
+                      select: {
+                        id: true,
+                        name: true,
+                        sessionsPerWeek: true,
+                        sessionsPerMonth: true,
+                        duration: true,
+                        finalPrice: true,
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         maid: {
@@ -515,7 +551,33 @@ const getBookingById = async (req, res) => {
             id: true,
             name: true,
             email: true,
-            phone: true
+            phone: true,
+            profileImage: true,
+            maidProfile: {
+              select: {
+                rating: true,
+                completedBookings: true,
+                skills: true,
+              }
+            }
+          }
+        },
+        assignmentRequests: {
+          orderBy: { requestedAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            status: true,
+            requestedAt: true,
+            respondedAt: true,
+            rejectionReason: true,
+            maid: {
+              select: {
+                user: {
+                  select: { name: true }
+                }
+              }
+            }
           }
         }
       }

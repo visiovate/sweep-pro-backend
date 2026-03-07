@@ -11,6 +11,7 @@ model User {
   id                  String           @id @default(uuid())
   email               String           @unique
   password            String?          // Optional for Firebase OAuth users
+  passwordChangedAt   DateTime?        // When password was last changed
   firebase_uid        String?          @unique // Firebase UID
   role                UserRole?       // Nullable until profile completion
   name                String

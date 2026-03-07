@@ -117,7 +117,6 @@ const getAvailableMaids = async (req, res) => {
     let availableMaids = maids;
 
     if (latitude && longitude) {
-      // Simple distance calculation - in production, use proper geospatial queries
       availableMaids = maids.filter(maid => {
         if (!maid.latitude || !maid.longitude) return true;
 
@@ -128,11 +127,80 @@ const getAvailableMaids = async (req, res) => {
           maid.longitude
         );
 
-        return distance <= (maid.maidProfile?.serviceRadius || 5); // Default 5km radius
+        return distance <= (maid.maidProfile?.serviceRadius || 5);
       });
     }
 
-    res.json(availableMaids);
+    // Enrich each maid with current assignment count and today's booking count
+    const maidProfileIds = availableMaids
+      .map(m => m.maidProfile?.id)
+      .filter(Boolean);
+    const maidUserIds = availableMaids.map(m => m.id);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [activeAssignments, todayBookings] = await Promise.all([
+      // Count active customer assignments per maid
+      prisma.customerMaidAssignment.groupBy({
+        by: ['maidId'],
+        where: {
+          maidId: { in: maidProfileIds },
+          isActive: true
+        },
+        _count: { maidId: true }
+      }),
+      // Count today's bookings per maid (using User ID since Booking.maidId = User.id)
+      prisma.booking.groupBy({
+        by: ['maidId'],
+        where: {
+          maidId: { in: maidUserIds },
+          scheduledAt: { gte: today, lt: tomorrow },
+          status: { in: ['PENDING', 'CONFIRMED', 'ASSIGNED', 'IN_PROGRESS'] }
+        },
+        _count: { maidId: true }
+      })
+    ]);
+
+    const assignmentCountMap = {};
+    activeAssignments.forEach(a => {
+      assignmentCountMap[a.maidId] = a._count.maidId;
+    });
+
+    const todayBookingCountMap = {};
+    todayBookings.forEach(b => {
+      todayBookingCountMap[b.maidId] = b._count.maidId;
+    });
+
+    const enrichedMaids = availableMaids.map(maid => {
+      const profileId = maid.maidProfile?.id;
+      const activeCustomerCount = profileId ? (assignmentCountMap[profileId] || 0) : 0;
+      const todayBookingCount = todayBookingCountMap[maid.id] || 0;
+      const maxDaily = maid.maidProfile?.maxDailyBookings || 3;
+
+      const availabilityObj = maid.maidProfile?.availability;
+      const isAvailable = availabilityObj && typeof availabilityObj === 'object'
+        ? availabilityObj.isAvailable !== false
+        : true;
+
+      const WEEKDAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+      const todayWeekday = WEEKDAYS[new Date().getDay()];
+      const isWeeklyOff = maid.maidProfile?.weeklyOffDay === todayWeekday;
+
+      return {
+        ...maid,
+        activeCustomerCount,
+        todayBookingCount,
+        maxDailyBookings: maxDaily,
+        isFree: activeCustomerCount === 0 && todayBookingCount === 0,
+        isAvailableToday: isAvailable && !isWeeklyOff,
+        isWeeklyOff,
+      };
+    });
+
+    res.json(enrichedMaids);
   } catch (error) {
     console.error('Error fetching available maids:', error);
     res.status(500).json({ message: 'Failed to fetch available maids' });
