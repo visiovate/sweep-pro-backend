@@ -589,16 +589,16 @@ const getMaidVerificationData = async (req, res) => {
     const verificationData = maids.map(maid => {
       const documents = maid.documents;
       
-      // Find documents by type (map database types to frontend expected types)
+      // Find documents by type
       const aadharCard = documents.find(d => d.type === 'AADHAR_CARD');
-      const policeVerification = documents.find(d => d.type === 'PAN_CARD'); // PAN_CARD maps to policeVerification
-      const photo = documents.find(d => d.type === 'ADDRESS_PROOF'); // ADDRESS_PROOF maps to photo
-      
+      const panCard = documents.find(d => d.type === 'PAN_CARD');
+      const electricityBill = documents.find(d => d.type === 'ADDRESS_PROOF');
+
       // Count uploaded documents (only required ones)
-      const uploadedCount = [aadharCard, policeVerification, photo].filter(Boolean).length;
-      
+      const uploadedCount = [aadharCard, panCard, electricityBill].filter(Boolean).length;
+
       // Determine overall status
-      const allRequiredDocs = [aadharCard, policeVerification, photo];
+      const allRequiredDocs = [aadharCard, panCard, electricityBill];
       const allApproved = allRequiredDocs.every(doc => doc?.verificationStatus === 'APPROVED');
       const anyRejected = allRequiredDocs.some(doc => doc?.verificationStatus === 'REJECTED');
       const anyPending = allRequiredDocs.some(doc => doc?.verificationStatus === 'PENDING');
@@ -630,19 +630,19 @@ const getMaidVerificationData = async (req, res) => {
             fileSize: aadharCard.fileSize || 0,
             status: aadharCard.verificationStatus
           } : null,
-          policeVerification: policeVerification ? {
-            id: policeVerification.id,
-            filename: policeVerification.fileName || 'police_verification',
-            uploadedAt: policeVerification.createdAt,
-            fileSize: policeVerification.fileSize || 0,
-            status: policeVerification.verificationStatus
+          panCard: panCard ? {
+            id: panCard.id,
+            filename: panCard.fileName || 'pan_card',
+            uploadedAt: panCard.createdAt,
+            fileSize: panCard.fileSize || 0,
+            status: panCard.verificationStatus
           } : null,
-          photo: photo ? {
-            id: photo.id,
-            filename: photo.fileName || 'profile_photo',
-            uploadedAt: photo.createdAt,
-            fileSize: photo.fileSize || 0,
-            status: photo.verificationStatus
+          electricityBill: electricityBill ? {
+            id: electricityBill.id,
+            filename: electricityBill.fileName || 'electricity_bill',
+            uploadedAt: electricityBill.createdAt,
+            fileSize: electricityBill.fileSize || 0,
+            status: electricityBill.verificationStatus
           } : null
         },
         status: overallStatus,
