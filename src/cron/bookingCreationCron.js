@@ -25,6 +25,9 @@ async function createBookingsForTomorrow() {
     skippedBuffer: 0,
     skippedWeeklyOff: 0,
     skippedNoService: 0,
+    skippedNoProfile: 0,
+    skippedNoSubscription: 0,
+    skippedInactiveSubscription: 0,
     errors: 0
   };
 
@@ -95,6 +98,20 @@ async function createBookingsForTomorrow() {
 
   console.log(`📋 Found ${activeAssignments.length} active assignment(s) to process`);
 
+  // Debug: List all customers with assignments
+  if (activeAssignments.length > 0) {
+    console.log('\n👥 Customers with active maid assignments:');
+    for (const assignment of activeAssignments) {
+      const custName = assignment.customer?.name || 'Unknown';
+      const maidName = assignment.maid?.user?.name || 'Unknown Maid';
+      const hasProfile = !!assignment.customer?.customerProfile;
+      const hasSub = !!assignment.customer?.customerProfile?.subscription;
+      const subStatus = assignment.customer?.customerProfile?.subscription?.status || 'N/A';
+      console.log(`   - ${custName} → Maid: ${maidName} | Profile: ${hasProfile ? '✓' : '✗'} | Subscription: ${hasSub ? subStatus : 'None'}`);
+    }
+    console.log('');
+  }
+
   // Get default service for automatic bookings
   let defaultService = await getPrismaClient().service.findFirst({
     where: {
@@ -121,8 +138,22 @@ async function createBookingsForTomorrow() {
     const subscription = customer.customerProfile?.subscription;
 
     try {
-      // Skip if no active subscription
-      if (!subscription || subscription.status !== 'ACTIVE') {
+      // Skip if no active subscription - with logging
+      if (!customer.customerProfile) {
+        console.log(`  ⚠️  ${customerName} -- no customer profile found`);
+        stats.skippedNoProfile++;
+        continue;
+      }
+
+      if (!subscription) {
+        console.log(`  ⚠️  ${customerName} -- no subscription found`);
+        stats.skippedNoSubscription++;
+        continue;
+      }
+
+      if (subscription.status !== 'ACTIVE') {
+        console.log(`  ⚠️  ${customerName} -- subscription not active (status: ${subscription.status})`);
+        stats.skippedInactiveSubscription++;
         continue;
       }
 
@@ -271,7 +302,15 @@ async function createBookingsForTomorrow() {
     }
   }
 
-  console.log(`\n📊 Summary: ${stats.created} created, ${stats.skippedExists} already existed, ${stats.skippedBuffer} in buffer, ${stats.skippedWeeklyOff} weekly off`);
+  console.log(`\n📊 Summary:`);
+  console.log(`   ✅ Created: ${stats.created}`);
+  console.log(`   📋 Already existed: ${stats.skippedExists}`);
+  console.log(`   ⏸️  In buffer: ${stats.skippedBuffer}`);
+  console.log(`   🏖️  Weekly off: ${stats.skippedWeeklyOff}`);
+  if (stats.skippedNoProfile > 0) console.log(`   ⚠️  No profile: ${stats.skippedNoProfile}`);
+  if (stats.skippedNoSubscription > 0) console.log(`   ⚠️  No subscription: ${stats.skippedNoSubscription}`);
+  if (stats.skippedInactiveSubscription > 0) console.log(`   ⚠️  Inactive subscription: ${stats.skippedInactiveSubscription}`);
+  if (stats.errors > 0) console.log(`   ❌ Errors: ${stats.errors}`);
 
   return stats;
 }
