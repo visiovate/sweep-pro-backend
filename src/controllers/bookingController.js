@@ -14,9 +14,9 @@ const createBooking = async (req, res) => {
 
     // Validate required field
     if (!scheduledDate) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'scheduledDate is required' 
+        message: 'scheduledDate is required'
       });
     }
 
@@ -56,11 +56,11 @@ const createBooking = async (req, res) => {
 
     // Parse timeSlot (format: "14:00-17:00") - use final timeslot with fallback
     const effectiveTimeSlot = finalTimeSlot || '09:00-12:00'; // Default fallback
-    
+
     let startTime, endTime;
     try {
       [startTime, endTime] = effectiveTimeSlot.split('-');
-      
+
       if (!startTime || !endTime) {
         throw new Error('Invalid timeslot format');
       }
@@ -70,24 +70,24 @@ const createBooking = async (req, res) => {
         message: 'Invalid timeslot format. Expected format: "HH:MM-HH:MM"'
       });
     }
-    
+
     // Calculate service duration from time slot
     const startMinutes = parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1]);
     const endMinutes = parseInt(endTime.split(':')[0]) * 60 + parseInt(endTime.split(':')[1]);
     const durationMinutes = endMinutes - startMinutes;
-    
+
     if (durationMinutes <= 0) {
       return res.status(400).json({
         success: false,
         message: 'Invalid timeslot: end time must be after start time'
       });
     }
-    
+
     // Combine date and time into a single DateTime object
     let scheduledAt;
     try {
       scheduledAt = new Date(`${scheduledDate}T${startTime}:00`);
-      
+
       // Validate the date
       if (isNaN(scheduledAt.getTime())) {
         throw new Error('Invalid date/time');
@@ -102,9 +102,9 @@ const createBooking = async (req, res) => {
         });
       }
     } catch (error) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'Invalid scheduledDate format. Please use YYYY-MM-DD format.' 
+        message: 'Invalid scheduledDate format. Please use YYYY-MM-DD format.'
       });
     }
 
@@ -129,7 +129,7 @@ const createBooking = async (req, res) => {
     });
 
     if (!customerProfile) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
         message: 'Customer profile not found. Please complete your profile setup first.'
       });
@@ -137,7 +137,7 @@ const createBooking = async (req, res) => {
 
     // Check subscription and get service from it
     if (!customerProfile.subscription) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
         message: 'Booking not allowed. Only customers with active subscriptions can book maid services. Please subscribe to a plan first.',
         requiresSubscription: true
@@ -171,9 +171,9 @@ const createBooking = async (req, res) => {
     // Extract just the date part for comparison (ignore time)
     const bookingDate = new Date(scheduledDate); // Use scheduledDate string directly
     const bookingDateOnly = new Date(bookingDate.getFullYear(), bookingDate.getMonth(), bookingDate.getDate());
-    
+
     console.log(`🔍 Checking buffer conflict for booking date: ${scheduledDate} (${bookingDateOnly.toISOString()})`);
-    
+
     const bufferConflict = await prisma.bufferPeriod.findFirst({
       where: {
         subscriptionId: customerProfile.subscription.id,
@@ -182,7 +182,7 @@ const createBooking = async (req, res) => {
         endDate: { gte: bookingDateOnly }
       }
     });
-    
+
     if (bufferConflict) {
       console.log(`❌ Buffer conflict found: ${bufferConflict.startDate} to ${bufferConflict.endDate}`);
     } else {
@@ -202,9 +202,9 @@ const createBooking = async (req, res) => {
     // Get service from subscription plan
     const service = customerProfile.subscription.plan.service;
     if (!service) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'No service found in your subscription plan. Please contact support.' 
+        message: 'No service found in your subscription plan. Please contact support.'
       });
     }
 
@@ -267,7 +267,7 @@ const createBooking = async (req, res) => {
 
       if (activeBufferPeriod) {
         console.log(`🚫 Customer is in active buffer period: ${activeBufferPeriod.id}`);
-        
+
         // Cancel the booking as customer is in buffer period
         await prisma.booking.update({
           where: { id: booking.id },
@@ -306,7 +306,7 @@ const createBooking = async (req, res) => {
 
     if (customerAssignment) {
       console.log(`✅ Found assigned maid: ${customerAssignment.maid.user.name}, auto-sending assignment request...`);
-      
+
       try {
         // Check for duplicate booking request using Redis
         const canProceed = await bookingDeduplicationService.checkAndMark(
@@ -351,7 +351,7 @@ const createBooking = async (req, res) => {
 
           responseMessage = `Booking request sent to your assigned maid (${customerAssignment.maid.user.name}). You will be notified once they respond.`;
           assignmentStatus = 'ASSIGNED_PENDING_RESPONSE';
-          
+
           console.log(`✅ Assignment request sent automatically to maid: ${customerAssignment.maid.user.name}`);
         }
       } catch (assignmentError) {
@@ -391,15 +391,15 @@ const createBooking = async (req, res) => {
 
   } catch (error) {
     console.error('Error creating booking:', error);
-    
+
     // Handle Prisma specific errors
     if (error.code === 'P2002') {
-      return res.status(400).json({ 
-        message: 'A booking conflict occurred' 
+      return res.status(400).json({
+        message: 'A booking conflict occurred'
       });
     }
-    
-    res.status(500).json({ 
+
+    res.status(500).json({
       message: 'Failed to create booking',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
@@ -409,10 +409,10 @@ const createBooking = async (req, res) => {
 const getAllBookings = async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
-    
+
     // Build where clause based on status filter
     let whereClause = {};
-    
+
     // Apply status filtering based on frontend requirements
     if (status) {
       switch (status.toLowerCase()) {
@@ -432,15 +432,15 @@ const getAllBookings = async (req, res) => {
           break;
       }
     }
-    
+
     // Calculate pagination
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
-    
+
     // Get total count for pagination
     const totalBookings = await prisma.booking.count({ where: whereClause });
-    
+
     const bookings = await prisma.booking.findMany({
       where: whereClause,
       include: {
@@ -468,7 +468,7 @@ const getAllBookings = async (req, res) => {
       skip,
       take: limitNum
     });
-    
+
     res.json({
       success: true,
       data: bookings,
@@ -487,7 +487,7 @@ const getAllBookings = async (req, res) => {
   } catch (error) {
     console.error('Error fetching bookings:', error.message || error);
     console.error('Stack trace:', error.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Failed to fetch bookings',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -634,9 +634,9 @@ const getUserBookings = async (req, res) => {
     }
   } catch (error) {
     console.error('Error fetching user bookings:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Failed to fetch user bookings' 
+      message: 'Failed to fetch user bookings'
     });
   }
 };
@@ -715,14 +715,14 @@ const getMaidBookings = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching maid bookings:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Failed to fetch maid bookings' 
+      message: 'Failed to fetch maid bookings'
     });
   }
 };
 
-const   assignMaid = async (req, res) => {
+const assignMaid = async (req, res) => {
   try {
     const { id } = req.params;
     const { maidId } = req.body;
@@ -754,6 +754,24 @@ const   assignMaid = async (req, res) => {
       }
     });
 
+    // Make this maid the default for the customer
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId: booking.customerId
+      },
+      update: {
+        maidId: maidId,
+        isActive: true,
+        assignedAt: new Date()
+      },
+      create: {
+        customerId: booking.customerId,
+        maidId: maidId,
+        isActive: true,
+        assignedAt: new Date()
+      }
+    });
+
     await publishNotificationEvent({
       topic: NOTIFICATION_TOPICS.BOOKING_MAID_ASSIGNED,
       payload: { bookingId: booking.id },
@@ -778,7 +796,7 @@ const updateBookingStatus = async (req, res) => {
 
     const booking = await prisma.booking.update({
       where: { id },
-      data: { 
+      data: {
         status,
         ...(status === 'COMPLETED' && { completedAt: new Date() }),
         ...(status === 'IN_PROGRESS' && { actualStartTime: new Date() })
@@ -827,7 +845,7 @@ const cancelBooking = async (req, res) => {
     const { reason = 'Cancelled by admin' } = req.body;
     const userId = req.user.id;
     const userRole = req.user.role;
-    
+
     // Get booking first to check permissions
     const existingBooking = await prisma.booking.findUnique({
       where: { id },
@@ -858,10 +876,10 @@ const cancelBooking = async (req, res) => {
         message: `Cannot cancel booking that is already ${existingBooking.status.toLowerCase()}`
       });
     }
-    
+
     const booking = await prisma.booking.update({
       where: { id },
-      data: { 
+      data: {
         status: 'CANCELLED',
         notes: `${existingBooking.notes || ''}\nCancelled: ${reason}`
       },
@@ -896,9 +914,9 @@ const cancelBooking = async (req, res) => {
     });
   } catch (error) {
     console.error('Error cancelling booking:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Failed to cancel booking' 
+      message: 'Failed to cancel booking'
     });
   }
 };
@@ -910,8 +928,8 @@ const completeBookingPayment = async (req, res) => {
     const userId = req.user.id;
 
     if (!bookingId || !paymentId || !transactionId) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: bookingId, paymentId, transactionId' 
+      return res.status(400).json({
+        error: 'Missing required fields: bookingId, paymentId, transactionId'
       });
     }
 
@@ -1026,9 +1044,9 @@ const getAvailableSlots = async (req, res) => {
     // Extract just the date part for comparison (ignore time)
     const requestDate = new Date(date);
     const requestDateOnly = new Date(requestDate.getFullYear(), requestDate.getMonth(), requestDate.getDate());
-    
+
     console.log(`🔍 Checking available slots for date: ${date} (${requestDateOnly.toISOString()})`);
-    
+
     const bufferConflict = await prisma.bufferPeriod.findFirst({
       where: {
         subscriptionId: customerProfile.subscription.id,
@@ -1037,7 +1055,7 @@ const getAvailableSlots = async (req, res) => {
         endDate: { gte: requestDateOnly }
       }
     });
-    
+
     if (bufferConflict) {
       console.log(`❌ Available slots blocked - Buffer conflict: ${bufferConflict.startDate} to ${bufferConflict.endDate}`);
     } else {
@@ -1063,7 +1081,7 @@ const getAvailableSlots = async (req, res) => {
     // Standard time slots (you can customize these based on your business hours)
     const standardSlots = [
       '09:00-12:00',
-      '12:00-15:00', 
+      '12:00-15:00',
       '15:00-18:00',
       '18:00-21:00'
     ];
@@ -1114,7 +1132,7 @@ const getBookingStats = async (req, res) => {
   try {
     const userId = req.user.id;
     const { role } = req.user;
-    
+
     // Build where clause based on user role
     let whereClause = {};
     if (role === 'CUSTOMER') {
@@ -1123,30 +1141,30 @@ const getBookingStats = async (req, res) => {
       whereClause.maidId = userId;
     }
     // For admin, no where clause needed (gets all bookings)
-    
+
     // Get counts for each status category
     const [total, scheduled, completed, cancelled] = await Promise.all([
       prisma.booking.count({ where: whereClause }),
-      prisma.booking.count({ 
-        where: { 
+      prisma.booking.count({
+        where: {
           ...whereClause,
           status: { in: ['CONFIRMED', 'ASSIGNED', 'IN_PROGRESS'] }
         }
       }),
-      prisma.booking.count({ 
-        where: { 
+      prisma.booking.count({
+        where: {
           ...whereClause,
           status: 'COMPLETED'
         }
       }),
-      prisma.booking.count({ 
-        where: { 
+      prisma.booking.count({
+        where: {
           ...whereClause,
           status: 'CANCELLED'
         }
       })
     ]);
-    
+
     res.json({
       success: true,
       data: {
@@ -1159,9 +1177,9 @@ const getBookingStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching booking stats:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Failed to fetch booking statistics' 
+      message: 'Failed to fetch booking statistics'
     });
   }
 };

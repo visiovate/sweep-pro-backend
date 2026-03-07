@@ -61,14 +61,14 @@ const assignMaidToCustomer = async (req, res) => {
         where: { id: maidId },
         include: { user: true }
       });
-      
+
       if (!maidAnyStatus) {
         maidAnyStatus = await prisma.maidProfile.findFirst({
           where: { userId: maidId },
           include: { user: true }
         });
       }
-      
+
       if (!maidAnyStatus) {
         // If maidId is actually a user id, return an actionable 400 so admins know what to fix
         const maidUser = await prisma.user.findUnique({
@@ -165,7 +165,7 @@ const assignMaidToCustomer = async (req, res) => {
 
   } catch (error) {
     console.error('Assign maid to customer error:', error);
-    
+
     // Handle specific conflict errors
     if (error.message.startsWith('TIMESLOT_CONFLICT:')) {
       return res.status(409).json({
@@ -175,7 +175,7 @@ const assignMaidToCustomer = async (req, res) => {
         conflictType: 'TIMESLOT_CONFLICT'
       });
     }
-    
+
     if (error.message.startsWith('CAPACITY_EXCEEDED:')) {
       return res.status(409).json({
         success: false,
@@ -184,7 +184,7 @@ const assignMaidToCustomer = async (req, res) => {
         conflictType: 'CAPACITY_EXCEEDED'
       });
     }
-    
+
     return res.status(500).json({
       success: false,
       message: 'Internal server error',
@@ -288,7 +288,7 @@ const updateCustomerAssignment = async (req, res) => {
 const getAllCustomerAssignments = async (req, res) => {
   try {
     console.log('🔍 Fetching all customer-maid assignments...');
-    
+
     const { page = 1, limit = 20, customerId, maidId, isActive } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -406,7 +406,7 @@ const getAllCustomerAssignments = async (req, res) => {
 const getCustomerStatus = async (req, res) => {
   try {
     const { customerId } = req.params;
-    
+
     console.log(`🔍 Getting customer status for ID: ${customerId}`);
 
     // Validate customerId
@@ -432,7 +432,7 @@ const getCustomerStatus = async (req, res) => {
         }
       }
     });
-    
+
     console.log(`📋 Customer assignment found: ${assignment ? 'Yes' : 'No'}`);
 
     // Get customer's subscription first
@@ -547,7 +547,7 @@ const getCustomerStatus = async (req, res) => {
     };
 
     console.log(`✅ Customer status retrieved successfully for customer: ${customerId}`);
-    
+
     return res.status(200).json({
       success: true,
       data: customerStatus
@@ -572,7 +572,7 @@ const getCustomerStatus = async (req, res) => {
 const getMyCustomerStatus = async (req, res) => {
   try {
     const customerId = req.user.id; // Get customer ID from authenticated user
-    
+
     console.log(`🔍 Getting customer status for authenticated customer: ${customerId}`);
 
     // Get customer assignment
@@ -590,7 +590,7 @@ const getMyCustomerStatus = async (req, res) => {
         }
       }
     });
-    
+
     console.log(`📋 Customer assignment found: ${assignment ? 'Yes' : 'No'}`);
 
     // Get customer's subscription first
@@ -695,7 +695,7 @@ const getMyCustomerStatus = async (req, res) => {
     };
 
     console.log(`✅ Customer status retrieved successfully for customer: ${customerId}`);
-    
+
     return res.status(200).json({
       success: true,
       data: customerStatus
@@ -763,7 +763,7 @@ const removeCustomerAssignment = async (req, res) => {
 const checkMaidStatus = async (req, res) => {
   try {
     const { maidId } = req.params;
-    
+
     const maid = await prisma.maidProfile.findFirst({
       where: {
         OR: [
@@ -842,8 +842,8 @@ const checkMaidAssignmentConflicts = async (maidId, customerId) => {
     // Check for timeslot conflicts
     const conflictingCustomers = existingAssignments.filter(assignment => {
       const assignedCustomer = assignment.customer;
-      return assignedCustomer.timeSlot && 
-             assignedCustomer.timeSlot === customer.timeSlot;
+      return assignedCustomer.timeSlot &&
+        assignedCustomer.timeSlot === customer.timeSlot;
     });
 
     if (conflictingCustomers.length > 0) {
@@ -1289,33 +1289,33 @@ const getAllAssignmentRequests = async (req, res) => {
 const testCreateAssignmentRequest = async (req, res) => {
   try {
     console.log('🧪 Testing assignment request creation...');
-    
+
     // Get first customer and first maid for testing
     const customer = await prisma.user.findFirst({
       where: { role: 'CUSTOMER' }
     });
-    
+
     const maid = await prisma.maidProfile.findFirst({
       include: { user: true }
     });
-    
+
     const admin = await prisma.user.findFirst({
       where: { role: 'ADMIN' }
     });
-    
+
     if (!customer || !maid || !admin) {
       return res.status(404).json({
         success: false,
         message: 'Missing test data - need at least one customer, maid, and admin'
       });
     }
-    
+
     console.log('📝 Test data found:', {
       customer: customer.name,
       maid: maid.user.name,
       admin: admin.name
     });
-    
+
     // Create test assignment request
     const testRequest = await prisma.customerAssignmentRequest.create({
       data: {
@@ -1333,15 +1333,15 @@ const testCreateAssignmentRequest = async (req, res) => {
         admin: true
       }
     });
-    
+
     console.log('✅ Test assignment request created:', testRequest.id);
-    
+
     return res.status(201).json({
       success: true,
       message: 'Test assignment request created successfully',
       data: testRequest
     });
-    
+
   } catch (error) {
     console.error('❌ Test creation error:', error);
     return res.status(500).json({
@@ -1448,8 +1448,11 @@ const getMyMaidAssignment = async (req, res) => {
 const getMaidAssignedCustomers = async (req, res) => {
   try {
     const { maidId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-    console.log(`🔍 Getting customers assigned to maid ID: ${maidId}`);
+    console.log(`🔍 Getting customers assigned to maid ID: ${maidId} with pagination. Page: ${page}, Limit: ${limit}`);
 
     // Validate maidId
     if (!maidId) {
@@ -1459,22 +1462,30 @@ const getMaidAssignedCustomers = async (req, res) => {
       });
     }
 
-    // Get all active assignments for this maid
+    const totalCount = await prisma.customerMaidAssignment.count({
+      where: {
+        maidId: maidId,
+        isActive: true
+      }
+    });
+
+    // Get paginated active assignments for this maid
     const assignments = await prisma.customerMaidAssignment.findMany({
       where: {
         maidId: maidId,
         isActive: true
       },
       include: {
-        customer: {
-          include: {
-            user: true
-          }
-        }
+        customer: true // No need for nested 'user', 'customer' points to User model
+      },
+      skip,
+      take: limit,
+      orderBy: {
+        assignedAt: 'desc'
       }
     });
 
-    console.log(`📋 Found ${assignments.length} active assignments for maid ${maidId}`);
+    console.log(`📋 Found ${assignments.length} assignments for maid ${maidId} on page ${page}`);
 
     // Get subscription details for each customer
     const customersWithDetails = await Promise.all(
@@ -1491,11 +1502,12 @@ const getMaidAssignedCustomers = async (req, res) => {
           }
         });
 
+        // Use assignment.customer directly since it represents the User table
         return {
-          id: assignment.customer.userId,
-          name: assignment.customer.user.name,
-          email: assignment.customer.user.email,
-          phone: assignment.customer.user.phone,
+          id: assignment.customer.id,
+          name: assignment.customer.name,
+          email: assignment.customer.email,
+          phone: assignment.customer.phone,
           timeSlot: assignment.customer.timeSlot,
           planName: subscription?.plan?.name || 'No Plan',
           sessionsPerWeek: subscription?.plan?.sessionsPerWeek || 0,
@@ -1509,7 +1521,13 @@ const getMaidAssignedCustomers = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: customersWithDetails
+      data: customersWithDetails,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        totalPages: Math.ceil(totalCount / limit)
+      }
     });
 
   } catch (error) {

@@ -2,7 +2,7 @@
  * Assignment Cron Job - Production Ready
  * 
  * This cron job:
- * 1. Runs once and exits (no loops)
+ * 1. Creates tomorrow's bookings from active subscriptions (idempotent)
  * 2. Queries DB for bookings needing assignment requests (20h before slot)
  * 3. Enqueues jobs into BullMQ worker queue
  * 4. Handles DB/Redis errors with proper exit codes
@@ -22,6 +22,7 @@ const {
   get20HourTriggerWindow,
   formatDateTimeForLog,
 } = require('../utils/timeUtils');
+const { createBookingsForTomorrow } = require('./bookingCreationCron');
 
 // Constants
 const CRON_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes max runtime
@@ -65,34 +66,19 @@ async function findBookingsNeedingAssignment() {
   const now = getCurrentUTC();
   const { windowStart, windowEnd } = get20HourTriggerWindow(now);
 
-  const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
-
   console.log(`📅 Trigger window (now to 20h ahead):`);
-  console.log(`   Start: ${formatDateTimeForLog(windowStart)} (${DAY_NAMES[windowStart.getDay()]})`);
-  console.log(`   End:   ${formatDateTimeForLog(windowEnd)} (${DAY_NAMES[windowEnd.getDay()]})`);
+  console.log(`   Start: ${formatDateTimeForLog(windowStart)}`);
+  console.log(`   End:   ${formatDateTimeForLog(windowEnd)}`);
 
-  // Calculate tomorrow's date range (UTC)
-  const tomorrowStart = new Date(now);
-  tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
-  tomorrowStart.setUTCHours(0, 0, 0, 0);
-  const tomorrowEnd = new Date(tomorrowStart);
-  tomorrowEnd.setUTCHours(23, 59, 59, 999);
-  const tomorrowDayName = DAY_NAMES[tomorrowStart.getDay()];
-  const tomorrowDateStr = tomorrowStart.toISOString().split('T')[0];
-
-  console.log(`\n📆 Tomorrow's bookings: ${tomorrowDateStr} (${tomorrowDayName})`);
-
-  // Fetch tomorrow's pending/confirmed bookings (including already assigned) for full visibility
+  // Fetch all eligible bookings (we'll filter combined datetime in JS for simplicity)
   const bookings = await retryPrismaOperation(
     () => getPrismaClient().booking.findMany({
       where: {
+        assignment_sent: false,
         status: {
           in: ['PENDING', 'CONFIRMED'],
         },
-        scheduledAt: {
-          gte: tomorrowStart,
-          lte: tomorrowEnd,
-        },
+        maidId: null,
       },
       include: {
         customer: {
@@ -127,50 +113,26 @@ async function findBookingsNeedingAssignment() {
     'Find eligible bookings'
   );
 
-  console.log(`📋 Found ${bookings.length} booking(s) for tomorrow`);
-
-  // Filter and categorize bookings
-  const eligibleBookings = [];
-  let alreadyExistsCount = 0;
-  let skippedCount = 0;
-
-  if (bookings.length > 0) {
-    console.log('');
-  }
-
-  bookings.forEach((booking) => {
+  // Filter bookings by combined slot_date + slot_time within trigger window
+  const eligibleBookings = bookings.filter(booking => {
     // Combine slot_date + slot_time
     const serviceDateTime = combineSlotDateTime(booking.slot_date, booking.slot_time) ||
       booking.scheduledAt;
 
-    const customerName = booking.customer?.name || 'Unknown';
-    const timeStr = serviceDateTime.toISOString().split('T')[1].substring(0, 5);
-    const bookingIdShort = booking.id.substring(0, 8);
-    const isBuffer = booking.customer?.customerProfile?.subscription?.isInBufferPeriod;
-
-    // Check if assignment already sent or maid already assigned
-    if (booking.assignment_sent || booking.maidId) {
-      console.log(`  📋 ${customerName} -- already exists (${bookingIdShort}...) @ ${timeStr} UTC`);
-      alreadyExistsCount++;
-      return;
-    }
-
     // Check if within trigger window
     const isEligible = serviceDateTime >= windowStart && serviceDateTime <= windowEnd;
 
-    if (isBuffer) {
-      console.log(`  ⏸️  ${customerName} -- buffer period (${bookingIdShort}...) @ ${timeStr} UTC`);
-      skippedCount++;
-    } else if (isEligible) {
-      console.log(`  ✅ ${customerName} -- ELIGIBLE for assignment (${bookingIdShort}...) @ ${timeStr} UTC`);
-      eligibleBookings.push(booking);
-    } else {
-      console.log(`  ⏭️  ${customerName} -- outside window (${bookingIdShort}...) @ ${timeStr} UTC`);
-      skippedCount++;
+    if (!isEligible && booking.slot_date && booking.slot_time) {
+      console.log(
+        `⏭️  Booking ${booking.id}: service at ${formatDateTimeForLog(serviceDateTime)} ` +
+        `is outside trigger window`
+      );
     }
+
+    return isEligible;
   });
 
-  console.log(`\n📊 Summary: ${eligibleBookings.length} eligible, ${alreadyExistsCount} already exist, ${skippedCount} skipped`);
+  console.log(`📋 Found ${eligibleBookings.length} booking(s) in trigger window`);
   return eligibleBookings;
 }
 
@@ -184,11 +146,10 @@ async function findBookingsNeedingAssignment() {
  */
 async function enqueueAssignmentJob(booking, prisma) {
   const { id: bookingId, customerId, customer, service, scheduledAt } = booking;
-  const customerName = customer?.name || 'Unknown';
 
   // Skip if customer is in buffer period (subscription-level flag)
   if (customer?.customerProfile?.subscription?.isInBufferPeriod) {
-    console.log(`⏸️  Skipping ${customerName} (${bookingId.substring(0, 8)}…): customer in buffer period`);
+    console.log(`⏸️  Skipping booking ${bookingId}: customer in buffer period`);
     return { skipped: true, reason: 'buffer_period' };
   }
 
@@ -207,7 +168,7 @@ async function enqueueAssignmentJob(booking, prisma) {
     });
 
     if (bufferPeriodForDate) {
-      console.log(`⏸️  Skipping ${customerName} (${bookingId.substring(0, 8)}…): booking date falls in buffer period`);
+      console.log(`⏸️  Skipping booking ${bookingId}: booking date falls in buffer period`);
       return { skipped: true, reason: 'buffer_period_date' };
     }
   }
@@ -249,7 +210,7 @@ async function enqueueAssignmentJob(booking, prisma) {
       `Enqueue job for booking ${bookingId}`
     );
 
-    console.log(`✅ Enqueued assignment job: ${customerName} → ${service?.name || 'Service'} (${bookingId.substring(0, 8)}…)`);
+    console.log(`✅ Enqueued assignment job for booking ${bookingId}`);
     return { enqueued: true };
 
   } catch (error) {
@@ -278,6 +239,17 @@ async function runCron() {
   try {
     // Initialize Prisma database connection
     await initializePrisma();
+
+    // Step 1: Create tomorrow's bookings (idempotent — safe to run repeatedly)
+    console.log('📅 Step 1: Ensuring tomorrow\'s bookings exist...\n');
+    try {
+      const bookingStats = await createBookingsForTomorrow();
+      console.log(`\n📊 Booking creation: ${bookingStats.created} created, ${bookingStats.skippedExists} already existed\n`);
+    } catch (err) {
+      console.error('⚠️  Booking creation failed (continuing with assignment):', err.message);
+    }
+
+    // Step 2: Find bookings needing assignment and enqueue
     // Initialize connections
     await initializeQueue();
 
@@ -286,10 +258,9 @@ async function runCron() {
     stats.found = bookings.length;
 
     // Process each booking
-    // FIX: `prisma` was never declared in this file — use getPrismaClient() instead
     for (const booking of bookings) {
       try {
-        const result = await enqueueAssignmentJob(booking, getPrismaClient());
+        const result = await enqueueAssignmentJob(booking, prisma);
 
         if (result.skipped) {
           stats.skipped++;
@@ -362,32 +333,34 @@ async function cleanup() {
 
 /**
  * Handle process signals
- * C5 FIX: All four signal handlers were missing their closing `});`
- * which caused a SyntaxError that prevented the cron from ever loading.
  */
 process.on('SIGTERM', async () => {
   console.log('⚠️  SIGTERM received, shutting down...');
   await cleanup();
   process.exit(143); // 128 + 15 (SIGTERM)
 });
+// Initialization done by initializePrisma()
 
 process.on('SIGINT', async () => {
   console.log('⚠️  SIGINT received, shutting down...');
   await cleanup();
   process.exit(130); // 128 + 2 (SIGINT)
 });
+// Initialization done by initializePrisma()
 
 process.on('unhandledRejection', async (reason, promise) => {
   console.error('❌ Unhandled Rejection:', reason);
   await cleanup();
   process.exit(1);
 });
+// Initialization done by initializePrisma()
 
 process.on('uncaughtException', async (error) => {
   console.error('❌ Uncaught Exception:', error);
   await cleanup();
   process.exit(1);
 });
+// Initialization done by initializePrisma()
 
 // Run with timeout
 withTimeout(() => runCron(), CRON_TIMEOUT_MS, 'Cron job')

@@ -150,6 +150,9 @@ const getAllUsers = async (req, res) => {
         status: true,
         createdAt: true,
       },
+      orderBy: {
+        createdAt: 'desc'
+      }
     });
     res.json({
       success: true,
