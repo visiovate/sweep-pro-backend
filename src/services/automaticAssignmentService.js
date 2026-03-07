@@ -1,7 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
-const { 
-  parseTimeSlot, 
-  calculateRequestTime, 
+const { getPrismaClient } = require('../utils/database');
+const {
+  parseTimeSlot,
+  calculateRequestTime,
   getNextServiceDateTime,
   shouldCreateRequestNow,
   shouldSendRequestImmediately,
@@ -12,6 +12,9 @@ const cron = require('node-cron');
 const bookingDeduplicationService = require('./bookingDeduplicationService');
 const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
 const { isDateOnWeeklyOff } = require('../utils/weekdayUtils');
+
+// Initialize Prisma using singleton
+const prisma = getPrismaClient();
 
 /**
  * Create automatic assignment requests for customers based on their time slots

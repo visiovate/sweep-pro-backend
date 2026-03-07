@@ -1,17 +1,15 @@
 /**
  * Expired Assignment Requests Cron Job
- * 
+ *
  * Handles assignment requests that have expired without maid response
  * Runs every 30 minutes
- * 
+ *
  * Command: node src/cron/expiredRequestsCron.js
  */
 
 const { initializePrisma, getPrismaClient } = require("../utils/database");
-// const { PrismaClient } = require('@prisma/client');
 const { retryPrismaOperation, withTimeout } = require('../utils/retryUtils');
 
-const prisma = new PrismaClient({ log: ['error', 'warn'] });
 const CRON_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
 async function runCron() {

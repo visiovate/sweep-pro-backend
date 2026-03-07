@@ -1,21 +1,21 @@
 const { Worker } = require('bullmq');
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database');
 const { createRedisConnection } = require('../config/redis');
 const { JOB_TYPES } = require('../queues/assignmentQueue');
 const { queueRejectedAssignment } = require('../queues/adminReassignQueue');
-const { 
-  getNextServiceDateTime, 
+const {
+  getNextServiceDateTime,
   calculateRequestTime,
-  ASSIGNMENT_REQUEST_HOURS_BEFORE 
+  ASSIGNMENT_REQUEST_HOURS_BEFORE
 } = require('../utils/timeSlotUtils');
 const { isDateOnWeeklyOff } = require('../utils/weekdayUtils');
 
 /**
  * BullMQ Worker for Processing Maid Assignment Jobs
- * 
+ *
  * This worker runs 24/7 and processes jobs from the assignment queue.
  * It can be deployed separately on Render as a background worker.
- * 
+ *
  * Job Types:
  * 1. CREATE_ASSIGNMENT_REQUEST - Create assignment request for a customer
  * 2. PROCESS_ALL_ASSIGNMENTS - Process all active customer assignments

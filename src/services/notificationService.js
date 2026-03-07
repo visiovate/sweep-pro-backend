@@ -65,13 +65,22 @@ class NotificationService {
         return;
       }
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await getPrismaClient().user.findUnique({
+
+      // Create a timeout promise for the database query
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Authentication query timeout')), 5000)
+      );
+
+      const userPromise = getPrismaClient().user.findUnique({
         where: { id: decoded.userId || decoded.id },
         include: {
           maidProfile: true,
           adminProfile: true
         }
       });
+
+      // Race the user query against the timeout
+      const user = await Promise.race([userPromise, timeoutPromise]);
 
       if (!user) {
         ws.close(1008, 'Invalid token');
