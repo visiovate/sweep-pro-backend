@@ -6,18 +6,33 @@ const MAX_CONNECTION_ATTEMPTS = 3;
 // Single PrismaClient instance for the entire application.
 // Connection pool size is controlled by `connection_limit` in DATABASE_URL.
 // Aiven free tier: max_connections=20, system uses ~9, so connection_limit=5 is safe.
-let prisma = new PrismaClient({
-  log: ['error', 'warn'],
-  errorFormat: 'pretty',
-});
+// IMPORTANT: PrismaClient is created lazily to prevent connection pool exhaustion
+// when running as cron jobs that may fail before proper cleanup.
+let prisma = null;
+
+/**
+ * Create a new PrismaClient instance with proper configuration
+ */
+function createPrismaClient() {
+  return new PrismaClient({
+    log: ['error', 'warn'],
+    errorFormat: 'pretty',
+  });
+}
 
 /**
  * Initialize Prisma client with retry logic
+ * Creates the PrismaClient lazily to prevent connection pool exhaustion
  */
 async function initializePrisma() {
   try {
     if (connectionAttempts === 0) {
       console.log('🔄 Initializing database connection...');
+    }
+
+    // Create PrismaClient lazily if it doesn't exist
+    if (!prisma) {
+      prisma = createPrismaClient();
     }
 
     await prisma.$connect();
@@ -33,6 +48,15 @@ async function initializePrisma() {
 
     if (error.message?.includes('too many clients') || error.message?.includes('connection slots are reserved')) {
       console.error('⚠️ Database connection pool exhausted. Idle connections may need to be cleared on the server.');
+      // Disconnect and destroy the client to release any partial connections
+      if (prisma) {
+        try {
+          await prisma.$disconnect();
+        } catch (disconnectError) {
+          // Ignore disconnect errors during cleanup
+        }
+        prisma = null;
+      }
     }
 
     if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
@@ -48,8 +72,15 @@ async function initializePrisma() {
 
 /**
  * Get Prisma client instance (singleton)
+ * Creates the client lazily if it doesn't exist yet.
+ * NOTE: For cron jobs, always call initializePrisma() first to ensure proper connection.
+ * For the main app, this lazy creation handles the case where modules are imported
+ * before initializePrisma() is called.
  */
 function getPrismaClient() {
+  if (!prisma) {
+    prisma = createPrismaClient();
+  }
   return prisma;
 }
 
@@ -79,6 +110,7 @@ async function isDatabaseConnected() {
 
 /**
  * Gracefully disconnect from database
+ * IMPORTANT: Always call this when shutting down to prevent connection leaks
  */
 async function disconnectDatabase() {
   if (prisma) {
@@ -86,9 +118,10 @@ async function disconnectDatabase() {
       await prisma.$disconnect();
       console.log('✅ Database disconnected successfully');
     } catch (error) {
-      console.error('❌ Error disconnecting from database:', error);
+      console.error('❌ Error disconnecting from database:', error.message);
     } finally {
       prisma = null;
+      connectionAttempts = 0;
     }
   }
 }

@@ -1,8 +1,5 @@
 const { getPrismaClient } = require('../utils/database');
-const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
-
-const prisma = getPrismaClient();
 
 /**
  * Enhanced Notification Controller
@@ -36,15 +33,15 @@ const getNotifications = async (req, res) => {
       if (endDate) where.createdAt.lte = new Date(endDate);
     }
 
-    const notifications = await prisma.notification.findMany({
+    const notifications = await getPrismaClient().notification.findMany({
       where,
       orderBy: { [sortBy]: sortOrder },
       skip: (parseInt(page) - 1) * parseInt(limit),
       take: parseInt(limit)
     });
 
-    const totalCount = await prisma.notification.count({ where });
-    const unreadCount = await prisma.notification.count({
+    const totalCount = await getPrismaClient().notification.count({ where });
+    const unreadCount = await getPrismaClient().notification.count({
       where: { userId, read: false }
     });
 
@@ -72,7 +69,7 @@ const getNotifications = async (req, res) => {
 const getUnreadCount = async (req, res) => {
   try {
     const userId = req.user.id;
-    const unreadCount = await prisma.notification.count({
+    const unreadCount = await getPrismaClient().notification.count({
       where: { userId, read: false }
     });
 
@@ -143,7 +140,7 @@ const markMultipleAsRead = async (req, res) => {
       });
     }
 
-    await prisma.notification.updateMany({
+    await getPrismaClient().notification.updateMany({
       where: {
         id: { in: notificationIds },
         userId
@@ -193,7 +190,7 @@ const deleteNotification = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
     
-    await prisma.notification.delete({
+    await getPrismaClient().notification.delete({
       where: { id, userId }
     });
     
@@ -223,7 +220,7 @@ const deleteMultipleNotifications = async (req, res) => {
       });
     }
 
-    const result = await prisma.notification.deleteMany({
+    const result = await getPrismaClient().notification.deleteMany({
       where: {
         id: { in: notificationIds },
         userId
@@ -249,7 +246,7 @@ const clearReadNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
     
-    const result = await prisma.notification.deleteMany({
+    const result = await getPrismaClient().notification.deleteMany({
       where: {
         userId,
         read: true
@@ -304,43 +301,43 @@ const getNotificationStats = async (req, res) => {
       notificationsByType,
       notificationsByUser
     ] = await Promise.all([
-      prisma.notification.count(),
-      prisma.notification.count({
+      getPrismaClient().notification.count(),
+      getPrismaClient().notification.count({
         where: { 
           createdAt: { gte: startDate },
           ...userFilter
         }
       }),
-      prisma.notification.count({
-        where: { 
-          read: true, 
+      getPrismaClient().notification.count({
+        where: {
+          read: true,
           createdAt: { gte: startDate },
           ...userFilter
         }
       }),
-      prisma.notification.count({
-        where: { 
-          read: false, 
+      getPrismaClient().notification.count({
+        where: {
+          read: false,
           createdAt: { gte: startDate },
           ...userFilter
         }
       }),
-      prisma.notification.count({
-        where: { 
-          delivered: true, 
+      getPrismaClient().notification.count({
+        where: {
+          delivered: true,
           createdAt: { gte: startDate },
           ...userFilter
         }
       }),
-      prisma.notification.groupBy({
+      getPrismaClient().notification.groupBy({
         by: ['type'],
-        where: { 
+        where: {
           createdAt: { gte: startDate },
           ...userFilter
         },
         _count: { type: true }
       }),
-      prisma.notification.groupBy({
+      getPrismaClient().notification.groupBy({
         by: ['userId'],
         where: { 
           createdAt: { gte: startDate }
@@ -449,7 +446,7 @@ const sendBroadcastNotification = async (req, res) => {
         await notificationService.sendToAllMaids(notification);
       } else if (targetRole === 'CUSTOMER') {
         // Send to all customers
-        const customers = await prisma.user.findMany({
+        const customers = await getPrismaClient().user.findMany({
           where: { role: 'CUSTOMER' },
           select: { id: true }
         });

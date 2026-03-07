@@ -7,7 +7,7 @@
  * Command: node src/cron/expiredRequestsCron.js
  */
 
-const { initializePrisma, getPrismaClient } = require("../utils/database");
+const { initializePrisma, getPrismaClient, disconnectDatabase } = require("../utils/database");
 const { retryPrismaOperation, withTimeout } = require('../utils/retryUtils');
 
 const CRON_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
@@ -18,10 +18,13 @@ async function runCron() {
   console.log('║   ⏰ EXPIRED REQUESTS CRON JOB');
   console.log(`║   Started: ${new Date().toISOString()}`);
   console.log('═══════════════════════════════════════════════════════\n');
-  
+
   let stats = { found: 0, processed: 0, errors: 0 };
-  
+
   try {
+    // Initialize Prisma database connection
+    await initializePrisma();
+
     const now = new Date();
     
     // Find expired assignment requests
@@ -116,9 +119,9 @@ async function runCron() {
     console.log(`║   Errors: ${stats.errors}`);
     console.log('═══════════════════════════════════════════════════════\n');
     
-    await getPrismaClient().$disconnect();
+    await disconnectDatabase();
     process.exit(0);
-    
+
   } catch (error) {
     const duration = Date.now() - startTime;
     console.error('\n═══════════════════════════════════════════════════════');
@@ -126,25 +129,25 @@ async function runCron() {
     console.error(`║   Duration: ${duration}ms`);
     console.error(`║   Error: ${error.message}`);
     console.error('═══════════════════════════════════════════════════════\n');
-    
-    await getPrismaClient().$disconnect();
+
+    await disconnectDatabase();
     process.exit(1);
   }
 }
 
 process.on('SIGTERM', async () => {
-  await getPrismaClient().$disconnect();
+  await disconnectDatabase();
   process.exit(143);
-// Initialization done by initializePrisma()
+});
 
 process.on('SIGINT', async () => {
-  await getPrismaClient().$disconnect();
+  await disconnectDatabase();
   process.exit(130);
-// Initialization done by initializePrisma()
+});
 
-withTimeout(runCron(), CRON_TIMEOUT_MS, 'Expired requests cron')
+withTimeout(() => runCron(), CRON_TIMEOUT_MS, 'Expired requests cron')
   .catch(async (error) => {
     console.error('❌ Cron timeout or fatal error:', error);
-    await getPrismaClient().$disconnect();
+    await disconnectDatabase();
     process.exit(1);
   });

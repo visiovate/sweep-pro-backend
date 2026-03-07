@@ -7,7 +7,7 @@
  * Command: node src/cron/subscriptionCron.js
  */
 
-const { initializePrisma, getPrismaClient } = require("../utils/database");
+const { initializePrisma, getPrismaClient, disconnectDatabase } = require("../utils/database");
 // const { PrismaClient } = require('@prisma/client');
 const { retryPrismaOperation, withTimeout } = require('../utils/retryUtils');
 
@@ -171,7 +171,7 @@ async function runCron() {
     console.log(`║   Errors: ${stats.errors}`);
     console.log('═══════════════════════════════════════════════════════\n');
 
-    await getPrismaClient().$disconnect();
+    await disconnectDatabase();
     process.exit(0);
 
   } catch (error) {
@@ -182,24 +182,24 @@ async function runCron() {
     console.error(`║   Error: ${error.message}`);
     console.error('═══════════════════════════════════════════════════════\n');
 
-    await getPrismaClient().$disconnect();
+    await disconnectDatabase();
     process.exit(1);
   }
 }
 
 process.on('SIGTERM', async () => {
-  await getPrismaClient().$disconnect();
+  await disconnectDatabase();
   process.exit(143);
 });
 
 process.on('SIGINT', async () => {
-  await getPrismaClient().$disconnect();
+  await disconnectDatabase();
   process.exit(130);
 });
 
 withTimeout(() => runCron(), CRON_TIMEOUT_MS, 'Subscription cron')
   .catch(async (error) => {
     console.error('❌ Cron timeout or fatal error:', error);
-    await getPrismaClient().$disconnect();
+    await disconnectDatabase();
     process.exit(1);
   });

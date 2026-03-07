@@ -12,7 +12,7 @@
  */
 
 
-const { initializePrisma, getPrismaClient } = require('../utils/database');
+const { initializePrisma, getPrismaClient, disconnectDatabase } = require('../utils/database');
 const { Queue } = require('bullmq');
 const { createRedisConnection, closeRedisConnection } = require('../config/redis');
 const { retryPrismaOperation, retryRedisOperation, withTimeout } = require('../utils/retryUtils');
@@ -328,6 +328,7 @@ async function runCron() {
 
 /**
  * Cleanup connections
+ * IMPORTANT: Always disconnect database to prevent connection pool exhaustion
  */
 async function cleanup() {
   console.log('🧹 Cleaning up connections...');
@@ -348,11 +349,8 @@ async function cleanup() {
     console.warn('⚠️  Failed to close Redis:', error.message);
   }
 
-  try {
-    await getPrismaClient().$disconnect();
-  } catch (error) {
-    console.warn('⚠️  Failed to disconnect Prisma:', error.message);
-  }
+  // Use disconnectDatabase to properly close connections and reset state
+  await disconnectDatabase();
 
   console.log('✅ Cleanup complete');
 }

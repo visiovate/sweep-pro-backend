@@ -10,7 +10,9 @@ const { getPrismaClient } = require('../utils/database');
 const { retryPrismaOperation } = require('../utils/retryUtils');
 const { formatDateTimeForLog, getWeekdayName } = require('../utils/timeUtils');
 
-const prisma = getPrismaClient();
+// Constants for assignment request expiry
+const ASSIGNMENT_REQUEST_EXPIRY_HOURS = 24; // Assignment request expires after 24 hours
+const MIN_HOURS_BEFORE_SERVICE = 2; // Minimum hours before service to accept assignment
 
 /**
  * Create bookings for tomorrow for all active customer assignments
@@ -41,7 +43,7 @@ async function createBookingsForTomorrow() {
 
   // Get all active customer-maid assignments with subscriptions
   const activeAssignments = await retryPrismaOperation(
-    () => prisma.customerMaidAssignment.findMany({
+    () => getPrismaClient().customerMaidAssignment.findMany({
       where: {
         isActive: true
       },
@@ -94,7 +96,7 @@ async function createBookingsForTomorrow() {
   console.log(`📋 Found ${activeAssignments.length} active assignment(s) to process`);
 
   // Get default service for automatic bookings
-  let defaultService = await prisma.service.findFirst({
+  let defaultService = await getPrismaClient().service.findFirst({
     where: {
       isActive: true,
       isSubscriptionService: true
@@ -102,7 +104,7 @@ async function createBookingsForTomorrow() {
   });
 
   if (!defaultService) {
-    defaultService = await prisma.service.findFirst({
+    defaultService = await getPrismaClient().service.findFirst({
       where: { isActive: true }
     });
   }
@@ -163,7 +165,7 @@ async function createBookingsForTomorrow() {
       const scheduledAt = new Date(scheduledAtIST.getTime() - IST_OFFSET_MS);
 
       // Check if booking already exists for this customer tomorrow
-      const existingBooking = await prisma.booking.findFirst({
+      const existingBooking = await getPrismaClient().booking.findFirst({
         where: {
           customerId: customer.id,
           scheduledAt: {
@@ -184,7 +186,7 @@ async function createBookingsForTomorrow() {
       }
 
       // Create the booking
-      const booking = await prisma.booking.create({
+      const booking = await getPrismaClient().booking.create({
         data: {
           customerId: customer.id,
           maidId: maid.userId,
@@ -205,8 +207,61 @@ async function createBookingsForTomorrow() {
         }
       });
 
+      // Calculate expiry time for the assignment request
+      // Give maid time to respond, but ensure they respond before 2 hours before service
+      const hoursBeforeService = (scheduledAt.getTime() - now.getTime()) / (1000 * 60 * 60);
+      let expiresAt;
+      if (hoursBeforeService > ASSIGNMENT_REQUEST_EXPIRY_HOURS + MIN_HOURS_BEFORE_SERVICE) {
+        // Give maid full 24 hours to respond
+        expiresAt = new Date(now.getTime() + (ASSIGNMENT_REQUEST_EXPIRY_HOURS * 60 * 60 * 1000));
+      } else {
+        // Give maid until 2 hours before service
+        expiresAt = new Date(scheduledAt.getTime() - (MIN_HOURS_BEFORE_SERVICE * 60 * 60 * 1000));
+      }
+
+      // Create AssignmentRequest so maid can accept/reject
+      const assignmentRequest = await getPrismaClient().assignmentRequest.create({
+        data: {
+          bookingId: booking.id,
+          maidId: maid.id, // MaidProfile ID, not User ID
+          status: 'pending',
+          expiresAt: expiresAt
+        }
+      });
+
+      // Update booking to mark that assignment request has been sent
+      await getPrismaClient().booking.update({
+        where: { id: booking.id },
+        data: {
+          assignment_sent: true,
+          assignment_sent_at: now
+        }
+      });
+
       const timeStrIST = `${String(hoursIST || 9).padStart(2, '0')}:${String(minutesIST || 0).padStart(2, '0')}`;
       const timeStrUTC = `${scheduledAt.getUTCHours().toString().padStart(2, '0')}:${scheduledAt.getUTCMinutes().toString().padStart(2, '0')}`;
+
+      // Create notification for the maid
+      try {
+        await getPrismaClient().notification.create({
+          data: {
+            userId: maid.userId,
+            type: 'ASSIGNMENT_REQUEST',
+            title: 'New Service Assignment Request',
+            message: `You have a new automatic service assignment for ${customerName} on ${tomorrow.toISOString().split('T')[0]} at ${timeStrIST} IST. Please respond within 24 hours.`,
+            data: {
+              bookingId: booking.id,
+              assignmentRequestId: assignmentRequest.id,
+              serviceAddress: customer.address,
+              scheduledAt: scheduledAt.toISOString(),
+              expiresAt: expiresAt.toISOString()
+            }
+          }
+        });
+      } catch (notifError) {
+        console.warn(`  ⚠️ Failed to send notification to maid: ${notifError.message}`);
+      }
+
       console.log(`  ✅ ${customerName} -- created (${booking.id.substring(0, 8)}...) @ ${timeStrIST} IST (${timeStrUTC} UTC)`);
       stats.created++;
 
