@@ -362,7 +362,7 @@ router.post('/reset-password', async (req, res) => {
     await prisma.$transaction([
       prisma.user.update({
         where: { id: resetRecord.userId },
-        data: { password: hashedPassword }
+        data: { password: hashedPassword, passwordChangedAt: new Date() }
       }),
       prisma.passwordResetToken.update({
         where: { id: resetRecord.id },
@@ -720,5 +720,75 @@ if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== undefined)
     }
   });
 }
+
+// Change password (authenticated user)
+router.post('/change-password', authenticateToken, async (req, res) => {
+  try {
+    const prisma = await initializePrisma();
+    const userId = req.user.id || req.user.userId;
+    const currentPassword = String(req.body?.currentPassword || '');
+    const newPassword = String(req.body?.newPassword || '');
+    const confirmPassword = String(req.body?.confirmPassword || '');
+
+    if (!currentPassword) {
+      return res.status(400).json({ success: false, message: 'Current password is required' });
+    }
+
+    if (!newPassword || newPassword.length < 8 || newPassword.length > 128) {
+      return res.status(400).json({ success: false, message: 'New password must be between 8 and 128 characters' });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: 'New password confirmation does not match' });
+    }
+
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&].*$/;
+    if (!strongPasswordRegex.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must contain at least one lowercase letter, one uppercase letter, one digit, and one special character'
+      });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Your account uses social login. Password change is not available.'
+      });
+    }
+
+    const isCurrentValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isCurrentValid) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+
+    const hashedNewPassword = await bcrypt.hash(newPassword, 12);
+
+    const updateData = { password: hashedNewPassword };
+    try {
+      // Try with passwordChangedAt if column exists
+      await prisma.user.update({
+        where: { id: userId },
+        data: { ...updateData, passwordChangedAt: new Date() }
+      });
+    } catch (updateError) {
+      // Fallback: update password only (passwordChangedAt column may not exist yet)
+      await prisma.user.update({
+        where: { id: userId },
+        data: updateData
+      });
+    }
+
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ success: false, message: 'Failed to change password. Please try again.' });
+  }
+});
 
 module.exports = router;

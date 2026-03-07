@@ -99,11 +99,24 @@ const assignMaidToCustomer = async (req, res) => {
     // Check for maid assignment conflicts
     await checkMaidAssignmentConflicts(maid.id, customerId);
 
-    // Check if there's already a pending assignment request
-    const existingRequest = await prisma.customerAssignmentRequest.findFirst({
+    // Clean up expired assignment requests for this customer
+    await prisma.customerAssignmentRequest.updateMany({
       where: {
         customerId: customerId,
-        maidId: maid.id,
+        status: 'pending',
+        expiresAt: {
+          lt: new Date()
+        }
+      },
+      data: {
+        status: 'expired'
+      }
+    });
+
+    // Cancel any existing pending requests for this customer (allows re-assignment)
+    const existingPendingRequests = await prisma.customerAssignmentRequest.findMany({
+      where: {
+        customerId: customerId,
         status: 'pending',
         expiresAt: {
           gte: new Date()
@@ -111,15 +124,19 @@ const assignMaidToCustomer = async (req, res) => {
       }
     });
 
-    if (existingRequest) {
-      return res.status(409).json({
-        success: false,
-        message: 'Assignment request already pending',
-        error: 'There is already a pending assignment request for this customer-maid combination.'
+    if (existingPendingRequests.length > 0) {
+      await prisma.customerAssignmentRequest.updateMany({
+        where: {
+          id: { in: existingPendingRequests.map(r => r.id) }
+        },
+        data: {
+          status: 'cancelled'
+        }
       });
+      console.log(`🔄 Cancelled ${existingPendingRequests.length} existing pending request(s) for customer ${customerId}`);
     }
 
-    // Create assignment request instead of direct assignment
+    // Create assignment request for tracking/notification
     console.log('🔄 Creating assignment request:', {
       customerId,
       maidId: maid.id,
@@ -127,40 +144,125 @@ const assignMaidToCustomer = async (req, res) => {
       notes
     });
 
-    const assignmentRequest = await prisma.customerAssignmentRequest.create({
-      data: {
-        customerId: customerId,
-        maidId: maid.id,
-        requestedBy: req.user.id, // Admin who made the request
-        notes: notes,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
-      },
-      include: {
-        customer: true,
-        maid: {
-          include: {
-            user: true
-          }
+    // Use a transaction to create both the request and the actual assignment atomically
+    const result = await prisma.$transaction(async (tx) => {
+      // Create the assignment request record (for tracking)
+      const assignmentRequest = await tx.customerAssignmentRequest.create({
+        data: {
+          customerId: customerId,
+          maidId: maid.id,
+          requestedBy: req.user.id,
+          notes: notes,
+          status: 'accepted', // Auto-accepted since admin is directly assigning
+          respondedAt: new Date(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
         },
-        admin: {
-          select: {
-            id: true,
-            name: true,
-            email: true
+        include: {
+          customer: true,
+          maid: {
+            include: {
+              user: true
+            }
+          },
+          admin: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
           }
         }
+      });
+
+      // Check if customer already has an active assignment
+      const existingAssignment = await tx.customerMaidAssignment.findFirst({
+        where: {
+          customerId: customerId,
+          isActive: true
+        }
+      });
+
+      let assignment;
+      if (existingAssignment) {
+        // Update existing assignment with new maid
+        assignment = await tx.customerMaidAssignment.update({
+          where: { id: existingAssignment.id },
+          data: {
+            maidId: maid.id,
+            notes: notes,
+            assignedAt: new Date()
+          },
+          include: {
+            customer: true,
+            maid: {
+              include: { user: true }
+            }
+          }
+        });
+      } else {
+        // Create new assignment
+        assignment = await tx.customerMaidAssignment.create({
+          data: {
+            customerId: customerId,
+            maidId: maid.id,
+            notes: notes,
+            isActive: true,
+            assignedAt: new Date()
+          },
+          include: {
+            customer: true,
+            maid: {
+              include: { user: true }
+            }
+          }
+        });
       }
+
+      return { assignmentRequest, assignment };
     });
 
-    console.log('✅ Assignment request created successfully:', assignmentRequest.id);
+    console.log('✅ Assignment created successfully:', result.assignment.id);
 
-    // TODO: Send notification to maid about new assignment request
-    // This could be implemented with WebSocket or push notifications
+    // Create notifications for both customer and maid
+    try {
+      await prisma.notification.createMany({
+        data: [
+          {
+            userId: customerId,
+            type: 'MAID_ASSIGNED',
+            title: 'Homecare Partner Assigned',
+            message: `${result.assignment.maid.user.name} has been assigned as your homecare partner.`
+          },
+          {
+            userId: result.assignment.maid.userId,
+            type: 'SERVICE_ASSIGNED',
+            title: 'New Customer Assignment',
+            message: `You have been assigned to serve ${result.assignment.customer.name}.`
+          }
+        ]
+      });
+    } catch (notifError) {
+      console.error('⚠️ Failed to create notifications:', notifError);
+      // Don't fail the request if notification creation fails
+    }
+
+    // Schedule background jobs for automatic booking creation
+    try {
+      const timeSlot = result.assignment.customer.timeSlot;
+      await JobScheduler.onNewAssignment(
+        customerId,
+        maid.id,
+        timeSlot
+      );
+      console.log('✅ Background jobs scheduled for customer assignment');
+    } catch (jobError) {
+      console.error('⚠️ Failed to schedule background jobs:', jobError);
+    }
 
     return res.status(201).json({
       success: true,
-      message: 'Assignment request sent to maid successfully',
-      data: assignmentRequest
+      message: 'Homecare partner assigned successfully',
+      data: result.assignment
     });
 
   } catch (error) {

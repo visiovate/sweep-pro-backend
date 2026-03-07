@@ -130,6 +130,7 @@ const getCompleteProfile = async (req, res) => {
       success: true,
       data: {
         ...userWithoutPassword,
+        hasPassword: Boolean(password),
         stats
       }
     });

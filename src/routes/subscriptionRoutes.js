@@ -21,7 +21,9 @@ const {
   adminEndBufferPeriod,
   getSubscriptionAnalytics,
   getUpcomingServices,
-  getTimeSlotCounts
+  getTimeSlotCounts,
+  getSubscriptionById,
+  adminCancelSubscription
 } = require('../controllers/subscriptionController');
 
 // Public routes
@@ -50,5 +52,7 @@ router.post('/admin/:subscriptionId/buffer/end', authenticateToken, adminEndBuff
 router.put('/admin/plans/:id', authenticateToken, updateSubscriptionPlan);
 router.post('/admin/plans', authenticateToken, createSubscriptionPlan);
 router.delete('/admin/plans/:id', authenticateToken, deleteSubscriptionPlan);
+router.get('/admin/:id', authenticateToken, getSubscriptionById);
+router.post('/admin/:id/cancel', authenticateToken, adminCancelSubscription);
 
 module.exports = router;
