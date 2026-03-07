@@ -361,16 +361,45 @@ class RazorpayService {
           },
           include: {
             plan: { include: { service: true } },
-            customer: { include: { user: true } }
+            customer: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true,
+                    timeSlot: true  // EXPLICITLY select timeSlot
+                  }
+                }
+              }
+            }
           }
         });
 
         // Increment time slot count for the user's selected time slot (global count)
         try {
           const user = updatedSubscription.customer?.user;
-          if (user?.timeSlot) {
-            await incrementTimeSlotCount(user.timeSlot);
-            console.log(`✅ Time slot count incremented for subscription ${updatedPayment.subscriptionId}`);
+          let timeSlotToIncrement = user?.timeSlot;
+
+          // Debug logging
+          console.log(`🔍 Time slot increment check - User: ${user?.id}, TimeSlot: ${timeSlotToIncrement}`);
+
+          // If timeSlot is not on user, try to fetch it directly from the database
+          if (!timeSlotToIncrement) {
+            const freshUser = await getPrismaClient().user.findUnique({
+              where: { id: user?.id },
+              select: { id: true, timeSlot: true }
+            });
+            timeSlotToIncrement = freshUser?.timeSlot;
+            console.log(`🔄 Fetched fresh user data - TimeSlot: ${timeSlotToIncrement}`);
+          }
+
+          if (timeSlotToIncrement) {
+            await incrementTimeSlotCount(timeSlotToIncrement);
+            console.log(`✅ Time slot count incremented for subscription ${updatedPayment.subscriptionId} - Slot: ${timeSlotToIncrement}`);
+          } else {
+            console.warn(`⚠️ No timeSlot found for user ${user?.id} in subscription ${updatedPayment.subscriptionId}. Time slot count not incremented.`);
           }
         } catch (slotError) {
           console.error('Failed to increment time slot count (non-fatal):', slotError);

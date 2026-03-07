@@ -1,0 +1,15 @@
+{
+  "bookingId": "5547bed5-5bfe-4dad-9180-1c346550f135",
+  "date": "2026-03-07T09:30:00.000Z",
+  "isAuto": true,
+  "assignedMaidId": "6539a894-fd89-40f9-be39-8cbcac230bee",
+  "assignedMaidName": "Ananya Patel",
+  "requests": [
+    {
+      "id": "e8578558-30c7-4651-877d-48ffee40388d",
+      "status": "accepted",
+      "maidName": "Ananya Patel",
+      "maidId": "c56d2b52-02e6-48b8-8503-3ce0e8fb4e5f"
+    }
+  ]
+}

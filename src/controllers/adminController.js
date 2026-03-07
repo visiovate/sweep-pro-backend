@@ -45,7 +45,7 @@ const getActiveCustomers = async (req, res) => {
 const getPendingBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching pending bookings for admin...');
-    
+
     const bookings = await prisma.booking.findMany({
       where: {
         OR: [
@@ -79,7 +79,7 @@ const getPendingBookings = async (req, res) => {
     });
 
     console.log(`✅ Found ${bookings.length} pending bookings`);
-    
+
     res.json({
       success: true,
       data: bookings
@@ -87,7 +87,7 @@ const getPendingBookings = async (req, res) => {
   } catch (error) {
     console.error('Error fetching pending bookings:', error.message || error);
     console.error('Stack trace:', error.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Failed to fetch pending bookings',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -115,19 +115,19 @@ const getAvailableMaids = async (req, res) => {
 
     // Filter maids based on availability and proximity if coordinates provided
     let availableMaids = maids;
-    
+
     if (latitude && longitude) {
       // Simple distance calculation - in production, use proper geospatial queries
       availableMaids = maids.filter(maid => {
         if (!maid.latitude || !maid.longitude) return true;
-        
+
         const distance = calculateDistance(
-          parseFloat(latitude), 
+          parseFloat(latitude),
           parseFloat(longitude),
           maid.latitude,
           maid.longitude
         );
-        
+
         return distance <= (maid.maidProfile?.serviceRadius || 5); // Default 5km radius
       });
     }
@@ -186,6 +186,24 @@ const assignMaidToBooking = async (req, res) => {
           }
         },
         service: true
+      }
+    });
+
+    // Make this maid the default for the customer
+    await prisma.customerMaidAssignment.upsert({
+      where: {
+        customerId: booking.customerId
+      },
+      update: {
+        maidId: maidId,
+        isActive: true,
+        assignedAt: new Date()
+      },
+      create: {
+        customerId: booking.customerId,
+        maidId: maidId,
+        isActive: true,
+        assignedAt: new Date()
       }
     });
 
@@ -261,11 +279,11 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // Radius of the Earth in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c; // Distance in km
   return distance;
 }
@@ -383,9 +401,9 @@ const getAdminStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching admin stats:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Failed to fetch admin statistics' 
+      message: 'Failed to fetch admin statistics'
     });
   }
 };
@@ -394,13 +412,13 @@ const getAdminStats = async (req, res) => {
 const getAllSubscriptions = async (req, res) => {
   try {
     const { status, plan } = req.query;
-    
+
     let whereClause = {};
-    
+
     if (status) {
       whereClause.status = status.toUpperCase();
     }
-    
+
     if (plan) {
       whereClause.plan = {
         name: {
@@ -454,13 +472,13 @@ const getAllSubscriptions = async (req, res) => {
 const getAllPayments = async (req, res) => {
   try {
     const { status, type } = req.query;
-    
+
     let whereClause = {};
-    
+
     if (status) {
       whereClause.status = status.toUpperCase();
     }
-    
+
     if (type) {
       whereClause.paymentType = type.toUpperCase();
     }
@@ -533,20 +551,20 @@ const getAllMaidsWithDocuments = async (req, res) => {
 
     // Calculate document verification status for each maid
     const requiredDocTypes = ['AADHAR_CARD', 'PAN_CARD', 'ADDRESS_PROOF', 'POLICE_VERIFICATION', 'MEDICAL_CERTIFICATE', 'PHOTO'];
-    
+
     const maidsWithDocumentStatus = maids.map(maid => {
       const documents = maid.maidProfile?.documents || [];
       const totalRequired = requiredDocTypes.length;
-      const uploaded = requiredDocTypes.filter(type => 
+      const uploaded = requiredDocTypes.filter(type =>
         documents.some(doc => doc.type === type)
       ).length;
-      const verified = requiredDocTypes.filter(type => 
+      const verified = requiredDocTypes.filter(type =>
         documents.some(doc => doc.type === type && doc.verificationStatus === 'APPROVED')
       ).length;
-      const pending = requiredDocTypes.filter(type => 
+      const pending = requiredDocTypes.filter(type =>
         documents.some(doc => doc.type === type && doc.verificationStatus === 'PENDING')
       ).length;
-      const rejected = requiredDocTypes.filter(type => 
+      const rejected = requiredDocTypes.filter(type =>
         documents.some(doc => doc.type === type && doc.verificationStatus === 'REJECTED')
       ).length;
 

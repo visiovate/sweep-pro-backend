@@ -18,9 +18,9 @@ const transformBookingForFrontend = (booking) => {
     maidId: booking.maidId,
     serviceId: booking.serviceId,
     status: booking.status,
-    assignmentStatus: booking.assignmentStatus || 
+    assignmentStatus: booking.assignmentStatus ||
       (booking.status === 'CANCELLED' && booking.rejectionReason ? 'REJECTED' :
-       booking.maidId ? 'ASSIGNED_PENDING_RESPONSE' : 'PENDING_ASSIGNMENT'),
+        booking.maidId ? 'ASSIGNED_PENDING_RESPONSE' : 'PENDING_ASSIGNMENT'),
     scheduledAt: booking.scheduledAt,
     timeSlot: booking.timeSlot,
     serviceAddress: booking.serviceAddress,
@@ -100,14 +100,14 @@ const getPendingAssignments = async (req, res) => {
     const maidProfile = await prisma.maidProfile.findUnique({
       where: { userId: req.user.id }
     });
-    
+
     if (!maidProfile) {
       return res.status(400).json({
         success: false,
         message: 'Maid profile not found'
       });
     }
-    
+
     const maidId = maidProfile.id;
 
     const assignments = await prisma.assignmentRequest.findMany({
@@ -153,14 +153,14 @@ const getMyAssignments = async (req, res) => {
     const maidProfile = await prisma.maidProfile.findUnique({
       where: { userId: req.user.id }
     });
-    
+
     if (!maidProfile) {
       return res.status(400).json({
         success: false,
         message: 'Maid profile not found'
       });
     }
-    
+
     const maidId = maidProfile.id;
 
     const assignments = await prisma.assignmentRequest.findMany({
@@ -199,14 +199,14 @@ const getMyAssignments = async (req, res) => {
 const acceptAssignment = async (req, res) => {
   try {
     const { assignmentId } = req.params;
-    
+
     console.log(`🔍 Accepting assignment: ${assignmentId} by user: ${req.user.id}`);
-    
+
     // Find the maid profile for this user
     const maidProfile = await prisma.maidProfile.findUnique({
       where: { userId: req.user.id }
     });
-    
+
     if (!maidProfile) {
       console.log(`❌ Maid profile not found for user: ${req.user.id}`);
       return res.status(400).json({
@@ -214,13 +214,13 @@ const acceptAssignment = async (req, res) => {
         message: 'Maid profile not found'
       });
     }
-    
+
     const maidId = maidProfile.id;
     console.log(`✅ Found maid profile: ${maidId} for user: ${req.user.id}`);
 
     // Find the assignment
     console.log(`🔍 Looking for assignment: ${assignmentId} with maidId: ${maidId} and status: pending`);
-    
+
     // First try with maid profile ID match
     let assignment = await prisma.assignmentRequest.findFirst({
       where: {
@@ -236,7 +236,7 @@ const acceptAssignment = async (req, res) => {
     // If not found, try finding assignment and check if current user owns the maid profile
     if (!assignment) {
       console.log(`🔍 Assignment not found with maidId: ${maidId}, checking if user owns this assignment...`);
-      
+
       const anyAssignment = await prisma.assignmentRequest.findUnique({
         where: { id: assignmentId },
         include: {
@@ -257,18 +257,18 @@ const acceptAssignment = async (req, res) => {
 
     if (!assignment) {
       console.log(`❌ Assignment not found with criteria: assignmentId=${assignmentId}, maidId=${maidId}, status=pending`);
-      
+
       // Let's check if the assignment exists with different criteria
       const anyAssignment = await prisma.assignmentRequest.findUnique({
         where: { id: assignmentId }
       });
-      
+
       if (anyAssignment) {
         console.log(`🔍 Assignment exists but with different criteria: maidId=${anyAssignment.maidId}, status=${anyAssignment.status}`);
       } else {
         console.log(`❌ Assignment ${assignmentId} does not exist at all`);
       }
-      
+
       return res.status(404).json({
         success: false,
         message: 'Assignment not found or already processed'
@@ -314,6 +314,24 @@ const acceptAssignment = async (req, res) => {
         }
       });
 
+      // Make this maid the default for the customer
+      await tx.customerMaidAssignment.upsert({
+        where: {
+          customerId: assignment.booking.customerId
+        },
+        update: {
+          maidId: maidId,
+          isActive: true,
+          assignedAt: new Date()
+        },
+        create: {
+          customerId: assignment.booking.customerId,
+          maidId: maidId,
+          isActive: true,
+          assignedAt: new Date()
+        }
+      });
+
       return updatedAssignment;
     });
 
@@ -336,21 +354,21 @@ const rejectAssignment = async (req, res) => {
   try {
     const { assignmentId } = req.params;
     const { rejectionReason } = req.body;
-    
+
     console.log(`🔍 Rejecting assignment: ${assignmentId}, Reason: ${rejectionReason}`);
-    
+
     // Find the maid profile for this user
     const maidProfile = await prisma.maidProfile.findUnique({
       where: { userId: req.user.id }
     });
-    
+
     if (!maidProfile) {
       return res.status(400).json({
         success: false,
         message: 'Maid profile not found'
       });
     }
-    
+
     const maidId = maidProfile.id;
 
     if (!rejectionReason || rejectionReason.trim().length === 0) {
@@ -403,7 +421,7 @@ const rejectAssignment = async (req, res) => {
 
       console.log('🔍 Updating booking status to CANCELLED for reassignment...');
       console.log(`📋 Booking ID to update: ${assignment.bookingId}`);
-      
+
       // Update booking status and increment reassignment count
       const updatedBooking = await tx.booking.update({
         where: { id: assignment.bookingId },
@@ -417,7 +435,7 @@ const rejectAssignment = async (req, res) => {
           maidId: null // Remove maid assignment
         }
       });
-      
+
       console.log('✅ Booking updated successfully:', {
         id: updatedBooking.id,
         status: updatedBooking.status,
@@ -606,11 +624,11 @@ const getAssignmentStats = async (req, res) => {
       prisma.assignmentRequest.count({ where: { status: 'pending' } }),
       prisma.assignmentRequest.count({ where: { status: 'accepted' } }),
       prisma.assignmentRequest.count({ where: { status: 'rejected' } }),
-      prisma.assignmentRequest.count({ 
-        where: { 
+      prisma.assignmentRequest.count({
+        where: {
           status: 'pending',
           expiresAt: { lt: new Date() }
-        } 
+        }
       })
     ]);
 
@@ -738,7 +756,7 @@ const cancelAssignment = async (req, res) => {
 const getPendingAssignmentBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching pending assignment bookings...');
-    
+
     const bookings = await prisma.booking.findMany({
       where: {
         status: 'PENDING',
@@ -754,11 +772,11 @@ const getPendingAssignmentBookings = async (req, res) => {
     });
 
     console.log(`✅ Found ${bookings.length} pending assignment bookings`);
-    
+
     const transformedBookings = bookings.map(booking => transformBookingForFrontend(booking));
 
     console.log('✅ Successfully transformed bookings for frontend');
-    
+
     res.json({
       success: true,
       data: transformedBookings
@@ -782,7 +800,7 @@ const getPendingAssignmentBookings = async (req, res) => {
 const getAssignedBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching assigned bookings...');
-    
+
     const bookings = await prisma.booking.findMany({
       where: {
         maidId: { not: null },
@@ -801,11 +819,11 @@ const getAssignedBookings = async (req, res) => {
     });
 
     console.log(`✅ Found ${bookings.length} assigned bookings`);
-    
+
     const transformedBookings = bookings.map(booking => transformBookingForFrontend(booking));
 
     console.log('✅ Successfully transformed assigned bookings for frontend');
-    
+
     res.json({
       success: true,
       data: transformedBookings
@@ -949,7 +967,7 @@ const sendAssignmentRequest = async (req, res) => {
     console.log(`✅ Found booking: ${booking.service.name}, Status: ${booking.status}`);
 
     // Allow assignment for PENDING bookings or CANCELLED bookings (for reassignment)
-    const isAvailableForAssignment = 
+    const isAvailableForAssignment =
       (booking.status === 'PENDING' && booking.maidId === null) ||
       (booking.status === 'CANCELLED' && booking.rejectionReason !== null);
 
@@ -965,7 +983,7 @@ const sendAssignmentRequest = async (req, res) => {
 
     // Verify maid exists and is active
     console.log('🔍 Verifying maid exists and is active...');
-    
+
     // First find the user (since maidId from frontend is User.id)
     const user = await prisma.user.findUnique({
       where: { id: maidId },
@@ -1049,7 +1067,7 @@ const sendAssignmentRequest = async (req, res) => {
     console.log('✅ Transaction completed successfully');
 
     const isReassignment = booking.status === 'CANCELLED';
-    const message = isReassignment 
+    const message = isReassignment
       ? 'Reassignment request sent to maid successfully'
       : 'Assignment request sent to maid successfully';
 
@@ -1077,7 +1095,7 @@ const sendAssignmentRequest = async (req, res) => {
 const getReassignmentBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching reassignment bookings...');
-    
+
     // Only include bookings where assignmentStatus is 'REJECTED' and booking is cancelled for reassignment.
     const bookings = await prisma.booking.findMany({
       where: {
@@ -1101,7 +1119,7 @@ const getReassignmentBookings = async (req, res) => {
     });
 
     console.log(`✅ Found ${bookings.length} reassignment bookings`);
-    
+
     // Debug: Log each booking's key fields
     bookings.forEach((booking, index) => {
       console.log(`📋 Reassignment Booking ${index + 1}:`, {
@@ -1114,10 +1132,10 @@ const getReassignmentBookings = async (req, res) => {
         rejectedRequests: booking.assignmentRequests?.length || 0
       });
     });
-    
+
     const transformedBookings = bookings.map(booking => {
       const transformed = transformBookingForFrontend(booking);
-      
+
       // Add last attempt details from the most recent rejected/expired assignment request
       if (booking.assignmentRequests && booking.assignmentRequests.length > 0) {
         const lastRequest = booking.assignmentRequests[0];
@@ -1130,12 +1148,12 @@ const getReassignmentBookings = async (req, res) => {
           respondedAt: lastRequest.respondedAt
         };
       }
-      
+
       return transformed;
     });
 
     console.log('✅ Successfully transformed reassignment bookings for frontend');
-    
+
     res.json({
       success: true,
       data: transformedBookings
@@ -1203,14 +1221,14 @@ module.exports = {
   getMyAssignments,
   acceptAssignment,
   rejectAssignment,
-  
+
   // Admin routes
   getAllAssignments,
   createAssignment,
   getAssignmentStats,
   getAssignmentById,
   cancelAssignment,
-  
+
   // Admin booking management routes
   getPendingAssignmentBookings,
   getAssignedBookings,

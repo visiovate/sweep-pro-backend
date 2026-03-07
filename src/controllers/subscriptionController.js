@@ -27,10 +27,21 @@ const getSubscriptionPlans = async (req, res) => {
 
 // Available time slots (limited to 14:00)
 const AVAILABLE_TIME_SLOTS = [
+  // Frontend payment page slots (2-hour slots with spaces)
   '06:00 - 08:00',
   '08:00 - 10:00',
   '10:00 - 12:00',
-  '12:00 - 14:00'
+  '12:00 - 14:00',
+  // Database/seed slots (3-hour slots without spaces)
+  '08:00-11:00',
+  '09:00-12:00',
+  '10:00-13:00',
+  '11:00-14:00',
+  '12:00-15:00',
+  '13:00-16:00',
+  '14:00-17:00',
+  '15:00-18:00',
+  '16:00-19:00'
 ];
 
 const MAX_USERS_PER_SLOT = 20;
@@ -1478,6 +1489,11 @@ const getTimeSlotCounts = async (req, res) => {
     // Get all time slot bookings (global counts)
     const existingSlots = await prisma.timeSlotBooking.findMany();
 
+    console.log(`📊 Time Slot Counts Query - Found ${existingSlots.length} slots in database:`);
+    existingSlots.forEach(slot => {
+      console.log(`   - ${slot.timeSlot}: ${slot.count}/${slot.maxLimit}`);
+    });
+
     // Build the response with counts for all available slots
     const slotCounts = AVAILABLE_TIME_SLOTS.map(slot => {
       const existingSlot = existingSlots.find(s => s.timeSlot === slot);
@@ -1492,6 +1508,8 @@ const getTimeSlotCounts = async (req, res) => {
         isDisabled: count >= maxLimit
       };
     });
+
+    console.log(`📤 Returning time slot counts response:`, JSON.stringify(slotCounts, null, 2));
 
     res.json({
       success: true,
@@ -1514,6 +1532,20 @@ const getTimeSlotCounts = async (req, res) => {
 // Increment time slot count when a subscription is created/activated
 const incrementTimeSlotCount = async (timeSlot) => {
   try {
+    console.log(`🔄 Attempting to increment count for timeSlot: "${timeSlot}"`);
+
+    // Validate timeSlot format
+    if (!timeSlot || typeof timeSlot !== 'string') {
+      console.warn(`⚠️ Invalid timeSlot provided to incrementTimeSlotCount:`, timeSlot);
+      throw new Error(`Invalid timeSlot: ${timeSlot}`);
+    }
+
+    // Check if timeSlot is in available slots
+    if (!AVAILABLE_TIME_SLOTS.includes(timeSlot)) {
+      console.warn(`⚠️ TimeSlot not in AVAILABLE_TIME_SLOTS list: "${timeSlot}"`);
+      console.warn(`Available slots:`, AVAILABLE_TIME_SLOTS);
+    }
+
     // Upsert - create if doesn't exist, increment if exists
     const result = await prisma.timeSlotBooking.upsert({
       where: {
@@ -1529,10 +1561,22 @@ const incrementTimeSlotCount = async (timeSlot) => {
       }
     });
 
-    console.log(`✅ Time slot count incremented: ${timeSlot} - new count: ${result.count}`);
+    console.log(`✅ Time slot count incremented: "${timeSlot}" - new count: ${result.count}/${result.maxLimit}`);
+
+    // Verify the increment actually worked by reading the record back
+    const verified = await prisma.timeSlotBooking.findUnique({
+      where: { timeSlot: timeSlot }
+    });
+
+    if (verified) {
+      console.log(`✅ Verified in database: "${timeSlot}" count is ${verified.count}`);
+    } else {
+      console.error(`❌ Failed to verify timeSlot "${timeSlot}" in database after increment!`);
+    }
+
     return result;
   } catch (error) {
-    console.error('Error incrementing time slot count:', error);
+    console.error(`❌ Error incrementing time slot count for "${timeSlot}":`, error.message);
     throw error;
   }
 };
