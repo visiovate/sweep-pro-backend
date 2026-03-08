@@ -104,7 +104,7 @@ function isWithin20HourWindow(serviceDateTime, now = getCurrentUTC()) {
 
 /**
  * Format datetime for logging
- * 
+ *
  * @param {Date} date - Date to format
  * @returns {string} - ISO format string
  */
@@ -115,6 +115,20 @@ function formatDateTimeForLog(date) {
   return date.toISOString();
 }
 
+/**
+ * Get weekday name from a date
+ *
+ * @param {Date} date - Date to get weekday from
+ * @returns {string} - Weekday name (e.g., 'Monday', 'Tuesday')
+ */
+function getWeekdayName(date) {
+  if (!date) {
+    return '';
+  }
+  const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return weekdays[date.getUTCDay()];
+}
+
 module.exports = {
   combineSlotDateTime,
   getCurrentUTC,
@@ -122,4 +136,5 @@ module.exports = {
   get20HourTriggerWindow,
   isWithin20HourWindow,
   formatDateTimeForLog,
+  getWeekdayName,
 };

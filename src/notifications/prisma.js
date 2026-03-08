@@ -1,11 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database');
 
-// Reuse the PrismaClient per process.
-const prisma = global.__sweeproPrisma || new PrismaClient();
-
-if (process.env.NODE_ENV !== 'production') {
-  global.__sweeproPrisma = prisma;
-}
+// Use the singleton PrismaClient from database utility to avoid connection pool exhaustion
+const prisma = getPrismaClient();
 
 module.exports = {
   prisma

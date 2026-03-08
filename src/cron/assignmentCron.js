@@ -12,7 +12,7 @@
  */
 
 
-const { initializePrisma, getPrismaClient } = require('../utils/database');
+const { initializePrisma, getPrismaClient, disconnectDatabase } = require('../utils/database');
 const { Queue } = require('bullmq');
 const { createRedisConnection, closeRedisConnection } = require('../config/redis');
 const { retryPrismaOperation, retryRedisOperation, withTimeout } = require('../utils/retryUtils');
@@ -60,7 +60,7 @@ async function initializeQueue() {
  * - Service datetime is within the next 20 hours
  * - assignment_sent = false
  * - status is PENDING or CONFIRMED
- * - maidId is null (not yet assigned)
+ * Note: Automatic bookings may already have maidId set from CustomerMaidAssignment
  */
 async function findBookingsNeedingAssignment() {
   const now = getCurrentUTC();
@@ -71,6 +71,8 @@ async function findBookingsNeedingAssignment() {
   console.log(`   End:   ${formatDateTimeForLog(windowEnd)}`);
 
   // Fetch all eligible bookings (we'll filter combined datetime in JS for simplicity)
+  // Note: Automatic bookings from bookingCreationCron already have maidId set
+  // We should NOT filter by maidId: null, instead check assignment_sent flag
   const bookings = await retryPrismaOperation(
     () => getPrismaClient().booking.findMany({
       where: {
@@ -78,7 +80,7 @@ async function findBookingsNeedingAssignment() {
         status: {
           in: ['PENDING', 'CONFIRMED'],
         },
-        maidId: null,
+        // Removed maidId: null filter - auto bookings have maidId pre-assigned
       },
       include: {
         customer: {
@@ -102,6 +104,18 @@ async function findBookingsNeedingAssignment() {
           select: {
             id: true,
             name: true,
+          },
+        },
+        // Include maid info for automatic bookings that have maidId pre-assigned
+        maid: {
+          select: {
+            id: true,
+            name: true,
+            maidProfile: {
+              select: {
+                id: true,
+              },
+            },
           },
         },
       },
@@ -145,7 +159,16 @@ async function findBookingsNeedingAssignment() {
  * This removes distributed transactions and prevents lost assignments
  */
 async function enqueueAssignmentJob(booking, prisma) {
-  const { id: bookingId, customerId, customer, service, scheduledAt } = booking;
+  const { id: bookingId, customerId, customer, service, scheduledAt, maid } = booking;
+
+  // Get maidId (MaidProfile ID) for the job - required by assignmentQueue validation
+  const maidProfileId = maid?.maidProfile?.id;
+  const maidUserId = maid?.id;
+
+  if (!maidProfileId) {
+    console.log(`⚠️  Skipping booking ${bookingId}: no maid profile found for assigned maid`);
+    return { skipped: true, reason: 'no_maid_profile' };
+  }
 
   // Skip if customer is in buffer period (subscription-level flag)
   if (customer?.customerProfile?.subscription?.isInBufferPeriod) {
@@ -189,6 +212,9 @@ async function enqueueAssignmentJob(booking, prisma) {
           scheduledAt: booking.scheduledAt?.toISOString(),
           slot_date: booking.slot_date?.toISOString(),
           slot_time: booking.slot_time,
+          // Include maidId (MaidProfile ID) for queue validation
+          maidId: maidProfileId,
+          maidUserId: maidUserId,
         },
         {
           jobId, // Idempotent key - prevents duplicate queuing
@@ -302,6 +328,7 @@ async function runCron() {
 
 /**
  * Cleanup connections
+ * IMPORTANT: Always disconnect database to prevent connection pool exhaustion
  */
 async function cleanup() {
   console.log('🧹 Cleaning up connections...');
@@ -322,11 +349,8 @@ async function cleanup() {
     console.warn('⚠️  Failed to close Redis:', error.message);
   }
 
-  try {
-    await getPrismaClient().$disconnect();
-  } catch (error) {
-    console.warn('⚠️  Failed to disconnect Prisma:', error.message);
-  }
+  // Use disconnectDatabase to properly close connections and reset state
+  await disconnectDatabase();
 
   console.log('✅ Cleanup complete');
 }

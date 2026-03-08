@@ -5,6 +5,7 @@ const subscriptionBufferService = require('./subscriptionBufferService');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
 const { incrementTimeSlotCount } = require('../controllers/subscriptionController');
+const { getWeekdayName } = require('../utils/timeUtils');
 
 // Using getPrismaClient() directly
 
@@ -139,7 +140,193 @@ class RazorpayService {
           payload: { subscriptionId: activatedSubscription.id },
           dedupeKey: `subscription-activated:${activatedSubscription.id}`
         });
+
+        // Create initial booking for tomorrow immediately after payment
+        // This ensures the "Next Booking" shows up right away in the admin panel
+        await this.createInitialBookingForSubscriber(activatedSubscription);
       }
+    }
+  }
+
+  /**
+   * Create the first booking for a new subscriber immediately after payment
+   * This ensures they see a booking in "Next Booking" right away
+   * @param {Object} subscription - The activated subscription with customer and plan info
+   */
+  async createInitialBookingForSubscriber(subscription) {
+    try {
+      const customerId = subscription.customer.userId;
+      const customer = subscription.customer.user;
+
+      console.log(`📅 Creating initial booking for new subscriber: ${customer.name} (${customerId})`);
+
+      // Check if customer has an active maid assignment
+      const assignment = await getPrismaClient().customerMaidAssignment.findFirst({
+        where: {
+          customerId: customerId,
+          isActive: true
+        },
+        include: {
+          maid: {
+            include: {
+              user: { select: { id: true, name: true } }
+            }
+          }
+        }
+      });
+
+      if (!assignment) {
+        console.log(`⚠️ No maid assigned to customer ${customer.name}, skipping initial booking creation`);
+        return null;
+      }
+
+      // Calculate tomorrow's date
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      tomorrow.setUTCHours(0, 0, 0, 0);
+
+      const dayAfterTomorrow = new Date(tomorrow);
+      dayAfterTomorrow.setUTCDate(dayAfterTomorrow.getUTCDate() + 1);
+
+      // Check if maid is on weekly off tomorrow
+      const tomorrowWeekday = getWeekdayName(tomorrow);
+      if (assignment.maid.weeklyOffDay) {
+        const normalizedWeekday = tomorrowWeekday.toUpperCase();
+        const normalizedOffDay = assignment.maid.weeklyOffDay.toUpperCase();
+        if (normalizedWeekday === normalizedOffDay) {
+          console.log(`🏖️ Maid's weekly off tomorrow (${assignment.maid.weeklyOffDay}), skipping booking`);
+          return null;
+        }
+      }
+
+      // Check if booking already exists for tomorrow
+      const existingBooking = await getPrismaClient().booking.findFirst({
+        where: {
+          customerId: customerId,
+          scheduledAt: {
+            gte: tomorrow,
+            lt: dayAfterTomorrow
+          }
+        }
+      });
+
+      if (existingBooking) {
+        console.log(`📋 Booking already exists for tomorrow (${existingBooking.id}), skipping`);
+        return existingBooking;
+      }
+
+      // Get default service
+      let defaultService = await getPrismaClient().service.findFirst({
+        where: {
+          isActive: true,
+          isSubscriptionService: true
+        }
+      });
+
+      if (!defaultService) {
+        defaultService = await getPrismaClient().service.findFirst({
+          where: { isActive: true }
+        });
+      }
+
+      if (!defaultService) {
+        console.error('❌ No active service found for booking creation');
+        return null;
+      }
+
+      // Parse customer's time slot
+      const timeSlot = customer.timeSlot || '09:00-12:00';
+      const startTime = timeSlot.split('-')[0] || '09:00';
+      const [hoursIST, minutesIST] = startTime.split(':').map(Number);
+
+      // Convert IST to UTC (IST is UTC+5:30)
+      const scheduledAtIST = new Date(tomorrow);
+      scheduledAtIST.setUTCHours(hoursIST || 9, minutesIST || 0, 0, 0);
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      const scheduledAt = new Date(scheduledAtIST.getTime() - IST_OFFSET_MS);
+
+      // Create the booking
+      const booking = await getPrismaClient().booking.create({
+        data: {
+          customerId: customerId,
+          maidId: assignment.maid.userId,
+          serviceId: defaultService.id,
+          scheduledAt: scheduledAt,
+          slot_date: tomorrow,
+          slot_time: scheduledAt,
+          timeSlot: timeSlot,
+          status: 'PENDING',
+          assignmentStatus: 'PENDING_ASSIGNMENT',
+          assignment_sent: false,
+          totalAmount: defaultService.basePrice,
+          finalAmount: defaultService.basePrice,
+          serviceAddress: customer.address || 'Customer Address',
+          estimatedDuration: defaultService.baseDuration,
+          isAutomatic: true,
+          specialInstructions: `Initial booking after subscription payment for ${timeSlot} time slot`
+        }
+      });
+
+      // Calculate expiry time for assignment request (24 hours or 2 hours before service)
+      const ASSIGNMENT_REQUEST_EXPIRY_HOURS = 24;
+      const MIN_HOURS_BEFORE_SERVICE = 2;
+      const hoursBeforeService = (scheduledAt.getTime() - now.getTime()) / (1000 * 60 * 60);
+      let expiresAt;
+      if (hoursBeforeService > ASSIGNMENT_REQUEST_EXPIRY_HOURS + MIN_HOURS_BEFORE_SERVICE) {
+        expiresAt = new Date(now.getTime() + (ASSIGNMENT_REQUEST_EXPIRY_HOURS * 60 * 60 * 1000));
+      } else {
+        expiresAt = new Date(scheduledAt.getTime() - (MIN_HOURS_BEFORE_SERVICE * 60 * 60 * 1000));
+      }
+
+      // Create AssignmentRequest so maid can accept/reject
+      const assignmentRequest = await getPrismaClient().assignmentRequest.create({
+        data: {
+          bookingId: booking.id,
+          maidId: assignment.maid.id, // MaidProfile ID
+          status: 'pending',
+          expiresAt: expiresAt
+        }
+      });
+
+      // Update booking to mark assignment request sent
+      await getPrismaClient().booking.update({
+        where: { id: booking.id },
+        data: {
+          assignment_sent: true,
+          assignment_sent_at: now
+        }
+      });
+
+      // Send notification to maid
+      try {
+        await getPrismaClient().notification.create({
+          data: {
+            userId: assignment.maid.userId,
+            type: 'ASSIGNMENT_REQUEST',
+            title: 'New Service Assignment Request',
+            message: `You have a new service assignment for ${customer.name} on ${tomorrow.toISOString().split('T')[0]} at ${hoursIST}:${String(minutesIST || 0).padStart(2, '0')} IST. Please respond within 24 hours.`,
+            data: {
+              bookingId: booking.id,
+              assignmentRequestId: assignmentRequest.id,
+              serviceAddress: customer.address,
+              scheduledAt: scheduledAt.toISOString(),
+              expiresAt: expiresAt.toISOString()
+            }
+          }
+        });
+      } catch (notifError) {
+        console.warn(`⚠️ Failed to send notification to maid: ${notifError.message}`);
+      }
+
+      console.log(`✅ Initial booking created for ${customer.name}: ${booking.id.substring(0, 8)}... @ ${hoursIST}:${minutesIST || '00'} IST`);
+      console.log(`📬 Assignment request created: ${assignmentRequest.id.substring(0, 8)}... (expires: ${expiresAt.toISOString()})`);
+      return booking;
+
+    } catch (error) {
+      console.error(`❌ Failed to create initial booking for subscriber:`, error.message);
+      // Don't throw - this is a non-critical operation
+      return null;
     }
   }
 
@@ -415,6 +602,10 @@ class RazorpayService {
         }
 
         await subscriptionBufferService.scheduleMonthlyServices(updatedPayment.subscriptionId);
+
+        // Create initial booking for tomorrow immediately after subscription activation
+        // This ensures the "Next Booking" shows up right away in the admin panel
+        await this.createInitialBookingForSubscriber(updatedSubscription);
       }
 
       return {

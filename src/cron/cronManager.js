@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database');
 const { scheduleAllAssignments } = require('../queues/assignmentQueue');
 
 const prisma = getPrismaClient();

@@ -619,6 +619,7 @@ const getCustomerStatus = async (req, res) => {
           email: assignment.maid.user.email,
           phone: assignment.maid.user.phone,
           rating: assignment.maid.rating,
+          totalRatings: assignment.maid.totalRatings,
           skills: assignment.maid.skills,
           completedBookings: assignment.maid.completedBookings,
           weeklyOffDay: assignment.maid.weeklyOffDay

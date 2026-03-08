@@ -93,7 +93,7 @@ async function retryPrismaOperation(fn, operationName = 'DB operation') {
     baseDelay: 1000,
     maxDelay: 30000,
     shouldRetry: (error) => {
-      // Retry on connection errors, timeout, deadlock
+      // Retry on connection errors, timeout, deadlock, pool exhaustion
       const retryableCodes = [
         'P1001', // Can't reach database server
         'P1002', // Database server timeout
@@ -101,14 +101,17 @@ async function retryPrismaOperation(fn, operationName = 'DB operation') {
         'P1017', // Server has closed the connection
         'P2024', // Timed out fetching a new connection
         'P2034', // Transaction failed due to write conflict
+        'P2037', // Too many database connections (pool exhausted)
       ];
-      
+
       const isRetryable = retryableCodes.includes(error?.code) ||
                          error?.message?.includes('ECONNREFUSED') ||
                          error?.message?.includes('ETIMEDOUT') ||
                          error?.message?.includes('connection') ||
-                         error?.message?.includes('timeout');
-      
+                         error?.message?.includes('timeout') ||
+                         error?.message?.includes('too many clients') ||
+                         error?.message?.includes('connection slots');
+
       return isRetryable;
     },
     onRetry: (error, attempt, delay) => {

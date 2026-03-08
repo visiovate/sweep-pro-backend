@@ -497,7 +497,9 @@ async function processAssignmentJob(job) {
           throw error;
         }
       }, {
-        isolationLevel: 'Serializable',
+        // Use ReadCommitted instead of Serializable to prevent deadlocks
+        // Serializable causes P2034 "write conflict" errors under concurrent load
+        isolationLevel: 'ReadCommitted',
         timeout: 15000, // 15 second timeout
       }),
       `Process assignment for booking ${bookingId}`
@@ -631,10 +633,13 @@ const worker = new Worker(
   },
   {
     connection,
-    concurrency: 5, // Process up to 5 jobs concurrently
+    // Reduced concurrency to prevent connection pool exhaustion
+    // Aiven free tier: max_connections=20, system uses ~9, connection_limit=5
+    // With transactions, 2 concurrent workers is safer
+    concurrency: 2,
     limiter: {
-      max: 10, // Max 10 jobs
-      duration: 1000, // per second
+      max: 5, // Max 5 jobs per second (reduced from 10)
+      duration: 1000,
     },
     settings: {
       stalledInterval: 30 * 1000, // Check for stalled jobs every 30 seconds

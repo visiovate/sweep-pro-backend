@@ -3,26 +3,38 @@ const { PrismaClient } = require('@prisma/client');
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 3;
 
-// Eagerly instantiate Prisma so that getPrismaClient() always returns a valid
-// instance, avoiding null-reference errors in controllers that import it at module level.
-// Connection is still made lazily on the first query, or when initializePrisma() is called.
-let prisma = new PrismaClient({
-  log: ['error', 'warn'],
-  errorFormat: 'pretty',
-});
+// Single PrismaClient instance for the entire application.
+// Connection pool size is controlled by `connection_limit` in DATABASE_URL.
+// Aiven free tier: max_connections=20, system uses ~9, so connection_limit=5 is safe.
+// IMPORTANT: PrismaClient is created lazily to prevent connection pool exhaustion
+// when running as cron jobs that may fail before proper cleanup.
+let prisma = null;
+
+/**
+ * Create a new PrismaClient instance with proper configuration
+ */
+function createPrismaClient() {
+  return new PrismaClient({
+    log: ['error', 'warn'],
+    errorFormat: 'pretty',
+  });
+}
 
 /**
  * Initialize Prisma client with retry logic
+ * Creates the PrismaClient lazily to prevent connection pool exhaustion
  */
 async function initializePrisma() {
   try {
-    // Check if already connected (optimization)
     if (connectionAttempts === 0) {
-      // If we haven't tried connecting yet, assume we need to
       console.log('🔄 Initializing database connection...');
     }
 
-    // Test the connection
+    // Create PrismaClient lazily if it doesn't exist
+    if (!prisma) {
+      prisma = createPrismaClient();
+    }
+
     await prisma.$connect();
 
     if (connectionAttempts === 0) {
@@ -33,6 +45,19 @@ async function initializePrisma() {
   } catch (error) {
     connectionAttempts++;
     console.error(`❌ Database connection failed (attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}):`, error.message);
+
+    if (error.message?.includes('too many clients') || error.message?.includes('connection slots are reserved')) {
+      console.error('⚠️ Database connection pool exhausted. Idle connections may need to be cleared on the server.');
+      // Disconnect and destroy the client to release any partial connections
+      if (prisma) {
+        try {
+          await prisma.$disconnect();
+        } catch (disconnectError) {
+          // Ignore disconnect errors during cleanup
+        }
+        prisma = null;
+      }
+    }
 
     if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
       console.log(`🔄 Retrying database connection in 5 seconds...`);
@@ -46,18 +71,24 @@ async function initializePrisma() {
 }
 
 /**
- * Get Prisma client instance
+ * Get Prisma client instance (singleton)
+ * Creates the client lazily if it doesn't exist yet.
+ * NOTE: For cron jobs, always call initializePrisma() first to ensure proper connection.
+ * For the main app, this lazy creation handles the case where modules are imported
+ * before initializePrisma() is called.
  */
 function getPrismaClient() {
+  if (!prisma) {
+    prisma = createPrismaClient();
+  }
   return prisma;
 }
 
 function requirePrismaClient() {
-  const client = getPrismaClient();
-  if (!client) {
+  if (!prisma) {
     throw new Error('Prisma client not initialized');
   }
-  return client;
+  return prisma;
 }
 
 /**
@@ -79,6 +110,7 @@ async function isDatabaseConnected() {
 
 /**
  * Gracefully disconnect from database
+ * IMPORTANT: Always call this when shutting down to prevent connection leaks
  */
 async function disconnectDatabase() {
   if (prisma) {
@@ -86,9 +118,10 @@ async function disconnectDatabase() {
       await prisma.$disconnect();
       console.log('✅ Database disconnected successfully');
     } catch (error) {
-      console.error('❌ Error disconnecting from database:', error);
+      console.error('❌ Error disconnecting from database:', error.message);
     } finally {
       prisma = null;
+      connectionAttempts = 0;
     }
   }
 }
@@ -111,14 +144,12 @@ async function executeWithErrorHandling(operation, operationName = 'Database ope
   } catch (error) {
     console.error(`❌ ${operationName} failed:`, error.message);
 
-    // If it's a connection error, try to reinitialize
     if (error.message.includes('Can\'t reach database server') ||
       error.message.includes('Connection refused') ||
       error.message.includes('Database connection not available')) {
       console.log('🔄 Attempting to reconnect to database...');
       try {
         await initializePrisma();
-        // Retry the operation once
         return await operation(prisma);
       } catch (retryError) {
         console.error('❌ Database reconnection failed:', retryError.message);
