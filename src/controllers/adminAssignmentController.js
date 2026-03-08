@@ -3,6 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const JobScheduler = require('../services/jobScheduler');
 const { formatInIST } = require('../utils/timeSlotUtils');
 const { runDailyBookingAutomation } = require('../scripts/daily-booking-automation');
+const { createBookingForCustomer } = require('../cron/bookingCreationCron');
 
 const prisma = getPrismaClient();
 
@@ -344,6 +345,23 @@ const createAssignment = async (req, res) => {
       console.log(`✅ Job scheduling triggered for new assignment`);
     } catch (scheduleError) {
       console.error(`⚠️  Failed to schedule job for new assignment:`, scheduleError.message);
+    }
+
+    // Create immediate booking for tomorrow so customer sees "Next Booking" right away
+    try {
+      const bookingResult = await createBookingForCustomer(
+        customerId,
+        maidId,  // maidProfileId
+        maidProfile.user.id  // maidUserId
+      );
+      if (bookingResult.success) {
+        console.log(`✅ Immediate booking created: ${bookingResult.bookingId}`);
+      } else {
+        console.log(`ℹ️ Booking not created: ${bookingResult.reason}`);
+      }
+    } catch (bookingError) {
+      console.error('⚠️ Failed to create immediate booking:', bookingError);
+      // Don't fail the request - the cron job will create it later
     }
 
     res.json({
