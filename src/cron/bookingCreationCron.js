@@ -315,6 +315,265 @@ async function createBookingsForTomorrow() {
   return stats;
 }
 
+/**
+ * Create a booking for a specific customer for tomorrow
+ * This is called when a new maid assignment is created to ensure the customer
+ * gets their first booking immediately, rather than waiting for the cron job.
+ *
+ * @param {string} customerId - The customer's user ID
+ * @param {string} maidProfileId - The maid's profile ID (MaidProfile.id)
+ * @param {string} maidUserId - The maid's user ID (User.id)
+ * @returns {Object} Result with booking info or reason for skipping
+ */
+async function createBookingForCustomer(customerId, maidProfileId, maidUserId) {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  tomorrow.setUTCHours(0, 0, 0, 0);
+
+  const dayAfterTomorrow = new Date(tomorrow);
+  dayAfterTomorrow.setUTCDate(dayAfterTomorrow.getUTCDate() + 1);
+
+  const tomorrowWeekday = getWeekdayName(tomorrow);
+
+  console.log(`\n🆕 Creating immediate booking for customer ${customerId}`);
+  console.log(`   Target date: ${tomorrow.toISOString().split('T')[0]} (${tomorrowWeekday.toUpperCase()})`);
+
+  try {
+    // Get customer with subscription info
+    const customer = await getPrismaClient().user.findUnique({
+      where: { id: customerId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        address: true,
+        timeSlot: true,
+        customerProfile: {
+          select: {
+            subscription: {
+              select: {
+                id: true,
+                status: true,
+                isInBufferPeriod: true,
+                bufferStartDate: true,
+                bufferEndDate: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!customer) {
+      console.log(`   ⚠️ Customer not found`);
+      return { success: false, reason: 'customer_not_found' };
+    }
+
+    const customerName = customer.name || 'Customer';
+    const subscription = customer.customerProfile?.subscription;
+
+    // Skip if no customer profile
+    if (!customer.customerProfile) {
+      console.log(`   ⚠️ ${customerName} -- no customer profile found`);
+      return { success: false, reason: 'no_customer_profile' };
+    }
+
+    // Skip if no subscription
+    if (!subscription) {
+      console.log(`   ⚠️ ${customerName} -- no subscription found`);
+      return { success: false, reason: 'no_subscription' };
+    }
+
+    // Skip if subscription not active
+    if (subscription.status !== 'ACTIVE') {
+      console.log(`   ⚠️ ${customerName} -- subscription not active (status: ${subscription.status})`);
+      return { success: false, reason: 'subscription_not_active', status: subscription.status };
+    }
+
+    // Check if customer is in buffer period
+    if (subscription.isInBufferPeriod) {
+      const bufferStart = subscription.bufferStartDate ? new Date(subscription.bufferStartDate) : null;
+      const bufferEnd = subscription.bufferEndDate ? new Date(subscription.bufferEndDate) : null;
+
+      if (bufferStart && bufferEnd && tomorrow >= bufferStart && tomorrow <= bufferEnd) {
+        console.log(`   ⏸️ ${customerName} -- in buffer period`);
+        return { success: false, reason: 'in_buffer_period' };
+      }
+    }
+
+    // Get maid info to check weekly off
+    const maidProfile = await getPrismaClient().maidProfile.findUnique({
+      where: { id: maidProfileId },
+      select: {
+        id: true,
+        weeklyOffDay: true,
+        userId: true,
+        user: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    if (!maidProfile) {
+      console.log(`   ⚠️ Maid profile not found`);
+      return { success: false, reason: 'maid_not_found' };
+    }
+
+    // Check if tomorrow is maid's weekly off
+    if (maidProfile.weeklyOffDay) {
+      const normalizedWeekday = tomorrowWeekday.toUpperCase();
+      const normalizedOffDay = maidProfile.weeklyOffDay.toUpperCase();
+      if (normalizedWeekday === normalizedOffDay) {
+        console.log(`   🏖️ ${customerName} -- maid's weekly off day (${maidProfile.weeklyOffDay})`);
+        return { success: false, reason: 'maid_weekly_off', offDay: maidProfile.weeklyOffDay };
+      }
+    }
+
+    // Parse customer's time slot
+    const timeSlot = customer.timeSlot || '09:00-12:00';
+    const startTime = timeSlot.split('-')[0] || '09:00';
+    const [hoursIST, minutesIST] = startTime.split(':').map(Number);
+
+    // Convert IST to UTC
+    const scheduledAtIST = new Date(tomorrow);
+    scheduledAtIST.setUTCHours(hoursIST || 9, minutesIST || 0, 0, 0);
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+    const scheduledAt = new Date(scheduledAtIST.getTime() - IST_OFFSET_MS);
+
+    // Check if booking already exists
+    const existingBooking = await getPrismaClient().booking.findFirst({
+      where: {
+        customerId: customer.id,
+        scheduledAt: {
+          gte: tomorrow,
+          lt: dayAfterTomorrow
+        }
+      }
+    });
+
+    if (existingBooking) {
+      console.log(`   📋 ${customerName} -- booking already exists for tomorrow`);
+      return {
+        success: true,
+        reason: 'already_exists',
+        bookingId: existingBooking.id,
+        scheduledAt: existingBooking.scheduledAt
+      };
+    }
+
+    // Get default service
+    let defaultService = await getPrismaClient().service.findFirst({
+      where: {
+        isActive: true,
+        isSubscriptionService: true
+      }
+    });
+
+    if (!defaultService) {
+      defaultService = await getPrismaClient().service.findFirst({
+        where: { isActive: true }
+      });
+    }
+
+    if (!defaultService) {
+      console.log(`   ❌ No active service found`);
+      return { success: false, reason: 'no_active_service' };
+    }
+
+    // Create the booking
+    const booking = await getPrismaClient().booking.create({
+      data: {
+        customerId: customer.id,
+        maidId: maidUserId,
+        serviceId: defaultService.id,
+        scheduledAt: scheduledAt,
+        slot_date: tomorrow,
+        slot_time: scheduledAt,
+        timeSlot: timeSlot,
+        status: 'PENDING',
+        assignmentStatus: 'PENDING_ASSIGNMENT',
+        assignment_sent: false,
+        totalAmount: defaultService.basePrice,
+        finalAmount: defaultService.basePrice,
+        serviceAddress: customer.address || 'Customer Address',
+        estimatedDuration: defaultService.baseDuration,
+        isAutomatic: true,
+        specialInstructions: `Automatic booking for ${timeSlot} time slot`
+      }
+    });
+
+    // Calculate expiry time for the assignment request
+    const hoursBeforeService = (scheduledAt.getTime() - now.getTime()) / (1000 * 60 * 60);
+    let expiresAt;
+    if (hoursBeforeService > ASSIGNMENT_REQUEST_EXPIRY_HOURS + MIN_HOURS_BEFORE_SERVICE) {
+      expiresAt = new Date(now.getTime() + (ASSIGNMENT_REQUEST_EXPIRY_HOURS * 60 * 60 * 1000));
+    } else {
+      expiresAt = new Date(scheduledAt.getTime() - (MIN_HOURS_BEFORE_SERVICE * 60 * 60 * 1000));
+    }
+
+    // Create AssignmentRequest
+    const assignmentRequest = await getPrismaClient().assignmentRequest.create({
+      data: {
+        bookingId: booking.id,
+        maidId: maidProfileId,
+        status: 'pending',
+        expiresAt: expiresAt
+      }
+    });
+
+    // Update booking to mark assignment request sent
+    await getPrismaClient().booking.update({
+      where: { id: booking.id },
+      data: {
+        assignment_sent: true,
+        assignment_sent_at: now
+      }
+    });
+
+    // Create notification for the maid
+    try {
+      const timeStrIST = `${String(hoursIST || 9).padStart(2, '0')}:${String(minutesIST || 0).padStart(2, '0')}`;
+      await getPrismaClient().notification.create({
+        data: {
+          userId: maidUserId,
+          type: 'ASSIGNMENT_REQUEST',
+          title: 'New Service Assignment Request',
+          message: `You have a new automatic service assignment for ${customerName} on ${tomorrow.toISOString().split('T')[0]} at ${timeStrIST} IST. Please respond within 24 hours.`,
+          data: {
+            bookingId: booking.id,
+            assignmentRequestId: assignmentRequest.id,
+            serviceAddress: customer.address,
+            scheduledAt: scheduledAt.toISOString(),
+            expiresAt: expiresAt.toISOString()
+          }
+        }
+      });
+    } catch (notifError) {
+      console.warn(`   ⚠️ Failed to send notification: ${notifError.message}`);
+    }
+
+    const timeStrIST = `${String(hoursIST || 9).padStart(2, '0')}:${String(minutesIST || 0).padStart(2, '0')}`;
+    console.log(`   ✅ ${customerName} -- created booking (${booking.id.substring(0, 8)}...) @ ${timeStrIST} IST`);
+
+    return {
+      success: true,
+      bookingId: booking.id,
+      assignmentRequestId: assignmentRequest.id,
+      scheduledAt: scheduledAt,
+      expiresAt: expiresAt
+    };
+
+  } catch (error) {
+    console.error(`   ❌ Error creating booking for customer ${customerId}:`, error.message);
+    return { success: false, reason: 'error', error: error.message };
+  }
+}
+
 module.exports = {
-  createBookingsForTomorrow
+  createBookingsForTomorrow,
+  createBookingForCustomer
 };

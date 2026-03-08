@@ -317,11 +317,13 @@ const acceptAssignment = async (req, res) => {
       // Make this maid the default for the customer
       await tx.customerMaidAssignment.upsert({
         where: {
-          customerId: assignment.booking.customerId
+          customerId_isActive: {
+            customerId: assignment.booking.customerId,
+            isActive: true
+          }
         },
         update: {
           maidId: maidId,
-          isActive: true,
           assignedAt: new Date()
         },
         create: {
