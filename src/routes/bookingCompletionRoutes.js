@@ -8,7 +8,7 @@ const {
   startBookingService,
   generateMaidQRCode
 } = require('../controllers/bookingCompletionController');
-const { getMaidIdentityQR, generateCodesForAllMaids } = require('../controllers/customerBookingCompletionController');
+const { getMaidIdentityQR, generateCodesForAllMaids, setMaidCustomCode } = require('../controllers/customerBookingCompletionController');
 
 /**
  * Booking Completion Routes
@@ -21,6 +21,9 @@ router.get('/maid/assigned', auth, checkRole(['MAID']), getAssignedBookings);
 
 // Get maid's verification code (for customers to verify)
 router.get('/maid/qr-code', auth, checkRole(['MAID', 'FLOATING_MAID']), getMaidIdentityQR);
+
+// Maid sets/updates their custom verification code
+router.put('/maid/custom-code', auth, checkRole(['MAID', 'FLOATING_MAID']), setMaidCustomCode);
 
 // Admin: Generate verification codes for all maids without one
 router.post('/admin/generate-maid-codes', auth, checkRole(['ADMIN']), generateCodesForAllMaids);

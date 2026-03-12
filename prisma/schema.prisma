@@ -132,7 +132,7 @@ model MaidProfile {
   profileViews       Int                 @default(0)
   isVerified         Boolean             @default(false)
   verificationDate   DateTime?
-  verificationCode   String?             @unique // Unique 6-character code for service verification (e.g., "ABC123")
+  verificationCode   String?             @unique // Unique 10-character alphanumeric code for service verification (e.g., "ABCDE12345")
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   attendance         Attendance[]

@@ -3,18 +3,18 @@ const { getPrismaClient } = require('../utils/database');
 const prisma = getPrismaClient();
 
 /**
- * Generate a unique 6-character alphanumeric verification code
- * Format: ABC123 (3 letters + 3 numbers)
+ * Generate a unique 10-character alphanumeric verification code
+ * Format: 5 letters + 5 numbers (e.g., "ABCDE12345")
  */
 function generateVerificationCode() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // Removed I and O to avoid confusion
   const numbers = '23456789'; // Removed 0 and 1 to avoid confusion
 
   let code = '';
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     code += letters.charAt(Math.floor(Math.random() * letters.length));
   }
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     code += numbers.charAt(Math.floor(Math.random() * numbers.length));
   }
   return code;
@@ -322,9 +322,83 @@ const generateCodesForAllMaids = async (req, res) => {
   }
 };
 
+/**
+ * Set or update maid's custom verification code (10 alphanumeric characters)
+ * Allows maid to choose their own code
+ */
+const setMaidCustomCode = async (req, res) => {
+  try {
+    const { code } = req.body;
+
+    if (!code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a verification code'
+      });
+    }
+
+    const normalizedCode = code.toString().toUpperCase().trim();
+
+    // Validate: must be exactly 10 alphanumeric characters
+    if (!/^[A-Z0-9]{10}$/.test(normalizedCode)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code must be exactly 10 alphanumeric characters (letters and numbers only)'
+      });
+    }
+
+    // Check uniqueness
+    const existing = await prisma.maidProfile.findUnique({
+      where: { verificationCode: normalizedCode }
+    });
+
+    if (existing && existing.userId !== req.user.id) {
+      return res.status(409).json({
+        success: false,
+        message: 'This code is already taken. Please choose a different one.'
+      });
+    }
+
+    const maidProfile = await prisma.maidProfile.findUnique({
+      where: { userId: req.user.id }
+    });
+
+    if (!maidProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Maid profile not found'
+      });
+    }
+
+    const updated = await prisma.maidProfile.update({
+      where: { id: maidProfile.id },
+      data: { verificationCode: normalizedCode }
+    });
+
+    console.log(`✅ Maid ${req.user.name} set custom verification code: ${normalizedCode}`);
+
+    res.json({
+      success: true,
+      message: 'Verification code updated successfully',
+      data: {
+        verificationCode: updated.verificationCode
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error setting custom verification code:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update verification code',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   customerCompleteBookingWithQR,
   getMaidIdentityQR,
   generateCodesForAllMaids,
-  generateUniqueVerificationCode
+  generateUniqueVerificationCode,
+  setMaidCustomCode
 };
