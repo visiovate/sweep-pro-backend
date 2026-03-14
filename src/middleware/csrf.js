@@ -57,7 +57,7 @@ const csrfProtection = (req, res, next) => {
   res.cookie('csrf-token', csrfToken, {
     httpOnly: false,   // must be readable by JS
     secure: isSecure,
-    sameSite: 'strict',
+    sameSite: isSecure ? 'none' : 'strict',  // 'none' for cross-origin in production, 'strict' for same-origin dev
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   });
 
@@ -103,7 +103,7 @@ const csrfIssue = (req, res, next) => {
   res.cookie('csrf-token', token, {
     httpOnly: false,
     secure: isSecure,
-    sameSite: 'strict',
+    sameSite: isSecure ? 'none' : 'strict',  // 'none' for cross-origin in production, 'strict' for same-origin dev
     maxAge: 24 * 60 * 60 * 1000
   });
   res.locals.csrfToken = token;
