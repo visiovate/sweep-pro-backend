@@ -239,7 +239,10 @@ app.use(cors({
   allowedHeaders: [
     'Content-Type', 'Authorization', 'X-Requested-With', 'Accept',
     'Origin', 'Cache-Control', 'Pragma',
-    'X-CSRF-Token'  // M7: expose CSRF header to browser
+    'X-CSRF-Token'  // M7: allow CSRF header in requests
+  ],
+  exposedHeaders: [
+    'X-CSRF-Token'  // M7: allow frontend JS to read the CSRF token from response headers (cross-origin)
   ],
   preflightContinue: false,
   optionsSuccessStatus: 200
