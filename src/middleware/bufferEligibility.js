@@ -1,6 +1,6 @@
 /**
  * Middleware to check if user's subscription plan has buffer system access
- * Only SweePro Lux users should have access to buffer features
+ * Only Sweepro Lux users should have access to buffer features
  */
 
 const checkBufferEligibility = async (req, res, next) => {
@@ -31,10 +31,10 @@ const checkBufferEligibility = async (req, res, next) => {
     if (!subscription.plan.hasBufferSystem) {
       return res.status(403).json({
         success: false,
-        message: `Buffer system is only available for SweePro Lux plan. Your current plan (${subscription.plan.name}) does not have access to buffer features.`,
+        message: `Buffer system is only available for Sweepro Lux plan. Your current plan (${subscription.plan.name}) does not have access to buffer features.`,
         code: 'PLAN_NOT_ELIGIBLE_FOR_BUFFER',
         currentPlan: subscription.plan.name,
-        requiredPlan: 'SweePro Lux'
+        requiredPlan: 'Sweepro Lux'
       });
     }
 

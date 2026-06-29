@@ -150,7 +150,7 @@ async function generateInvoicePDF(paymentId) {
   const hasLogo = fs.existsSync(LOGO_PATH);
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
+    const doc = new PDFDocument({ size: 'A4', margins: { top: 50, bottom: 30, left: 50, right: 50 }, bufferPages: true });
     const chunks = [];
 
     doc.on('data', c => chunks.push(c));
@@ -341,7 +341,7 @@ async function generateInvoicePDF(paymentId) {
 
     // ── Legal note & Footer ───────────────────────────────────────────────────
     // Push closer to bottom margin
-    const FOOTER_Y = pH - 70;
+    const FOOTER_Y = pH - 75;
 
     drawGradientBand(doc, 50, FOOTER_Y, W - 100, 1.5, BRAND_INDIGO, BRAND_CRIMSON);
 

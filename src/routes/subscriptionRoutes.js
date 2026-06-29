@@ -36,7 +36,7 @@ router.post('/subscribe', authenticateToken, subscribeToPlan);
 router.get('/my-subscription', authenticateToken, getUserSubscription);
 router.get('/status', authenticateToken, checkSubscriptionStatus);
 router.get('/monthly-status', authenticateToken, getMonthlySubscriptionStatus);
-// Buffer routes with eligibility check - only for SweePro Lux users
+// Buffer routes with eligibility check - only for Sweepro Lux users
 router.post('/buffer/start', authenticateToken, checkBufferEligibility, startBufferPeriod);
 router.post('/buffer/end', authenticateToken, checkBufferEligibility, endBufferPeriod);
 router.post('/complete-payment', authenticateToken, completeSubscriptionPayment);

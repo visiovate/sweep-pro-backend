@@ -13,7 +13,7 @@ router.use(prisma);
 /**
  * @route   GET /api/buffer/subscription/:subscriptionId/remaining
  * @desc    Get remaining buffer days for a subscription (customer)
- * @access  Private (Customer - SweePro Lux only)
+ * @access  Private (Customer - Sweepro Lux only)
  */
 router.get(
   '/subscription/:subscriptionId/remaining',
@@ -32,7 +32,7 @@ router.get(
 /**
  * @route   POST /api/buffer/subscription/:subscriptionId/request
  * @desc    Request buffer days (customer)
- * @access  Private (Customer - SweePro Lux only)
+ * @access  Private (Customer - Sweepro Lux only)
  */
 router.post(
   '/subscription/:subscriptionId/request',
@@ -87,7 +87,7 @@ router.post(
 /**
  * @route   GET /api/buffer/subscription/:subscriptionId/history
  * @desc    Get customer's buffer history (customer)
- * @access  Private (Customer - SweePro Lux only)
+ * @access  Private (Customer - Sweepro Lux only)
  */
 router.get(
   '/subscription/:subscriptionId/history',
@@ -218,7 +218,7 @@ router.get(
 /**
  * @route   GET /api/buffer/subscription/:subscriptionId/check-conflict
  * @desc    Check if a date conflicts with buffer periods (customer)
- * @access  Private (Customer - SweePro Lux only)
+ * @access  Private (Customer - Sweepro Lux only)
  */
 router.get(
   '/subscription/:subscriptionId/check-conflict',
@@ -230,7 +230,7 @@ router.get(
 /**
  * @route   GET /api/buffer/subscription/:subscriptionId/current-status
  * @desc    Check current buffer period status (customer)
- * @access  Private (Customer - SweePro Lux only)
+ * @access  Private (Customer - Sweepro Lux only)
  */
 router.get(
   '/subscription/:subscriptionId/current-status',
