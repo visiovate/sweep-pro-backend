@@ -67,6 +67,15 @@ const csrfProtection = (req, res, next) => {
     return next();
   }
 
+  // Bearer-token requests are not automatically attached by the browser,
+  // so they are not vulnerable to classic CSRF. Only enforce CSRF when the
+  // request is using the cookie-based auth flow.
+  const hasBearerAuth = Boolean(req.headers.authorization?.startsWith('Bearer '));
+  const hasAuthCookie = Boolean(req.cookies?.authToken);
+  if (hasBearerAuth && !hasAuthCookie) {
+    return next();
+  }
+
   // Exempt paths (e.g. incoming webhooks, session bootstrap endpoints).
   // Use req.originalUrl (the full path) so this works regardless of where
   // the middleware is mounted. req.path strips the mount prefix.
