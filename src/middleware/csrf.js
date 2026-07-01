@@ -60,6 +60,7 @@ const csrfProtection = (req, res, next) => {
     sameSite: isSecure ? 'none' : 'strict',  // 'none' for cross-origin in production, 'strict' for same-origin dev
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   });
+  res.setHeader('X-CSRF-Token', csrfToken);
 
   // Safe methods do not need validation
   if (!UNSAFE_METHODS.has(req.method)) {
@@ -106,6 +107,7 @@ const csrfIssue = (req, res, next) => {
     sameSite: isSecure ? 'none' : 'strict',  // 'none' for cross-origin in production, 'strict' for same-origin dev
     maxAge: 24 * 60 * 60 * 1000
   });
+  res.setHeader('X-CSRF-Token', token);
   res.locals.csrfToken = token;
   next();
 };
