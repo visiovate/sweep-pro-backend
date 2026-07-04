@@ -507,8 +507,9 @@ const createRazorpayBookingOrder = async (req, res) => {
 
 // Create Razorpay order for subscription payment
 const createRazorpaySubscriptionOrder = async (req, res) => {
+  const { subscriptionId, currency } = req.body;
+
   try {
-    const { subscriptionId, currency } = req.body;
     const userId = req.user.id;
 
     if (!subscriptionId) {
@@ -747,8 +748,12 @@ const handleRazorpayPaymentFailure = async (req, res) => {
     const {
       razorpay_order_id,
       error_code,
-      error_description
+      error_description,
+      error
     } = req.body;
+
+    const normalizedErrorCode = error_code || error?.code || 'PAYMENT_FAILED';
+    const normalizedErrorDescription = error_description || error?.description || error?.reason || 'Payment failed';
 
     if (!razorpay_order_id) {
       return res.status(400).json({
@@ -759,8 +764,8 @@ const handleRazorpayPaymentFailure = async (req, res) => {
     // Process failed payment
     const result = await razorpayService.processFailedPayment({
       razorpay_order_id,
-      error_code,
-      error_description
+      error_code: normalizedErrorCode,
+      error_description: normalizedErrorDescription
     });
 
     res.json({

@@ -146,16 +146,10 @@ const subscribeToPlan = async (req, res) => {
       }
 
       if (existingSubscription.status === 'PENDING_PAYMENT') {
-        if (existingSubscription.planId !== planId) {
-          return res.status(409).json({
-            message: 'You already have a subscription pending payment. Please complete payment before changing plans.',
-            data: existingSubscription
-          });
-        }
-
         const updatedSubscription = await prisma.subscription.update({
           where: { id: existingSubscription.id },
           data: {
+            planId,
             startDate,
             endDate,
             amount: billedAmount,

@@ -451,27 +451,46 @@ model Subscription {
 }
 
 model ServicePlan {
-  id               String         @id @default(uuid())
-  name             String         @unique
+  id               String            @id @default(uuid())
+  name             String            @unique
   description      String
   serviceId        String
   sessionsPerWeek  Int
   sessionsPerMonth Int
   duration         Int
   basePrice        Float
-  discountPercent  Float          @default(0)
+  discountPercent  Float             @default(0)
   finalPrice       Float
-  isActive         Boolean        @default(true)
-  isPopular        Boolean        @default(false)
-  bufferDaysAllowed Int           @default(3)
-  hasBufferSystem  Boolean        @default(false)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  service          Service        @relation(fields: [serviceId], references: [id])
+  isActive         Boolean           @default(true)
+  isPopular        Boolean           @default(false)
+  bufferDaysAllowed Int              @default(3)
+  hasBufferSystem  Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  service          Service           @relation(fields: [serviceId], references: [id])
   subscriptions    Subscription[]
+  propertyPricing  PropertyPricing[]
 
   @@index([serviceId])
   @@index([isActive])
+}
+
+model PropertyPricing {
+  id            String      @id @default(uuid())
+  planId        String
+  propertyType  String      // 'apartment' | 'bungalow' (Note: currently only 'apartment' is seeded with verified pricing)
+  bhkType       String      // '2bhk' | '3bhk' | '4bhk'
+  squareFeet    Int
+  sqftLabel     String
+  pricing       Json
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  plan          ServicePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, propertyType, bhkType, squareFeet])
+  @@index([planId])
+  @@index([propertyType, bhkType])
 }
 
 model SubscriptionCycle {
