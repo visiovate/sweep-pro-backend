@@ -233,6 +233,7 @@ router.post('/firebase/login', async (req, res) => {
       message: 'Login successful',
       data: {
         user: userResponse,
+        token: appJwt, // Return JWT in response body for frontend to store in localStorage
         isNewUser: isNewUser
       }
     });
