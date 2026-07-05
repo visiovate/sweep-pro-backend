@@ -78,6 +78,7 @@ class EmailService {
         connectionTimeout,
         greetingTimeout,
         socketTimeout,
+        family: 4, // Force IPv4 to avoid IPv6 connection issues on Render
         auth: {
           user,
           pass
