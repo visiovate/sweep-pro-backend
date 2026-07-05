@@ -21,3 +21,16 @@ BEGIN
         CREATE INDEX IF NOT EXISTS "PasswordResetToken_otp_idx" ON "PasswordResetToken"("otp");
     END IF;
 END $$;
+
+-- Verification query
+SELECT 
+    'EmailVerificationToken' as table_name, 
+    COUNT(*) as has_otp_column
+FROM information_schema.columns 
+WHERE table_name = 'EmailVerificationToken' AND column_name = 'otp'
+UNION ALL
+SELECT 
+    'PasswordResetToken' as table_name, 
+    COUNT(*) as has_otp_column
+FROM information_schema.columns 
+WHERE table_name = 'PasswordResetToken' AND column_name = 'otp';
