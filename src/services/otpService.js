@@ -117,11 +117,17 @@ class OtpService {
       </div>
     `;
 
-    await emailService.sendEmail({
+    console.log(`📧 Attempting to send OTP email to ${user.email}`);
+    const result = await emailService.sendEmail({
       to: user.email,
       subject: 'Verify your Sweepro email - OTP',
       html
     });
+    console.log(`📧 Email send result:`, result);
+    if (!result.success) {
+      console.error(`❌ Failed to send OTP email to ${user.email}:`, result.error || result.reason);
+    }
+    return result;
   }
 }
 

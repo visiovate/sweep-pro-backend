@@ -101,6 +101,8 @@ class EmailService {
   }
 
   async sendEmail({ to, subject, html, text }) {
+    console.log(`📧 EmailService.sendEmail called - provider: ${this.provider}, to: ${to}, subject: ${subject}`);
+    
     if (this.provider === 'disabled') {
       console.log('📧 Email service disabled, skipping outbound send');
       return { success: false, provider: 'disabled', reason: 'disabled' };
@@ -115,6 +117,7 @@ class EmailService {
         text: text || this.stripHtml(html)
       };
 
+      console.log(`📧 Sending email via ${this.provider}, from: ${this.fromEmail}`);
       let result;
       if (this.provider === 'sendgrid') {
         result = await this.client.send(emailData);
@@ -147,6 +150,7 @@ class EmailService {
         : (error?.message || String(error));
 
       console.error('❌ Email send error:', error);
+      console.error('❌ Error details:', errorMessage);
       return { success: false, provider: this.provider, error: errorMessage };
     }
   }
