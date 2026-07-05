@@ -227,6 +227,8 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
+    // Only check email verification for users with passwords (email/password users)
+    // OAuth users (no password) are already verified by Google
     if (freshUser.password && !freshUser.emailVerifiedAt) {
       return res.status(403).json({
         success: false,

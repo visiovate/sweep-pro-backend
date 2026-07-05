@@ -495,6 +495,9 @@ router.post('/login', loginValidation, async (req, res) => {
       return res.status(401).json(genericInvalid);
     }
 
+    // Skip email verification check for login (only required for signup)
+    // OAuth users (no password) are handled above
+
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       return res.status(423).json({
         success: false,
