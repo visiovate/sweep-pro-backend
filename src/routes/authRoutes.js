@@ -558,7 +558,7 @@ router.post('/login', loginValidation, async (req, res) => {
     res.json({
       success: true,
       message: 'Login successful',
-      data: { user: safeUserResponse(user) }
+      data: { user: safeUserResponse(user), token } // Include token in response
     });
 
   } catch (error) {
