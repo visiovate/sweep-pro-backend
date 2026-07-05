@@ -80,14 +80,19 @@ const buildDatabaseSchemaErrorResponse = (actionLabel) => ({
 });
 
 const sendVerificationEmail = async (prisma, user) => {
+  console.log(`📧 sendVerificationEmail called for user: ${user.email}, id: ${user.id}`);
   const rawOtp = await otpService.generateOTP(user.id, 'EMAIL_VERIFICATION');
+  console.log(`📧 OTP generated: ${rawOtp}`);
   await otpService.sendOTPEmail(user, rawOtp);
+  console.log(`📧 sendOTPEmail completed`);
 };
 
 router.post('/register', registerValidation, async (req, res) => {
   try {
+    console.log('📝 Register endpoint called');
     const prisma = await initializePrisma();
     const { name, email, phone, role, password, timeSlot, confirmPassword, address, serviceArea, pincode } = req.body;
+    console.log(`📝 Registration attempt for email: ${email}, role: ${role}`);
 
     // Check if user already exists by email
     const existingUserByEmail = await prisma.user.findUnique({
@@ -192,10 +197,12 @@ router.post('/register', registerValidation, async (req, res) => {
 
     let verificationEmailSent = true;
     try {
+      console.log('📧 About to call sendVerificationEmail');
       await sendVerificationEmail(prisma, createdUser);
+      console.log('📧 sendVerificationEmail completed successfully');
     } catch (emailError) {
       verificationEmailSent = false;
-      console.error('Verification email delivery failed:', emailError);
+      console.error('❌ Verification email delivery failed:', emailError);
     }
 
     // Send notification about new user registration
