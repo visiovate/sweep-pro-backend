@@ -196,7 +196,7 @@ class BufferDayService {
       // Create admin notification
       await this.createBufferRequestNotification(subscription, bufferPeriod, reason);
 
-      console.log(`🛡️ Buffer period requested by ${subscription.customer.user.email}`);
+      console.log(`🛡️ Buffer period requested by userId=${subscription.customer.user.id}`);
       
       return {
         success: true,
@@ -336,7 +336,7 @@ class BufferDayService {
       });
       
       console.log(`✅ Step 4 completed: Customer notification sent`);
-      console.log(`✅ Buffer period approved for ${bufferPeriod.subscription.customer.user.email}`);
+      console.log(`✅ Buffer period approved for userId=${bufferPeriod.subscription.customer.user.id}`);
       
       return {
         success: true,
@@ -455,7 +455,7 @@ class BufferDayService {
         }
       });
 
-      console.log(`❌ Buffer period rejected for ${bufferPeriod.subscription.customer.user.email}`);
+      console.log(`❌ Buffer period rejected for userId=${bufferPeriod.subscription.customer.user.id}`);
       
       return {
         success: true,
@@ -777,7 +777,7 @@ class BufferDayService {
           }
         });
 
-        console.log(`✅ Buffer period completed for ${bufferPeriod.subscription.customer.user.email}`);
+        console.log(`✅ Buffer period completed for userId=${bufferPeriod.subscription.customer.user.id}`);
       }
 
       return {

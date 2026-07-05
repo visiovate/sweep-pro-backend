@@ -187,7 +187,7 @@ class NotificationService {
     
     for (const admin of adminUsers) {
       await this.saveNotificationToDatabase(admin.id, notification);
-      console.log(`✅ Saved notification for admin: ${admin.name} (${admin.email})`);
+      console.log(`✅ Saved notification for admin userId=${admin.id}`);
     }
   }
 

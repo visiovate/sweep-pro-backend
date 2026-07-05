@@ -139,7 +139,7 @@ class AutomaticServiceScheduler {
           const reason = maidWeeklyOff && tomorrow.getDay() === ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'].indexOf(maidWeeklyOff)
             ? `Maid's weekly off (${maidWeeklyOff})`
             : `Not a service day for ${sessionsPerWeek} days/week plan`;
-          console.log(`⏭️ Skipping ${customerEmail} - ${reason}`);
+          console.log(`⏭️ Skipping customerId=${subscription.customer.user.id} - ${reason}`);
           skippedNotServiceDay++;
           continue;
         }
@@ -148,7 +148,7 @@ class AutomaticServiceScheduler {
         const isBufferDay = await this.isBufferDay(subscription.id, tomorrow);
         
         if (isBufferDay) {
-          console.log(`🛡️ Skipping service for customer ${customerEmail} - Buffer day`);
+          console.log(`🛡️ Skipping service for customerId=${subscription.customer.user.id} - Buffer day`);
           continue;
         }
 
@@ -172,7 +172,7 @@ class AutomaticServiceScheduler {
         });
 
         if (existingBooking) {
-          console.log(`📋 Service already scheduled for ${customerEmail}`);
+          console.log(`📋 Service already scheduled for customerId=${subscription.customer.user.id}`);
           continue;
         }
 
@@ -535,7 +535,7 @@ class AutomaticServiceScheduler {
         notes
       });
 
-      console.log(`🛡️ Started buffer period for ${subscription.customer.user.email}`);
+      console.log(`🛡️ Started buffer period for customerId=${subscription.customer.user.id}`);
       return bufferPeriod;
     });
   }

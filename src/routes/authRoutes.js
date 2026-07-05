@@ -12,6 +12,78 @@ const { initializePrisma } = require('../utils/database');
 const { getJwtSecret } = require('../config/validateEnv');
 const { blacklistToken } = require('../utils/tokenBlacklist');
 
+const otpService = require('../services/otpService');
+const otpController = require('../controllers/otpController');
+const { otpLimiter } = require('../middleware/rateLimiters');
+
+const ACCESS_TOKEN_TTL = '24h';
+const REMEMBER_ME_ACCESS_TOKEN_TTL = '7d';
+const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const ACCOUNT_LOCK_MS = 15 * 60 * 1000;
+const DUMMY_PASSWORD_HASH = '$2a$12$CwTycUXWue0Thq9StjUM0uJ8UjMrbJvQPMQnBdVdFzRkJbbYQz9h2';
+
+const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+
+const hashOpaqueToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+
+const buildCookieOptions = (maxAge) => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+  maxAge
+});
+
+const signAccessToken = (user, expiresIn = ACCESS_TOKEN_TTL) => jwt.sign(
+  {
+    userId: user.id,
+    id: user.id,
+    role: user.role,
+    tokenVersion: user.tokenVersion || 0
+  },
+  getJwtSecret(),
+  { expiresIn }
+);
+
+const safeUserResponse = (user) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  firebase_uid: user.firebase_uid,
+  phone: user.phone,
+  apartment_id: user.apartment_id,
+  profile_completed: user.profile_completed,
+  timeSlot: user.timeSlot,
+  address: user.address,
+  role: user.role,
+  status: user.status,
+  emailVerified: Boolean(user.emailVerifiedAt),
+  locality: user.locality,
+  pincode: user.pincode,
+  createdAt: user.createdAt,
+  profiles: user.customerProfile || user.maidProfile || user.adminProfile ? {
+    customer: user.customerProfile,
+    maid: user.maidProfile,
+    admin: user.adminProfile
+  } : undefined
+});
+
+const isMissingEmailVerifiedColumnError = (error) => {
+  const message = String(error?.message || '');
+  return error?.code === 'P2022' || message.includes('User.emailVerifiedAt') || message.includes('emailVerifiedAt');
+};
+
+const buildDatabaseSchemaErrorResponse = (actionLabel) => ({
+  success: false,
+  message: `${actionLabel} is temporarily unavailable because the database schema is missing the required User.emailVerifiedAt column. Please apply the latest migration and try again.`,
+  code: 'DATABASE_SCHEMA_OUT_OF_SYNC'
+});
+
+const sendVerificationEmail = async (prisma, user) => {
+  const rawOtp = await otpService.generateOTP(user.id, 'EMAIL_VERIFICATION');
+  await otpService.sendOTPEmail(user, rawOtp);
+};
+
 router.post('/register', registerValidation, async (req, res) => {
   try {
     const prisma = await initializePrisma();
@@ -55,7 +127,7 @@ router.post('/register', registerValidation, async (req, res) => {
       password: hashedPassword,
       address,
       profile_completed: true,
-      status: 'ACTIVE'
+      status: 'PENDING_VERIFICATION'
     };
 
     if (serviceArea) {
@@ -118,17 +190,13 @@ router.post('/register', registerValidation, async (req, res) => {
       throw creationError;
     }
 
-    // Generate JWT token
-    // SECURITY: Use centralized JWT secret getter - NEVER use fallback
-    const token = jwt.sign(
-      {
-        userId: createdUser.id,
-        id: createdUser.id,
-        role: createdUser.role
-      },
-      getJwtSecret(),
-      { expiresIn: '24h' }
-    );
+    let verificationEmailSent = true;
+    try {
+      await sendVerificationEmail(prisma, createdUser);
+    } catch (emailError) {
+      verificationEmailSent = false;
+      console.error('Verification email delivery failed:', emailError);
+    }
 
     // Send notification about new user registration
     try {
@@ -138,52 +206,23 @@ router.post('/register', registerValidation, async (req, res) => {
       // Don't fail the registration if notification fails
     }
 
-    // Prepare response without sensitive data
-    const userResponse = {
-      id: createdUser.id,
-      name: createdUser.name,
-      email: createdUser.email,
-      firebase_uid: createdUser.firebase_uid,
-      phone: createdUser.phone,
-      apartment_id: createdUser.apartment_id,
-      profile_completed: createdUser.profile_completed,
-      timeSlot: createdUser.timeSlot,
-      address: createdUser.address,
-      role: createdUser.role,
-      status: createdUser.status,
-      locality: createdUser.locality,
-      pincode: createdUser.pincode,
-      createdAt: createdUser.createdAt
-    };
-
-    // M6: Set HttpOnly cookie so the token is not accessible via JS on the client
-    // CROSS-ORIGIN FIX: In production, frontend (Vercel) and backend (Render) are on different
-    // domains. SameSite='strict' blocks cookies on cross-site requests entirely, causing all
-    // authenticated API calls to fail with 401. SameSite='none' + Secure=true is required for
-    // cross-origin cookie auth to work.
-    const isSecureCookie = process.env.NODE_ENV === 'production';
-    res.cookie('authToken', token, {
-      httpOnly: true,
-      secure: isSecureCookie,
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 24 * 60 * 60 * 1000 // default 24h
-    });
-
     res.status(201).json({
       success: true,
-      message: `${role.charAt(0) + role.slice(1).toLowerCase()} registered successfully`,
+      message: verificationEmailSent
+        ? 'Registration successful. Please verify your email before logging in.'
+        : 'Registration successful, but the verification email could not be sent. Use resend verification or contact support.',
       data: {
-        user: userResponse,
-        // CROSS-ORIGIN FIX: Also return token in body so the frontend can
-        // store it in localStorage for Authorization-header-based auth.
-        // This fixes auth for cross-origin deployments (Vercel + Render)
-        // where SameSite cookie restrictions prevent the cookie being sent.
-        token: token
+        user: safeUserResponse(createdUser),
+        verificationEmailSent
       }
     });
 
   } catch (error) {
     console.error('Registration error:', error);
+
+    if (isMissingEmailVerifiedColumnError(error)) {
+      return res.status(503).json(buildDatabaseSchemaErrorResponse('Registration'));
+    }
 
     // Handle Prisma-specific errors
     if (error.code === 'P2002') {
@@ -210,6 +249,11 @@ router.post('/register', registerValidation, async (req, res) => {
     });
   }
 });
+router.post('/verify-email', otpLimiter, otpController.verifyEmailOtp);
+router.post('/resend-verification', otpLimiter, otpController.resendVerificationOtp);
+router.post('/send-verification-otp', otpLimiter, otpController.sendVerificationOtp);
+router.post('/verify-email-otp', otpLimiter, otpController.verifyEmailOtp);
+router.post('/resend-verification-otp', otpLimiter, otpController.resendVerificationOtp);
 
 // Forgot password - send reset link
 router.post('/forgot-password', async (req, res) => {
@@ -224,7 +268,6 @@ router.post('/forgot-password', async (req, res) => {
     };
 
     if (!email) {
-      console.log('[forgot-password] Missing email in request');
       return res.json(genericResponse);
     }
 
@@ -232,9 +275,6 @@ router.post('/forgot-password', async (req, res) => {
 
     // If user doesn't exist or doesn't have a password (OAuth user), still return generic success
     if (!user || !user.password) {
-      console.log(
-        `[forgot-password] No eligible user for email=${email} found=${Boolean(user)} hasPassword=${Boolean(user?.password)}`
-      );
       return res.json(genericResponse);
     }
 
@@ -252,18 +292,17 @@ router.post('/forgot-password', async (req, res) => {
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     await prisma.passwordResetToken.create({
       data: {
         userId: user.id,
         tokenHash,
+        otp,
         expiresAt
       }
     });
-
-    const resetUrlBase = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const resetLink = `${resetUrlBase.replace(/\/+$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -273,12 +312,9 @@ router.post('/forgot-password', async (req, res) => {
         <div style="background: #f9fafb; padding: 24px; border-radius: 0 0 10px 10px;">
           <p style="font-size: 16px; color: #374151;">Hi ${user.name || 'there'},</p>
           <p style="font-size: 16px; color: #374151;">We received a request to reset your Sweepro password.</p>
-          <div style="text-align: center; margin: 24px 0;">
-            <a href="${resetLink}" style="display: inline-block; padding: 14px 22px; background: #1800ad; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
-              Reset Password
-            </a>
-          </div>
-          <p style="font-size: 14px; color: #6b7280;">This link will expire in 1 hour. If you didn’t request this, you can ignore this email.</p>
+          <p style="font-size: 16px; color: #374151;">Your password reset code is:</p>
+          <p style="font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #1800ad; text-align: center; padding: 20px; background: #f0f0f0; border-radius: 8px;">${otp}</p>
+          <p style="font-size: 14px; color: #6b7280;">This code will expire in 1 hour. If you didn't request this, you can ignore this email.</p>
         </div>
       </div>
     `;
@@ -290,19 +326,15 @@ router.post('/forgot-password', async (req, res) => {
         html
       })
       .then((emailResult) => {
-        if (emailResult?.success) {
-          console.log(
-            `[forgot-password] Reset email sent for userId=${user.id} email=${user.email} provider=${emailResult.provider || 'unknown'} messageId=${emailResult.messageId || 'n/a'}`
-          );
-        } else {
+        if (!emailResult?.success) {
           console.error(
-            `[forgot-password] Reset email FAILED for userId=${user.id} email=${user.email} provider=${emailResult?.provider || 'unknown'} error=${emailResult?.error || emailResult?.reason || 'unknown'}`
+            `[forgot-password] Reset email delivery failed for userId=${user.id} provider=${emailResult?.provider || 'unknown'} error=${emailResult?.error || emailResult?.reason || 'unknown'}`
           );
         }
       })
       .catch((err) => {
         console.error(
-          `[forgot-password] Reset email FAILED (exception) for userId=${user.id} email=${user.email} error=${err?.message || err}`
+          `[forgot-password] Reset email delivery exception for userId=${user.id} error=${err?.message || err}`
         );
       });
 
@@ -314,6 +346,64 @@ router.post('/forgot-password', async (req, res) => {
       success: true,
       message: 'If an account exists for that email, a reset link has been sent.'
     });
+  }
+});
+
+// Verify password reset OTP
+router.post('/verify-reset-otp', async (req, res) => {
+  try {
+    const prisma = await initializePrisma();
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({ success: false, message: 'Email and OTP are required.' });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail }
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'User not found.' });
+    }
+
+    const resetRecord = await prisma.passwordResetToken.findFirst({
+      where: {
+        userId: user.id,
+        otp: otp,
+        usedAt: null,
+        expiresAt: { gt: new Date() }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!resetRecord) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
+    }
+
+    // Generate a temporary verification token for password reset
+    const tempToken = crypto.randomBytes(32).toString('hex');
+    const tempTokenHash = crypto.createHash('sha256').update(tempToken).digest('hex');
+    const tempExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    // Store the temporary token in the existing record
+    await prisma.passwordResetToken.update({
+      where: { id: resetRecord.id },
+      data: {
+        tokenHash: tempTokenHash,
+        expiresAt: tempExpiresAt
+      }
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'OTP verified successfully. Please set your new password.',
+      token: tempToken // Send the temporary token for password reset
+    });
+  } catch (error) {
+    console.error('OTP verification error:', error);
+    res.status(500).json({ success: false, message: 'OTP verification failed. Please try again.' });
   }
 });
 
@@ -362,7 +452,7 @@ router.post('/reset-password', async (req, res) => {
     await prisma.$transaction([
       prisma.user.update({
         where: { id: resetRecord.userId },
-        data: { password: hashedPassword, passwordChangedAt: new Date() }
+        data: { password: hashedPassword, passwordChangedAt: new Date(), tokenVersion: { increment: 1 }, failedLoginAttempts: 0, lockedUntil: null }
       }),
       prisma.passwordResetToken.update({
         where: { id: resetRecord.id },
@@ -370,6 +460,7 @@ router.post('/reset-password', async (req, res) => {
       })
     ]);
 
+    res.clearCookie('authToken', buildCookieOptions(0));
     res.json({ success: true, message: 'Password reset successful. Please log in with your new password.' });
   } catch (error) {
     console.error('Reset password error:', error);
@@ -381,9 +472,15 @@ router.post('/reset-password', async (req, res) => {
 router.post('/login', loginValidation, async (req, res) => {
   try {
     const prisma = await initializePrisma();
-    const { email, password, rememberMe } = req.body;
+    const email = normalizeEmail(req.body.email);
+    const { password, rememberMe } = req.body;
 
-    // Find user with profiles
+    const genericInvalid = {
+      success: false,
+      message: 'Invalid email or password',
+      field: 'credentials'
+    };
+
     const user = await prisma.user.findUnique({
       where: { email },
       include: {
@@ -393,87 +490,65 @@ router.post('/login', loginValidation, async (req, res) => {
       }
     });
 
-    if (!user) {
-      return res.status(401).json({
+    if (!user || !user.password) {
+      await bcrypt.compare(String(password || ''), DUMMY_PASSWORD_HASH);
+      return res.status(401).json(genericInvalid);
+    }
+
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      return res.status(423).json({
         success: false,
-        message: 'Invalid email or password',
+        message: 'Account is temporarily locked. Please try again later or reset your password.',
         field: 'credentials'
       });
     }
 
-    // Check if user account is active
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      const nextFailedAttempts = (user.failedLoginAttempts || 0) + 1;
+      const lockAccount = nextFailedAttempts >= MAX_FAILED_LOGIN_ATTEMPTS;
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: lockAccount ? 0 : nextFailedAttempts,
+          lockedUntil: lockAccount ? new Date(Date.now() + ACCOUNT_LOCK_MS) : null
+        }
+      });
+
+      return res.status(401).json(genericInvalid);
+    }
+
+    if (!user.emailVerifiedAt) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email before logging in.',
+        code: 'EMAIL_NOT_VERIFIED'
+      });
+    }
+
     if (user.status !== 'ACTIVE') {
       return res.status(403).json({
         success: false,
-        message: `Account is ${user.status.toLowerCase()}. Please contact support.`,
+        message: 'Account is not active. Please contact support.',
         field: 'status'
       });
     }
 
-    // Verify password
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password',
-        field: 'credentials'
-      });
-    }
-
-    // Generate JWT token
-    // SECURITY: Use centralized secret getter – NEVER fall back to a hardcoded default
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        id: user.id,
-        role: user.role
-      },
-      getJwtSecret(),
-      { expiresIn: rememberMe ? '30d' : '24h' }
-    );
-
-    // Prepare user response without password
-    const userResponse = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      firebase_uid: user.firebase_uid,
-      phone: user.phone,
-      address: user.address,
-      apartment_id: user.apartment_id,
-      profile_completed: user.profile_completed,
-      role: user.role,
-      timeSlot: user.timeSlot,
-      status: user.status,
-      createdAt: user.createdAt,
-      profiles: {
-        customer: user.customerProfile,
-        maid: user.maidProfile,
-        admin: user.adminProfile
-      }
-    };
-
-    // M6: Set HttpOnly cookie so the token is not accessible via JS on the client
-    // CROSS-ORIGIN FIX: SameSite='none' required for cross-origin cookie auth (Vercel + Render)
-    const isSecureCookie = process.env.NODE_ENV === 'production';
-    res.cookie('authToken', token, {
-      httpOnly: true,
-      secure: isSecureCookie,
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: 0, lockedUntil: null }
     });
+
+    const expiresIn = rememberMe ? REMEMBER_ME_ACCESS_TOKEN_TTL : ACCESS_TOKEN_TTL;
+    const token = signAccessToken(user, expiresIn);
+
+    res.cookie('authToken', token, buildCookieOptions(rememberMe ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000));
 
     res.json({
       success: true,
       message: 'Login successful',
-      data: {
-        user: userResponse,
-        // CROSS-ORIGIN FIX: Also return token in body so the frontend can
-        // store it in localStorage for Authorization-header-based auth.
-        // This fixes auth for cross-origin deployments (Vercel + Render)
-        // where SameSite cookie restrictions prevent the cookie being sent.
-        token: token
-      }
+      data: { user: safeUserResponse(user) }
     });
 
   } catch (error) {
@@ -485,7 +560,6 @@ router.post('/login', loginValidation, async (req, res) => {
     });
   }
 });
-
 // Get current user information
 router.get('/me', authenticateToken, async (req, res) => {
   try {
@@ -770,21 +844,23 @@ router.post('/change-password', authenticateToken, async (req, res) => {
     const hashedNewPassword = await bcrypt.hash(newPassword, 12);
 
     const updateData = { password: hashedNewPassword };
+    const sessionRevocationData = { passwordChangedAt: new Date(), tokenVersion: { increment: 1 }, failedLoginAttempts: 0, lockedUntil: null };
     try {
       // Try with passwordChangedAt if column exists
       await prisma.user.update({
         where: { id: userId },
-        data: { ...updateData, passwordChangedAt: new Date() }
+        data: { ...updateData, passwordChangedAt: new Date(), tokenVersion: { increment: 1 }, failedLoginAttempts: 0, lockedUntil: null }
       });
     } catch (updateError) {
       // Fallback: update password only (passwordChangedAt column may not exist yet)
       await prisma.user.update({
         where: { id: userId },
-        data: updateData
+        data: { ...updateData, ...sessionRevocationData }
       });
     }
 
-    res.json({ success: true, message: 'Password changed successfully' });
+    res.clearCookie('authToken', buildCookieOptions(0));
+    res.json({ success: true, message: 'Password changed successfully. Please log in again.' });
   } catch (error) {
     console.error('Change password error:', error);
     res.status(500).json({ success: false, message: 'Failed to change password. Please try again.' });

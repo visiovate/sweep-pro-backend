@@ -395,7 +395,7 @@ async function processAssignmentJob(job) {
             assignedMaid.user.maidBookings.length === 0 // No conflicting bookings
           ) {
             selectedMaid = assignedMaid;
-            console.log(`✅ Using assigned maid: ${selectedMaid.user.name} (${selectedMaid.user.email})`);
+            console.log(`✅ Using assigned maid: ${selectedMaid.user.name} (userId=${selectedMaid.user.id})`);
           } else {
             console.log(`⚠️  Assigned maid ${assignedMaid.user.name} is not available (status: ${assignedMaid.status}, verified: ${assignedMaid.isVerified}, conflicting bookings: ${assignedMaid.user.maidBookings.length})`);
           }

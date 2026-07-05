@@ -137,9 +137,41 @@ const passwordResetLimiter = rateLimit({
   }
 });
 
+/**
+ * STRICT Rate Limiter for OTP endpoints
+ * 5 attempts per 15 minutes per IP
+ *
+ * Applied to:
+ * - /api/auth/send-verification-otp
+ * - /api/auth/verify-email-otp
+ * - /api/auth/resend-verification-otp
+ */
+const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,               // 15 minutes
+  max: 5,
+  message: {
+    success: false,
+    error: 'Too many OTP requests. Please try again after 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: true,
+  skip: (req) => {
+    return process.env.NODE_ENV === 'test';
+  },
+  keyGenerator: ipKeyGenerator,
+  handler: (req, res, options) => {
+    res.status(429).json({
+      success: false,
+      error: options.message.error,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = {
   authLimiter,
   paymentLimiter,
   globalLimiter,
-  passwordResetLimiter
+  passwordResetLimiter,
+  otpLimiter
 };

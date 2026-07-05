@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, authorizeAdmin } = require('../middleware/auth');
 const checkBufferEligibility = require('../middleware/bufferEligibility');
 const {
   getSubscriptionPlans,
@@ -44,15 +44,15 @@ router.post('/cancel', authenticateToken, cancelSubscription);
 router.get('/upcoming-services', authenticateToken, getUpcomingServices);
 
 // Admin routes
-router.get('/admin/analytics', authenticateToken, getSubscriptionAnalytics);
-router.get('/admin/cycles', authenticateToken, getSubscriptionCycles);
-router.get('/admin/buffers', authenticateToken, getBufferPeriods);
-router.post('/admin/:subscriptionId/buffer/start', authenticateToken, adminStartBufferPeriod);
-router.post('/admin/:subscriptionId/buffer/end', authenticateToken, adminEndBufferPeriod);
-router.put('/admin/plans/:id', authenticateToken, updateSubscriptionPlan);
-router.post('/admin/plans', authenticateToken, createSubscriptionPlan);
-router.delete('/admin/plans/:id', authenticateToken, deleteSubscriptionPlan);
-router.get('/admin/:id', authenticateToken, getSubscriptionById);
-router.post('/admin/:id/cancel', authenticateToken, adminCancelSubscription);
+router.get('/admin/analytics', authenticateToken, authorizeAdmin, getSubscriptionAnalytics);
+router.get('/admin/cycles', authenticateToken, authorizeAdmin, getSubscriptionCycles);
+router.get('/admin/buffers', authenticateToken, authorizeAdmin, getBufferPeriods);
+router.post('/admin/:subscriptionId/buffer/start', authenticateToken, authorizeAdmin, adminStartBufferPeriod);
+router.post('/admin/:subscriptionId/buffer/end', authenticateToken, authorizeAdmin, adminEndBufferPeriod);
+router.put('/admin/plans/:id', authenticateToken, authorizeAdmin, updateSubscriptionPlan);
+router.post('/admin/plans', authenticateToken, authorizeAdmin, createSubscriptionPlan);
+router.delete('/admin/plans/:id', authenticateToken, authorizeAdmin, deleteSubscriptionPlan);
+router.get('/admin/:id', authenticateToken, authorizeAdmin, getSubscriptionById);
+router.post('/admin/:id/cancel', authenticateToken, authorizeAdmin, adminCancelSubscription);
 
 module.exports = router;

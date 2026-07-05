@@ -1,8 +1,8 @@
-const multer = require('multer');
+﻿const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
-// Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '../../uploads');
 const documentsDir = path.join(uploadsDir, 'documents');
 
@@ -14,64 +14,139 @@ if (!fs.existsSync(documentsDir)) {
   fs.mkdirSync(documentsDir, { recursive: true });
 }
 
-// Configure multer for file uploads
+const ALLOWED_FILE_TYPES = Object.freeze({
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+  'image/webp': ['.webp'],
+  'application/pdf': ['.pdf']
+});
+
+const MAX_DOCUMENT_SIZE = 5 * 1024 * 1024;
+
+const sanitizeSegment = (value, fallback = 'document') => {
+  const cleaned = String(value || fallback).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
+  return cleaned || fallback;
+};
+
+const getSafeExtension = (file) => {
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const allowedExts = ALLOWED_FILE_TYPES[file.mimetype] || [];
+  return allowedExts.includes(ext) ? ext : null;
+};
+
+const hasExpectedSignature = (filePath, mimetype) => {
+  const header = fs.readFileSync(filePath, { start: 0, end: 15 });
+
+  if (mimetype === 'application/pdf') {
+    return header.subarray(0, 5).toString('ascii') === '%PDF-';
+  }
+
+  if (mimetype === 'image/jpeg') {
+    return header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+  }
+
+  if (mimetype === 'image/png') {
+    return header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  }
+
+  if (mimetype === 'image/webp') {
+    return header.subarray(0, 4).toString('ascii') === 'RIFF' && header.subarray(8, 12).toString('ascii') === 'WEBP';
+  }
+
+  return false;
+};
+
+const validateStoredFile = (file) => {
+  if (!file || !file.path) {
+    return 'No file uploaded.';
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(ALLOWED_FILE_TYPES, file.mimetype)) {
+    return 'Invalid file type. Only JPEG, PNG, WebP and PDF files are allowed.';
+  }
+
+  if (!getSafeExtension(file)) {
+    return 'Invalid file extension for uploaded content type.';
+  }
+
+  const stats = fs.statSync(file.path);
+  if (stats.size === 0) {
+    return 'File is empty.';
+  }
+
+  if (stats.size > MAX_DOCUMENT_SIZE) {
+    return 'File too large. Maximum size is 5MB.';
+  }
+
+  if (!hasExpectedSignature(file.path, file.mimetype)) {
+    return 'File content does not match the declared file type.';
+  }
+
+  return null;
+};
+
+const cleanupUploadedFiles = (files) => {
+  const flatFiles = Array.isArray(files)
+    ? files
+    : Object.values(files || {}).flatMap((fileArray) => Array.isArray(fileArray) ? fileArray : [fileArray]);
+
+  flatFiles.forEach((file) => {
+    if (file?.path && fs.existsSync(file.path)) {
+      fs.unlinkSync(file.path);
+    }
+  });
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, documentsDir);
   },
   filename: (req, file, cb) => {
-    // Generate unique filename: maidId_documentType_timestamp.ext
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const maidId = req.user?.id || 'unknown';
-    const documentType = req.body?.type || 'document';
-    const ext = path.extname(file.originalname);
-    cb(null, `${maidId}_${documentType}_${uniqueSuffix}${ext}`);
+    const ext = getSafeExtension(file) || '.bin';
+    const maidId = sanitizeSegment(req.user?.id, 'unknown');
+    const documentType = sanitizeSegment(req.body?.type || file.fieldname, 'document');
+    cb(null, `${maidId}_${documentType}_${crypto.randomUUID()}${ext}`);
   }
 });
 
-// File filter function
 const fileFilter = (req, file, cb) => {
-  // Check file type
-  const allowedMimeTypes = [
-    'image/jpeg',
-    
-    'image/png',
-    'image/gif',
-    'application/pdf',
-    'image/webp'
-  ];
-
-  if (allowedMimeTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Invalid file type. Only JPEG, PNG, GIF, WebP and PDF files are allowed.'), false);
+  if (!Object.prototype.hasOwnProperty.call(ALLOWED_FILE_TYPES, file.mimetype)) {
+    return cb(new Error('Invalid file type. Only JPEG, PNG, WebP and PDF files are allowed.'), false);
   }
+
+  if (!getSafeExtension(file)) {
+    return cb(new Error('Invalid file extension for uploaded content type.'), false);
+  }
+
+  cb(null, true);
 };
 
-// Configure multer for single file
 const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
+  storage,
+  fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-    files: 1 // Only one file at a time
+    fileSize: MAX_DOCUMENT_SIZE,
+    files: 1,
+    fields: 20,
+    fieldSize: 16 * 1024,
+    parts: 25
   }
 });
 
-// Configure multer for multiple verification documents
 const uploadMultiple = multer({
-  storage: storage,
-  fileFilter: fileFilter,
+  storage,
+  fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit per file
-    files: 5 // Maximum 5 files for verification
+    fileSize: MAX_DOCUMENT_SIZE,
+    files: 5,
+    fields: 20,
+    fieldSize: 16 * 1024,
+    parts: 30
   }
 });
 
-// Middleware for single file upload
 const uploadSingle = upload.single('document');
 
-// Middleware for multiple verification documents upload
 const uploadVerificationDocuments = uploadMultiple.fields([
   { name: 'aadharCard', maxCount: 1 },
   { name: 'panCard', maxCount: 1 },
@@ -80,89 +155,67 @@ const uploadVerificationDocuments = uploadMultiple.fields([
   { name: 'photo', maxCount: 1 }
 ]);
 
-// Wrapper to handle multer errors for single file
+const handleMulterError = (err, multiple = false) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return multiple ? 'One or more files are too large. Maximum size is 5MB per file.' : 'File too large. Maximum size is 5MB.';
+    }
+
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return multiple ? 'Too many files uploaded.' : 'Too many files. Only one file is allowed.';
+    }
+
+    return 'Invalid upload request.';
+  }
+
+  return err?.message || 'Invalid upload request.';
+};
+
 const handleFileUpload = (req, res, next) => {
   uploadSingle(req, res, (err) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({
-          success: false,
-          message: 'File too large. Maximum size is 5MB.'
-        });
-      }
-      if (err.code === 'LIMIT_FILE_COUNT') {
-        return res.status(400).json({
-          success: false,
-          message: 'Too many files. Only one file is allowed.'
-        });
-      }
-      return res.status(400).json({
-        success: false,
-        message: 'File upload error: ' + err.message
-      });
-    } else if (err) {
-      return res.status(400).json({
-        success: false,
-        message: err.message
-      });
+    if (err) {
+      return res.status(400).json({ success: false, message: handleMulterError(err) });
     }
-    
-    // Check if file was uploaded
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No file uploaded.'
-      });
+
+    const validationError = validateStoredFile(req.file);
+    if (validationError) {
+      cleanupUploadedFiles([req.file]);
+      return res.status(400).json({ success: false, message: validationError });
     }
-    
+
     next();
   });
 };
 
-// Wrapper to handle multer errors for multiple verification documents
 const handleVerificationUpload = (req, res, next) => {
   uploadVerificationDocuments(req, res, (err) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({
-          success: false,
-          message: 'One or more files are too large. Maximum size is 5MB per file.'
-        });
-      }
-      if (err.code === 'LIMIT_FILE_COUNT') {
-        return res.status(400).json({
-          success: false,
-          message: 'Too many files uploaded.'
-        });
-      }
-      return res.status(400).json({
-        success: false,
-        message: 'File upload error: ' + err.message
-      });
-    } else if (err) {
-      return res.status(400).json({
-        success: false,
-        message: err.message
-      });
+    if (err) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({ success: false, message: handleMulterError(err, true) });
     }
-    
-    // Check if at least one file was uploaded
+
     if (!req.files || Object.keys(req.files).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No files uploaded.'
-      });
+      return res.status(400).json({ success: false, message: 'No files uploaded.' });
     }
-    
+
+    for (const fileArray of Object.values(req.files)) {
+      for (const file of fileArray) {
+        const validationError = validateStoredFile(file);
+        if (validationError) {
+          cleanupUploadedFiles(req.files);
+          return res.status(400).json({ success: false, message: validationError });
+        }
+      }
+    }
+
     next();
   });
 };
 
-// Utility function to validate document type
 const validateDocumentType = (type) => {
   const validTypes = [
     'AADHAR_CARD',
-    'PAN_CARD', 
+    'PAN_CARD',
     'VOTER_ID',
     'DRIVING_LICENSE',
     'PASSPORT',
@@ -172,18 +225,16 @@ const validateDocumentType = (type) => {
     'BANK_ACCOUNT_PROOF',
     'PHOTO'
   ];
-  
+
   return validTypes.includes(type);
 };
 
-// Utility function to get file URL
 const getFileUrl = (filename) => {
-  return `/uploads/documents/${filename}`;
+  return `/uploads/documents/${path.basename(filename)}`;
 };
 
-// Utility function to delete file
-const deleteFile = (filename) => {
-  const filePath = path.join(documentsDir, filename);
+const deleteLocalFile = (filename) => {
+  const filePath = path.join(documentsDir, path.basename(filename));
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
     return true;
@@ -191,7 +242,6 @@ const deleteFile = (filename) => {
   return false;
 };
 
-// Get required documents for maids (3 essential documents as per user requirements)
 const getRequiredDocuments = () => {
   return [
     {
@@ -219,9 +269,12 @@ module.exports = {
   handleFileUpload,
   handleVerificationUpload,
   validateDocumentType,
+  validateStoredFile,
   getFileUrl,
-  deleteFile,
+  deleteFile: deleteLocalFile,
   getRequiredDocuments,
   uploadsDir,
-  documentsDir
+  documentsDir,
+  ALLOWED_FILE_TYPES,
+  MAX_DOCUMENT_SIZE
 };

@@ -102,7 +102,7 @@ class EmailService {
 
   async sendEmail({ to, subject, html, text }) {
     if (this.provider === 'disabled') {
-      console.log('📧 Email service disabled, skipping send to:', to);
+      console.log('📧 Email service disabled, skipping outbound send');
       return { success: false, provider: 'disabled', reason: 'disabled' };
     }
 
@@ -135,7 +135,7 @@ class EmailService {
       }
 
       console.log(
-        `✅ Email sent to ${to}: ${subject} provider=${this.provider}` +
+        `✅ Email sent: ${subject} provider=${this.provider}` +
           (statusCode ? ` status=${statusCode}` : '') +
           (messageId ? ` messageId=${messageId}` : '')
       );
