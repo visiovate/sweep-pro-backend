@@ -122,8 +122,8 @@ router.post('/firebase/login', async (req, res) => {
           role: null, // Will be set during profile completion
           apartment_id: null,
           profile_completed: false,
-          emailVerifiedAt: null, // Require OTP verification even for Google OAuth
-          status: 'PENDING_VERIFICATION'
+          emailVerifiedAt: new Date(), // Google already verified email
+          status: 'ACTIVE'
         },
         include: {
           customerProfile: true,
@@ -132,9 +132,6 @@ router.post('/firebase/login', async (req, res) => {
         }
       });
 
-      // Send OTP email for verification
-      await sendOtpEmail(prisma, user);
-
       // Send notification about new user registration
       try {
         await notificationService.notifyUserRegistration(user);
@@ -142,47 +139,47 @@ router.post('/firebase/login', async (req, res) => {
         console.error('Failed to send registration notification:', notificationError);
       }
 
-      // Return response indicating verification is needed
+      // Return response for new user (no verification needed)
       return res.json({
         success: true,
-        message: 'Registration successful. Please verify your email with the OTP sent to your email address.',
+        message: 'Registration successful. Please complete your profile to continue.',
         data: {
           user: {
             id: user.id,
             email: user.email,
             name: user.name,
             isNewUser: true,
-            requiresVerification: true
+            requiresVerification: false
           }
         }
       });
     } else {
-      // If user exists but hasn't verified email, require verification
-      if (user.status === 'PENDING_VERIFICATION' || !user.emailVerifiedAt) {
-        // Send new OTP
-        await sendOtpEmail(prisma, user);
-
-        return res.json({
-          success: true,
-          message: 'Please verify your email with the OTP sent to your email address.',
-          data: {
-            user: {
-              id: user.id,
-              email: user.email,
-              name: user.name,
-              isNewUser: false,
-              requiresVerification: true
-            }
-          }
-        });
-      }
-
       // If user DOES exist, block signup logic if they are already fully signed up
       if (intent === 'signup' && user.profile_completed) {
         return res.status(400).json({
           success: false,
           error: 'You already have an account. Please sign in instead.',
           isNewUser: false
+        });
+      }
+
+      // Auto-verify email if not already verified (Google already verified it)
+      if (!user.emailVerifiedAt || user.status === 'PENDING_VERIFICATION') {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            emailVerifiedAt: new Date(),
+            status: 'ACTIVE'
+          }
+        });
+        // Refresh user data after update
+        user = await prisma.user.findUnique({
+          where: { id: user.id },
+          include: {
+            customerProfile: true,
+            maidProfile: true,
+            adminProfile: true
+          }
         });
       }
     }
