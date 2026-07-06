@@ -23,25 +23,24 @@ class RazorpayService {
 
       if (!booking) throw new Error('Booking not found');
 
-      // IDEMPOTENCY: If an order already exists for this booking (e.g. network
+      // IDEMPOTENCY: If an order already exists for this booking with the same amount (e.g. network
       // retry), return it instead of creating a duplicate Razorpay order.
       const existingOrder = await getPrismaClient().payment.findFirst({
         where: { bookingId, status: { in: ['PENDING', 'PROCESSING'] }, transactionId: { not: null } },
         orderBy: { createdAt: 'desc' },
-        select: { transactionId: true, gatewayResponse: true }
+        select: { transactionId: true, gatewayResponse: true, amount: true }
       });
 
-      if (existingOrder?.transactionId) {
+      if (existingOrder?.transactionId && existingOrder?.gatewayResponse && Math.round(existingOrder.amount * 100) === Math.round(amount * 100)) {
         console.warn(`[IDEMPOTENCY] Returning existing Razorpay order ${existingOrder.transactionId} for booking ${bookingId}`);
         return { success: true, order: existingOrder.gatewayResponse, booking };
       }
 
-      // receipt must be unique per merchant; use a stable hash of the bookingId
-      // (no Date.now() — deterministic so retries don't create new orders)
+      // receipt must be unique per merchant; append short timestamp to avoid collision if amount changed or retried after failure
       const orderOptions = {
         amount: Math.round(amount * 100),
         currency: currency,
-        receipt: `bk_${bookingId.replace(/-/g, '').substring(0, 30)}`,
+        receipt: `bk_${bookingId.replace(/-/g, '').substring(0, 20)}_${Date.now().toString().slice(-8)}`,
         notes: {
           bookingId: bookingId,
           customerId: booking.customerId,
@@ -352,12 +351,36 @@ class RazorpayService {
 
       if (!subscription) throw new Error('Subscription not found');
 
-      // IDEMPOTENCY: stable receipt — no Date.now() — so retries map to the
-      // same Razorpay order instead of creating duplicates.
+      // SECURITY CRITICAL: Use server-side Subscription.amount already stored in database.
+      // Do not trust the passed amount parameter or calculate pricing again.
+      const authoritativeAmount = subscription.amount;
+      if (!authoritativeAmount || typeof authoritativeAmount !== 'number' || authoritativeAmount <= 0) {
+        throw new Error('Invalid or missing subscription amount in database');
+      }
+
+      // IDEMPOTENCY & DUPLICATE PREVENTION: If an order already exists for this subscription with the same amount,
+      // return it instead of creating a duplicate Razorpay order.
+      const existingOrder = await getPrismaClient().payment.findFirst({
+        where: { 
+          subscriptionId, 
+          status: { in: ['PENDING', 'PROCESSING'] }, 
+          transactionId: { not: null },
+          gatewayResponse: { not: null }
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { transactionId: true, gatewayResponse: true, amount: true }
+      });
+
+      if (existingOrder?.transactionId && existingOrder?.gatewayResponse && Math.round(existingOrder.amount * 100) === Math.round(authoritativeAmount * 100)) {
+        console.warn(`[IDEMPOTENCY] Returning existing Razorpay order ${existingOrder.transactionId} for subscription ${subscriptionId}`);
+        return { success: true, order: existingOrder.gatewayResponse, subscription };
+      }
+
+      // receipt must be unique per merchant; append short timestamp to avoid collision if amount changed or retried after failure
       const order = await razorpay.orders.create({
-        amount: Math.round(amount * 100),
+        amount: Math.round(authoritativeAmount * 100),
         currency: currency || 'INR',
-        receipt: `sub_${subscriptionId.replace(/-/g, '').substring(0, 30)}`,
+        receipt: `sub_${subscriptionId.replace(/-/g, '').substring(0, 20)}_${Date.now().toString().slice(-8)}`,
         notes: {
           subscriptionId: subscriptionId,
           paymentType: 'SUBSCRIPTION'
@@ -366,18 +389,19 @@ class RazorpayService {
 
       console.log('✅ [PAYMENT] Razorpay order created:', order.id);
 
-      // Use raw SQL to bypass Prisma validation issues
-      await getPrismaClient().$executeRaw`
-        UPDATE "Payment" 
-        SET 
-          gateway = 'razorpay',
-          "transactionId" = ${order.id},
-          "gatewayResponse" = ${JSON.stringify(order)}::jsonb,
-          "updatedAt" = NOW()
-        WHERE 
-          "subscriptionId" = ${subscriptionId} 
-          AND status = 'PENDING'
-      `;
+      // Use Prisma Client updateMany to avoid raw SQL database driver and enum/json casting issues
+      await getPrismaClient().payment.updateMany({
+        where: {
+          subscriptionId: subscriptionId,
+          status: 'PENDING'
+        },
+        data: {
+          gateway: 'razorpay',
+          transactionId: order.id,
+          gatewayResponse: order,
+          updatedAt: new Date()
+        }
+      });
 
       console.log('✅ [PAYMENT] Updated payments with order details');
 
@@ -386,18 +410,19 @@ class RazorpayService {
     } catch (error) {
       console.error('❌ [PAYMENT] createSubscriptionOrder error:', error.message);
       
-      // Mark payment as FAILED using raw SQL
+      // Mark payment as FAILED using Prisma Client updateMany
       try {
-        await getPrismaClient().$executeRaw`
-          UPDATE "Payment"
-          SET 
-            status = 'FAILED',
-            "gatewayResponse" = ${JSON.stringify({ error: error.message })}::jsonb,
-            "updatedAt" = NOW()
-          WHERE
-            "subscriptionId" = ${subscriptionId}
-            AND status = 'PENDING'
-        `;
+        await getPrismaClient().payment.updateMany({
+          where: {
+            subscriptionId: subscriptionId,
+            status: 'PENDING'
+          },
+          data: {
+            status: 'FAILED',
+            gatewayResponse: { error: error.message },
+            updatedAt: new Date()
+          }
+        });
         console.log('✅ [PAYMENT] Marked payments as FAILED');
       } catch (e) {
         console.error('Failed to mark payment as FAILED:', e.message);
