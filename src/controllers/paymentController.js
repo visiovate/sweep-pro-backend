@@ -563,12 +563,6 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       return res.status(404).json({ error: 'Subscription not found or unauthorized' });
     }
 
-    // SECURITY: Get amount from subscription/plan, NOT from request body
-    const amount = subscription.amount || subscription.plan?.finalPrice || subscription.plan?.basePrice;
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid subscription amount in database' });
-    }
-
     // Allow payment creation for subscriptions in PENDING_PAYMENT status
     if (subscription.status !== 'PENDING_PAYMENT') {
       console.warn(`Attempted payment creation for subscription ${subscriptionId} in ${subscription.status} status`);
@@ -578,26 +572,40 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       });
     }
 
-    // SECURITY CRITICAL: Use server-side subscription amount, NEVER trust frontend
-    // The amount is set during subscription creation with plan pricing
-    const paymentAmount = subscription.amount;
-
-    if (!paymentAmount || paymentAmount <= 0) {
+    // SECURITY CRITICAL: Use server-side Subscription.amount stored in database.
+    // Do NOT call PricingService again or fall back to plan base/final prices or request body.
+    const amount = subscription.amount;
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
       return res.status(400).json({
-        error: 'Invalid subscription amount. Cannot process payment.'
+        error: 'Invalid or missing subscription amount in database. Cannot process payment.'
+      });
+    }
+
+    // IDEMPOTENCY & DUPLICATE PREVENTION: Check if a pending/processing Razorpay order already exists for this unpaid subscription
+    let paymentRecord = await getPrismaClient().payment.findFirst({
+      where: {
+        subscriptionId: subscriptionId,
+        status: { in: ['PENDING', 'PROCESSING'] }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const orderCurrency = currency || 'INR';
+
+    if (paymentRecord?.transactionId && paymentRecord?.gateway === 'razorpay' && paymentRecord?.gatewayResponse && Math.round(paymentRecord.amount * 100) === Math.round(amount * 100)) {
+      console.log(`[IDEMPOTENCY] Returning existing Razorpay order ${paymentRecord.transactionId} for unpaid subscription ${subscriptionId}`);
+      return res.status(200).json({
+        success: true,
+        order: paymentRecord.gatewayResponse,
+        subscription: subscription,
+        key: razorpayKeyId,
+        amount: amount,
+        currency: orderCurrency
       });
     }
 
     // CRITICAL FIX: Create payment record FIRST before order creation
     console.log(`Creating initial payment record for subscription ${subscriptionId}`);
-
-    let paymentRecord = await getPrismaClient().payment.findFirst({
-      where: {
-        subscriptionId: subscriptionId,
-        status: 'PENDING'
-      },
-      orderBy: { createdAt: 'desc' }
-    });
 
     if (!paymentRecord) {
       // Create new payment record with status PENDING
@@ -628,7 +636,6 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
     }
 
     // Now create Razorpay order (payment record already exists)
-    const orderCurrency = currency || 'INR';
     const result = await razorpayService.createSubscriptionOrder(subscriptionId, amount, orderCurrency);
 
     res.status(201).json({
@@ -636,7 +643,7 @@ const createRazorpaySubscriptionOrder = async (req, res) => {
       order: result.order,
       subscription: result.subscription,
       key: razorpayKeyId,
-      amount: paymentAmount,
+      amount: amount,
       currency: orderCurrency
     });
 

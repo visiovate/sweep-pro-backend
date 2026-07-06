@@ -1,6 +1,7 @@
 const { getPrismaClient, initializePrisma } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const subscriptionBufferService = require('../services/subscriptionBufferService');
+const { calculatePrice } = require('../services/pricingService');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
 const prisma = getPrismaClient();
@@ -15,7 +16,13 @@ const getSubscriptionPlans = async (req, res) => {
     const plans = await db.servicePlan.findMany({
       where: { isActive: true },
       include: {
-        service: true
+        service: true,
+        propertyPricing: {
+          orderBy: [
+            { bhkType: 'asc' },
+            { squareFeet: 'asc' }
+          ]
+        }
       }
     });
     res.json(plans);
@@ -49,7 +56,7 @@ const MAX_USERS_PER_SLOT = 20;
 // Subscribe user to a plan
 const subscribeToPlan = async (req, res) => {
   try {
-    const { planId, finalAmount, startDate: requestedStartDate, serviceDetails } = req.body;
+    const { planId, startDate: requestedStartDate, serviceDetails, planDuration } = req.body;
     const userId = req.user.id;
 
     // Extract timeSlot from serviceDetails
@@ -120,12 +127,22 @@ const subscribeToPlan = async (req, res) => {
     const endDate = new Date(startDate);
     endDate.setMonth(startDate.getMonth() + plan.duration);
 
-    // Use front-end calculated final amount (including GST/property config)
-    // when available; otherwise fall back to plan.finalPrice.
-    const billedAmount =
-      typeof finalAmount === 'number' && finalAmount > 0
-        ? finalAmount
-        : plan.finalPrice;
+    // Authoritatively determine subscription amount using PricingService
+    const propertyType = serviceDetails?.propertyType || 'apartment';
+    const bhkType = serviceDetails?.bhkType;
+    const squareFeet = serviceDetails?.squareFeet;
+    const billingCycle = planDuration || serviceDetails?.planDuration || '1month';
+
+    const pricingResult = await calculatePrice({
+      planId,
+      propertyType,
+      bhkType,
+      squareFeet,
+      billingCycle
+    });
+
+    const billedAmount = pricingResult.amount;
+    console.log(`✅ Authoritative subscription price calculated: ₹${billedAmount} (${propertyType}, ${bhkType}, ${squareFeet} sq ft, cycle: ${billingCycle})`);
 
     const existingSubscription = await prisma.subscription.findUnique({
       where: { customerId },
@@ -153,7 +170,7 @@ const subscribeToPlan = async (req, res) => {
             startDate,
             endDate,
             amount: billedAmount,
-            discount: plan.basePrice - billedAmount,
+            discount: 0,
             nextBillDate: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000),
             bufferDaysCount: plan.hasBufferSystem ? (plan.bufferDaysAllowed || 0) : 0,
             bufferDaysUsed: 0,
@@ -185,7 +202,7 @@ const subscribeToPlan = async (req, res) => {
           endDate,
           billingCycle: 'MONTHLY',
           amount: billedAmount,
-          discount: plan.basePrice - billedAmount,
+          discount: 0,
           autoRenew: true,
           nextBillDate: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000),
           bufferDaysCount: plan.hasBufferSystem ? (plan.bufferDaysAllowed || 0) : 0,
@@ -230,7 +247,7 @@ const subscribeToPlan = async (req, res) => {
         endDate,
         billingCycle: 'MONTHLY',
         amount: billedAmount,
-        discount: plan.basePrice - billedAmount,
+        discount: 0,
         autoRenew: true,
         nextBillDate: new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
         bufferDaysCount: plan.hasBufferSystem ? (plan.bufferDaysAllowed || 0) : 0,
@@ -268,6 +285,9 @@ const subscribeToPlan = async (req, res) => {
 
   } catch (error) {
     console.error('Error subscribing to plan:', error);
+    if (error.message && (error.message.includes('PropertyPricing record not found') || error.message.includes('Invalid') || error.message.includes('Missing required calculation parameters'))) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     res.status(500).json({ message: 'Failed to subscribe to plan' });
   }
 };

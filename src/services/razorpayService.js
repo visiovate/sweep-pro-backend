@@ -351,7 +351,14 @@ class RazorpayService {
 
       if (!subscription) throw new Error('Subscription not found');
 
-      // IDEMPOTENCY: If an order already exists for this subscription with the same amount,
+      // SECURITY CRITICAL: Use server-side Subscription.amount already stored in database.
+      // Do not trust the passed amount parameter or calculate pricing again.
+      const authoritativeAmount = subscription.amount;
+      if (!authoritativeAmount || typeof authoritativeAmount !== 'number' || authoritativeAmount <= 0) {
+        throw new Error('Invalid or missing subscription amount in database');
+      }
+
+      // IDEMPOTENCY & DUPLICATE PREVENTION: If an order already exists for this subscription with the same amount,
       // return it instead of creating a duplicate Razorpay order.
       const existingOrder = await getPrismaClient().payment.findFirst({
         where: { 
@@ -364,14 +371,14 @@ class RazorpayService {
         select: { transactionId: true, gatewayResponse: true, amount: true }
       });
 
-      if (existingOrder?.transactionId && existingOrder?.gatewayResponse && Math.round(existingOrder.amount * 100) === Math.round(amount * 100)) {
+      if (existingOrder?.transactionId && existingOrder?.gatewayResponse && Math.round(existingOrder.amount * 100) === Math.round(authoritativeAmount * 100)) {
         console.warn(`[IDEMPOTENCY] Returning existing Razorpay order ${existingOrder.transactionId} for subscription ${subscriptionId}`);
         return { success: true, order: existingOrder.gatewayResponse, subscription };
       }
 
       // receipt must be unique per merchant; append short timestamp to avoid collision if amount changed or retried after failure
       const order = await razorpay.orders.create({
-        amount: Math.round(amount * 100),
+        amount: Math.round(authoritativeAmount * 100),
         currency: currency || 'INR',
         receipt: `sub_${subscriptionId.replace(/-/g, '').substring(0, 20)}_${Date.now().toString().slice(-8)}`,
         notes: {
