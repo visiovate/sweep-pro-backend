@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const { PrismaClient } = require('@prisma/client');
+const { getPrismaClient } = require('../utils/database');
 
 const prisma = getPrismaClient();
 
@@ -18,9 +18,9 @@ async function sendDailyNotifications() {
     });
 
     subscriptions.forEach(subscription => {
-      const { email, name } = subscription.customer;
+      const { id, name } = subscription.customer;
       // Here, replace the console log with an actual notification service call
-      console.log(`Sending notification to ${name} (${email}): Confirm your next day service.`);
+      console.log(`Sending notification to customerId=${id} (${name}): Confirm your next day service.`);
     });
   } catch (error) {
     console.error('Error sending daily notifications:', error);

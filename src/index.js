@@ -264,8 +264,8 @@ app.options('*', (req, res) => {
 // Cookie parser – required for HttpOnly cookie auth (M6) and CSRF (M7)
 app.use(cookieParser());
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb', parameterLimit: 100 }));
 
 // Prevent browser caching of API responses
 app.use('/api', (req, res, next) => {
@@ -278,8 +278,14 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Serve static files from uploads directory
-app.use('/uploads', express.static('uploads'));
+// Serve uploaded files only to authenticated users. Documents may contain PII.
+const { authenticateToken } = require('./middleware/auth');
+app.use('/uploads', authenticateToken, express.static('uploads', {
+  dotfiles: 'deny',
+  index: false,
+  fallthrough: false,
+  maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0
+}));
 
 // Make notification service available globally
 app.use((req, res, next) => {
@@ -320,7 +326,9 @@ app.use('/api/payments', paymentLimiter, paymentRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/maids', maidRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/test', testRoutes);
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api/test', testRoutes);
+}
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/dashboard', userDashboardRoutes);
@@ -340,64 +348,47 @@ app.get('/health', async (req, res) => {
   const healthStatus = {
     status: 'ok',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    version: process.version,
-    dependencies: {
-      database: { status: 'unknown', message: 'Not checked' },
-      redis: { status: 'unknown', message: 'Not checked' }
+    dependencies: process.env.NODE_ENV === 'production' ? undefined : {
+      database: 'unknown',
+      redis: 'unknown'
     }
   };
 
   try {
-    // Check database connectivity
     const { prismaClient } = require('./utils/database');
     if (prismaClient) {
-      try {
-        await prismaClient.$queryRaw`SELECT 1`;
-        healthStatus.dependencies.database = { status: 'healthy', message: 'Connected' };
-      } catch (dbError) {
-        healthStatus.dependencies.database = { status: 'unhealthy', message: dbError.message };
-        healthStatus.status = 'degraded';
-      }
+      await prismaClient.$queryRaw`SELECT 1`;
+      if (healthStatus.dependencies) healthStatus.dependencies.database = 'healthy';
     }
-  } catch (error) {
-    healthStatus.dependencies.database = { status: 'unhealthy', message: 'Failed to check: ' + error.message };
+  } catch (_) {
+    if (healthStatus.dependencies) healthStatus.dependencies.database = 'unhealthy';
     healthStatus.status = 'degraded';
   }
 
   try {
-    // Check Redis connectivity
     const redis = require('./config/redis');
-    if (redis && redis.redisClient) {
-      try {
-        await redis.redisClient.ping();
-        healthStatus.dependencies.redis = { status: 'healthy', message: 'Connected' };
-      } catch (redisError) {
-        healthStatus.dependencies.redis = { status: 'unhealthy', message: redisError.message };
-        healthStatus.status = 'degraded';
-      }
+    if (redis?.redisClient) {
+      await redis.redisClient.ping();
+      if (healthStatus.dependencies) healthStatus.dependencies.redis = 'healthy';
     }
-  } catch (error) {
-    healthStatus.dependencies.redis = { status: 'unhealthy', message: 'Failed to check: ' + error.message };
+  } catch (_) {
+    if (healthStatus.dependencies) healthStatus.dependencies.redis = 'unhealthy';
     healthStatus.status = 'degraded';
   }
 
-  // Return appropriate status code
-  const statusCode = healthStatus.status === 'ok' ? 200 : (healthStatus.status === 'degraded' ? 503 : 500);
-  res.status(statusCode).json(healthStatus);
+  res.status(healthStatus.status === 'ok' ? 200 : 503).json(healthStatus);
 });
-
-// CORS test endpoint
-app.get('/api/cors-test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'CORS is working correctly',
-    origin: req.headers.origin,
-    timestamp: new Date().toISOString(),
-    headers: req.headers
+// CORS diagnostics are intentionally disabled in production because echoing request headers can leak sensitive metadata.
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/api/cors-test', (req, res) => {
+    res.json({
+      success: true,
+      message: 'CORS is working correctly',
+      origin: req.headers.origin,
+      timestamp: new Date().toISOString()
+    });
   });
-});
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {

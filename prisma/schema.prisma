@@ -9,70 +9,84 @@ datasource db {
 }
 
 model User {
-  id                  String           @id @default(uuid())
-  email               String           @unique
-  password            String?          // Optional for Firebase OAuth users
-  passwordChangedAt   DateTime?        // When password was last changed
-  emailVerifiedAt     DateTime?
-  tokenVersion        Int              @default(0)
-  failedLoginAttempts Int              @default(0)
-  lockedUntil         DateTime?
-  firebase_uid        String?          @unique // Firebase UID
-  role                UserRole?       // Nullable until profile completion
-  name                String
-  phone               String?          @unique // Nullable until profile completion
-  apartment_id       String?          // Reference to apartment (stored as string for now)
-  profile_completed   Boolean          @default(false) // Mandatory onboarding flag
-  address             String?
-  latitude            Float?
-  longitude           Float?
-  status              UserStatus       @default(ACTIVE)
-  timeSlot            String?
-  profileImage        String?
-  coverImage          String?
-  bio                 String?
-  dateOfBirth         DateTime?
-  gender              String?
-  languagePreferences String[]         @default([])
-  socialLinks         Json?            // {facebook, instagram, twitter, linkedin}
-  isProfilePublic     Boolean          @default(true)
-  lastActive          DateTime?        @default(now())
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
-  addressLine         String?
-  city                String?
-  landmark            String?
-  locality            String?
-  pincode             String?
-  state               String?
-  passwordResetTokens PasswordResetToken[]
-  emailVerificationTokens EmailVerificationToken[]
-  adminProfile        AdminProfile?
-  customerBookings    Booking[]        @relation("CustomerBookings")
-  maidBookings        Booking[]        @relation("MaidBookings")
-  customerProfile     CustomerProfile?
-  feedbacks           Feedback[]       @relation("CustomerFeedback")
-  receivedFeedbacks   Feedback[]       @relation("RatedMaidFeedback")
-  reportedIssues      Issue[]          @relation("ReportedIssues")
-  resolvedIssues      Issue[]          @relation("ResolvedIssues")
-  maidProfile         MaidProfile?
-  notifications       Notification[]
-  notificationPreference NotificationPreference?
-  notificationDeliveries NotificationDelivery[]
-  userEvents           UserEvent[]
-  payments            Payment[]        @relation("CustomerPayments")
-  customerAssignments CustomerMaidAssignment[] @relation("CustomerAssignments")
+  id                         String                      @id @default(uuid())
+  email                      String                      @unique
+  password                   String? // Optional for Firebase OAuth users
+  passwordChangedAt          DateTime? // When password was last changed
+  emailVerifiedAt            DateTime?
+  tokenVersion               Int                         @default(0)
+  failedLoginAttempts        Int                         @default(0)
+  lockedUntil                DateTime?
+  firebase_uid               String?                     @unique // Firebase UID
+  role                       UserRole? // Nullable until profile completion
+  name                       String
+  phone                      String?                     @unique // Nullable until profile completion
+  apartment_id               String? // Reference to apartment (stored as string for now)
+  profile_completed          Boolean                     @default(false) // Mandatory onboarding flag
+  address                    String?
+  latitude                   Float?
+  longitude                  Float?
+  status                     UserStatus                  @default(ACTIVE)
+  timeSlot                   String?
+  profileImage               String?
+  coverImage                 String?
+  bio                        String?
+  dateOfBirth                DateTime?
+  gender                     String?
+  languagePreferences        String[]                    @default([])
+  socialLinks                Json? // {facebook, instagram, twitter, linkedin}
+  isProfilePublic            Boolean                     @default(true)
+  lastActive                 DateTime?                   @default(now())
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
+  addressLine                String?
+  city                       String?
+  landmark                   String?
+  locality                   String?
+  pincode                    String?
+  state                      String?
+  passwordResetTokens        PasswordResetToken[]
+  emailVerificationTokens    EmailVerificationToken[]
+  adminProfile               AdminProfile?
+  customerBookings           Booking[]                   @relation("CustomerBookings")
+  maidBookings               Booking[]                   @relation("MaidBookings")
+  customerProfile            CustomerProfile?
+  feedbacks                  Feedback[]                  @relation("CustomerFeedback")
+  receivedFeedbacks          Feedback[]                  @relation("RatedMaidFeedback")
+  reportedIssues             Issue[]                     @relation("ReportedIssues")
+  resolvedIssues             Issue[]                     @relation("ResolvedIssues")
+  maidProfile                MaidProfile?
+  notifications              Notification[]
+  notificationPreference     NotificationPreference?
+  notificationDeliveries     NotificationDelivery[]
+  userEvents                 UserEvent[]
+  payments                   Payment[]                   @relation("CustomerPayments")
+  customerAssignments        CustomerMaidAssignment[]    @relation("CustomerAssignments")
   customerAssignmentRequests CustomerAssignmentRequest[] @relation("CustomerAssignmentRequests")
   adminAssignmentRequests    CustomerAssignmentRequest[] @relation("AdminAssignmentRequests")
-  feedbackAudits      FeedbackAudit[]  @relation("AdminFeedbackAudits")
-  maidRatingHistories MaidRatingHistory[] @relation("MaidRatingHistories")
-  maidMonthlyPerformances MaidMonthlyPerformance[] @relation("MaidMonthlyPerformances")
-  otpVerifications    OtpVerification[]
+  feedbackAudits             FeedbackAudit[]             @relation("AdminFeedbackAudits")
+  maidRatingHistories        MaidRatingHistory[]         @relation("MaidRatingHistories")
+  maidMonthlyPerformances    MaidMonthlyPerformance[]    @relation("MaidMonthlyPerformances")
+  otpVerifications           OtpVerification[]
 
   @@index([email])
   @@index([phone])
   @@index([role])
   @@index([emailVerifiedAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model PasswordResetToken {
@@ -149,47 +163,47 @@ model CustomerProfile {
 }
 
 model MaidProfile {
-  id                 String              @id @default(uuid())
-  userId             String              @unique
-  skills             String[]
-  languages          String[]
-  availability       Json
-  weeklyOffDay       Weekday?
-  rating             Float               @default(0)
-  totalRatings       Int                 @default(0)
-  status             MaidStatus          @default(PENDING_VERIFICATION)
-  isFloatingMaid     Boolean             @default(false)
-  maxDailyBookings   Int                 @default(3)
-  serviceRadius      Float               @default(2.0)
-  currentLatitude    Float?
-  currentLongitude   Float?
-  lastLocationUpdate DateTime?
-  completedBookings  Int                 @default(0)
-  cancelledBookings  Int                 @default(0)
-  attendanceStreak   Int                 @default(0)
-  performanceScore   Float               @default(0)
-  hourlyRate         Float?
-  commissionRate     Float               @default(0.15)
-  experienceYears    Int                 @default(0)
-  certifications     String[]            @default([])
-  achievements       String[]            @default([])
-  specializations    String[]            @default([])
-  totalEarnings      Float               @default(0)
-  averageResponseTime Int                @default(0) // in minutes
-  profileViews       Int                 @default(0)
-  isVerified         Boolean             @default(false)
-  verificationDate   DateTime?
-  verificationCode   String?             @unique // Unique 10-character alphanumeric code for service verification (e.g., "ABCDE12345")
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  attendance         Attendance[]
-  locationHistory    LocationHistory[]
-  documents          MaidDocument[]
-  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  zones              MaidZone[]
-  performanceMetrics PerformanceMetric[]
-  assignmentRequests AssignmentRequest[]
-  maidAssignments    CustomerMaidAssignment[] @relation("MaidAssignments")
+  id                     String                      @id @default(uuid())
+  userId                 String                      @unique
+  skills                 String[]
+  languages              String[]
+  availability           Json
+  weeklyOffDay           Weekday?
+  rating                 Float                       @default(0)
+  totalRatings           Int                         @default(0)
+  status                 MaidStatus                  @default(PENDING_VERIFICATION)
+  isFloatingMaid         Boolean                     @default(false)
+  maxDailyBookings       Int                         @default(3)
+  serviceRadius          Float                       @default(2.0)
+  currentLatitude        Float?
+  currentLongitude       Float?
+  lastLocationUpdate     DateTime?
+  completedBookings      Int                         @default(0)
+  cancelledBookings      Int                         @default(0)
+  attendanceStreak       Int                         @default(0)
+  performanceScore       Float                       @default(0)
+  hourlyRate             Float?
+  commissionRate         Float                       @default(0.15)
+  experienceYears        Int                         @default(0)
+  certifications         String[]                    @default([])
+  achievements           String[]                    @default([])
+  specializations        String[]                    @default([])
+  totalEarnings          Float                       @default(0)
+  averageResponseTime    Int                         @default(0) // in minutes
+  profileViews           Int                         @default(0)
+  isVerified             Boolean                     @default(false)
+  verificationDate       DateTime?
+  verificationCode       String?                     @unique // Unique 10-character alphanumeric code for service verification (e.g., "ABCDE12345")
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  attendance             Attendance[]
+  locationHistory        LocationHistory[]
+  documents              MaidDocument[]
+  user                   User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  zones                  MaidZone[]
+  performanceMetrics     PerformanceMetric[]
+  assignmentRequests     AssignmentRequest[]
+  maidAssignments        CustomerMaidAssignment[]    @relation("MaidAssignments")
   maidAssignmentRequests CustomerAssignmentRequest[] @relation("MaidAssignmentRequests")
 
   @@index([status])
@@ -358,12 +372,12 @@ model TaskCompletion {
   id                 String             @id @default(uuid())
   bookingId          String
   taskId             String
-  timeSlot            String?
-  status              BookingStatus        @default(PENDING)
-  assignmentStatus    AssignmentStatus?
-  totalAmount         Float
-  notes               String?
-  isAutomatic         Boolean              @default(false)
+  timeSlot           String?
+  status             BookingStatus      @default(PENDING)
+  assignmentStatus   AssignmentStatus?
+  totalAmount        Float
+  notes              String?
+  isAutomatic        Boolean            @default(false)
   proofImages        String[]           @default([])
   timeSpent          Int?
   customerOtp        String?
@@ -397,24 +411,24 @@ model Feedback {
   wouldRecommend    Boolean?
   adminResponse     String?
   adminResponseAt   DateTime?
-  
+
   // New fields for enhanced system
-  status            FeedbackStatus @default(ACTIVE)
-  weight            Float @default(1.0)
-  isWeightAdjusted  Boolean @default(false)
-  disputeReason     String?
-  resolutionNote    String?
-  verificationFlag  Boolean @default(false)
-  isMaidAcknowledged Boolean @default(false)
+  status             FeedbackStatus @default(ACTIVE)
+  weight             Float          @default(1.0)
+  isWeightAdjusted   Boolean        @default(false)
+  disputeReason      String?
+  resolutionNote     String?
+  verificationFlag   Boolean        @default(false)
+  isMaidAcknowledged Boolean        @default(false)
   maidAcknowledgedAt DateTime?
-  
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  
-  booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  customer          User      @relation("CustomerFeedback", fields: [customerId], references: [id])
-  ratedMaid         User?     @relation("RatedMaidFeedback", fields: [ratedMaidId], references: [id])
-  auditEntries      FeedbackAudit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking      Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customer     User            @relation("CustomerFeedback", fields: [customerId], references: [id])
+  ratedMaid    User?           @relation("RatedMaidFeedback", fields: [ratedMaidId], references: [id])
+  auditEntries FeedbackAudit[]
 
   @@index([customerId])
   @@index([ratedMaidId])
@@ -541,26 +555,26 @@ model PropertyPricing {
 }
 
 model SubscriptionCycle {
-  id              String              @id @default(uuid())
-  subscriptionId  String
-  cycleNumber     Int
-  startDate       DateTime
-  endDate         DateTime
-  status          SubscriptionCycleStatus @default(ACTIVE)
-  totalServices   Int                 @default(0)
-  completedServices Int               @default(0)
-  skippedServices   Int               @default(0)
-  bufferDaysUsed    Int               @default(0)
-  isBufferActive    Boolean           @default(false)
+  id                String                  @id @default(uuid())
+  subscriptionId    String
+  cycleNumber       Int
+  startDate         DateTime
+  endDate           DateTime
+  status            SubscriptionCycleStatus @default(ACTIVE)
+  totalServices     Int                     @default(0)
+  completedServices Int                     @default(0)
+  skippedServices   Int                     @default(0)
+  bufferDaysUsed    Int                     @default(0)
+  isBufferActive    Boolean                 @default(false)
   bufferStartDate   DateTime?
   bufferEndDate     DateTime?
   renewalDate       DateTime?
-  paymentStatus     PaymentStatus     @default(COMPLETED)
+  paymentStatus     PaymentStatus           @default(COMPLETED)
   amount            Float
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-  subscription      Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  bookings          Booking[]         @relation("CycleBookings")
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  subscription      Subscription            @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  bookings          Booking[]               @relation("CycleBookings")
   bufferPeriods     BufferPeriod[]
 
   @@unique([subscriptionId, cycleNumber])
@@ -571,23 +585,23 @@ model SubscriptionCycle {
 }
 
 model BufferPeriod {
-  id               String            @id @default(uuid())
-  subscriptionId   String
-  cycleId          String?
-  startDate        DateTime
-  endDate          DateTime
-  status           BufferStatus      @default(ACTIVE)
-  reason           BufferReason      @default(END_OF_MONTH)
-  daysCount        Int               @default(3)
-  servicesSkipped  Int               @default(0)
-  autoResumeDate   DateTime
-  resumedAt        DateTime?
-  isAutomatic      Boolean           @default(true)
-  notes            String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  subscription     Subscription      @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  cycle            SubscriptionCycle? @relation(fields: [cycleId], references: [id], onDelete: SetNull)
+  id              String             @id @default(uuid())
+  subscriptionId  String
+  cycleId         String?
+  startDate       DateTime
+  endDate         DateTime
+  status          BufferStatus       @default(ACTIVE)
+  reason          BufferReason       @default(END_OF_MONTH)
+  daysCount       Int                @default(3)
+  servicesSkipped Int                @default(0)
+  autoResumeDate  DateTime
+  resumedAt       DateTime?
+  isAutomatic     Boolean            @default(true)
+  notes           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  subscription    Subscription       @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  cycle           SubscriptionCycle? @relation(fields: [cycleId], references: [id], onDelete: SetNull)
 
   @@index([subscriptionId])
   @@index([cycleId])
@@ -598,25 +612,25 @@ model BufferPeriod {
 }
 
 model MaidDocument {
-  id                String                     @id @default(uuid())
-  maidId            String
-  type              DocumentType
-  documentNumber    String?
-  fileName          String
-  fileSize          Int?
-  mimeType          String?
-  cloudinaryUrl     String?                    // Cloudinary URL for the document
-  cloudinaryPublicId String?                   // Cloudinary public ID for management
+  id                 String                     @id @default(uuid())
+  maidId             String
+  type               DocumentType
+  documentNumber     String?
+  fileName           String
+  fileSize           Int?
+  mimeType           String?
+  cloudinaryUrl      String? // Cloudinary URL for the document
+  cloudinaryPublicId String? // Cloudinary public ID for management
   verificationStatus DocumentVerificationStatus @default(PENDING)
-  verified          Boolean                    @default(false)
-  verifiedBy        String?
-  verifiedAt        DateTime?
-  rejectionReason   String?
-  adminNotes        String?
-  expiryDate        DateTime?
-  createdAt         DateTime                   @default(now())
-  updatedAt         DateTime                   @updatedAt
-  maid              MaidProfile                @relation(fields: [maidId], references: [id], onDelete: Cascade)
+  verified           Boolean                    @default(false)
+  verifiedBy         String?
+  verifiedAt         DateTime?
+  rejectionReason    String?
+  adminNotes         String?
+  expiryDate         DateTime?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  maid               MaidProfile                @relation(fields: [maidId], references: [id], onDelete: Cascade)
 
   @@index([maidId])
   @@index([type])
@@ -629,7 +643,6 @@ enum DocumentVerificationStatus {
   APPROVED
   REJECTED
 }
-
 
 model Attendance {
   id               String           @id @default(uuid())
@@ -716,13 +729,13 @@ model Notification {
 }
 
 model NotificationPreference {
-  userId                   String  @id
-  inAppEnabled             Boolean @default(true)
-  emailEnabled             Boolean @default(true)
-  transactionalEmailEnabled Boolean @default(true)
-  marketingEmailEnabled    Boolean @default(true)
-  updatedAt                DateTime @updatedAt
-  createdAt                DateTime @default(now())
+  userId                    String   @id
+  inAppEnabled              Boolean  @default(true)
+  emailEnabled              Boolean  @default(true)
+  transactionalEmailEnabled Boolean  @default(true)
+  marketingEmailEnabled     Boolean  @default(true)
+  updatedAt                 DateTime @updatedAt
+  createdAt                 DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -736,22 +749,22 @@ enum NotificationOutboxStatus {
 }
 
 model NotificationOutboxEvent {
-  id          String                  @id @default(uuid())
+  id          String                   @id @default(uuid())
   topic       String
   payload     Json
-  dedupeKey   String?                 @unique
+  dedupeKey   String?                  @unique
   status      NotificationOutboxStatus @default(PENDING)
-  availableAt DateTime                @default(now())
+  availableAt DateTime                 @default(now())
   lockedAt    DateTime?
   lockedBy    String?
-  attempts    Int                     @default(0)
+  attempts    Int                      @default(0)
   lastError   String?
   enqueuedAt  DateTime?
   processedAt DateTime?
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
 
-  deliveries  NotificationDelivery[]
+  deliveries NotificationDelivery[]
 
   @@index([status, availableAt])
   @@index([lockedAt])
@@ -771,19 +784,19 @@ enum NotificationDeliveryStatus {
 }
 
 model NotificationDelivery {
-  id            String                   @id @default(uuid())
-  outboxEventId String
-  userId        String
-  channel       NotificationChannel
-  status        NotificationDeliveryStatus @default(PENDING)
-  provider      String?
+  id                String                     @id @default(uuid())
+  outboxEventId     String
+  userId            String
+  channel           NotificationChannel
+  status            NotificationDeliveryStatus @default(PENDING)
+  provider          String?
   providerMessageId String?
-  lastError     String?
-  createdAt     DateTime                 @default(now())
-  updatedAt     DateTime                 @updatedAt
+  lastError         String?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
 
   outboxEvent NotificationOutboxEvent @relation(fields: [outboxEventId], references: [id], onDelete: Cascade)
-  user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([outboxEventId, userId, channel])
   @@index([userId])
@@ -1228,20 +1241,20 @@ enum AssignmentRequestStatus {
 }
 
 model AssignmentRequest {
-  id              String                   @id @default(uuid())
+  id              String                  @id @default(uuid())
   bookingId       String
   maidId          String
-  status          AssignmentRequestStatus  @default(pending)
-  requestedAt     DateTime                 @default(now())
+  status          AssignmentRequestStatus @default(pending)
+  requestedAt     DateTime                @default(now())
   respondedAt     DateTime?
   rejectionReason String?
   expiresAt       DateTime
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
-  
-  booking         Booking                  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  maid            MaidProfile              @relation(fields: [maidId], references: [id], onDelete: Cascade)
-  
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  booking Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  maid    MaidProfile @relation(fields: [maidId], references: [id], onDelete: Cascade)
+
   @@unique([bookingId, maidId]) // Enforce DB-level idempotency: one request per booking-maid pair
   @@index([bookingId])
   @@index([maidId])
@@ -1250,23 +1263,23 @@ model AssignmentRequest {
 }
 
 model CustomerAssignmentRequest {
-  id              String                   @id @default(uuid())
+  id              String                  @id @default(uuid())
   customerId      String
   maidId          String
-  requestedBy     String                   // Admin user ID who initiated the request
-  status          AssignmentRequestStatus  @default(pending)
-  requestedAt     DateTime                 @default(now())
+  requestedBy     String // Admin user ID who initiated the request
+  status          AssignmentRequestStatus @default(pending)
+  requestedAt     DateTime                @default(now())
   respondedAt     DateTime?
   rejectionReason String?
   notes           String?
   expiresAt       DateTime
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
-  
-  customer        User                     @relation("CustomerAssignmentRequests", fields: [customerId], references: [id], onDelete: Cascade)
-  maid            MaidProfile              @relation("MaidAssignmentRequests", fields: [maidId], references: [id], onDelete: Cascade)
-  admin           User                     @relation("AdminAssignmentRequests", fields: [requestedBy], references: [id], onDelete: Cascade)
-  
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  customer User        @relation("CustomerAssignmentRequests", fields: [customerId], references: [id], onDelete: Cascade)
+  maid     MaidProfile @relation("MaidAssignmentRequests", fields: [maidId], references: [id], onDelete: Cascade)
+  admin    User        @relation("AdminAssignmentRequests", fields: [requestedBy], references: [id], onDelete: Cascade)
+
   @@index([customerId])
   @@index([maidId])
   @@index([requestedBy])
@@ -1275,18 +1288,18 @@ model CustomerAssignmentRequest {
 }
 
 model CustomerMaidAssignment {
-  id          String    @id @default(uuid())
-  customerId  String
-  maidId      String
-  isActive    Boolean   @default(true)
-  assignedAt  DateTime  @default(now())
-  notes       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
-  customer        User                @relation("CustomerAssignments", fields: [customerId], references: [id], onDelete: Cascade)
-  maid            MaidProfile         @relation("MaidAssignments", fields: [maidId], references: [id], onDelete: Cascade)
-  
+  id         String   @id @default(uuid())
+  customerId String
+  maidId     String
+  isActive   Boolean  @default(true)
+  assignedAt DateTime @default(now())
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customer User        @relation("CustomerAssignments", fields: [customerId], references: [id], onDelete: Cascade)
+  maid     MaidProfile @relation("MaidAssignments", fields: [maidId], references: [id], onDelete: Cascade)
+
   @@unique([customerId, isActive])
   @@index([customerId])
   @@index([maidId])
@@ -1295,18 +1308,18 @@ model CustomerMaidAssignment {
 
 // Track all admin actions on feedback
 model FeedbackAudit {
-  id               String   @id @default(uuid())
-  feedbackId       String
-  adminId          String
-  action           FeedbackAuditAction
-  previousValue    Json?    // Store previous state for comparison
-  newValue         Json?    // Store new state for comparison
-  deltaRating      Float?   // Impact on maid's rating
-  note             String?  // Reason for action
-  createdAt        DateTime @default(now())
-  
-  feedback         Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
-  admin            User     @relation("AdminFeedbackAudits", fields: [adminId], references: [id])
+  id            String              @id @default(uuid())
+  feedbackId    String
+  adminId       String
+  action        FeedbackAuditAction
+  previousValue Json? // Store previous state for comparison
+  newValue      Json? // Store new state for comparison
+  deltaRating   Float? // Impact on maid's rating
+  note          String? // Reason for action
+  createdAt     DateTime            @default(now())
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  admin    User     @relation("AdminFeedbackAudits", fields: [adminId], references: [id])
 
   @@index([feedbackId])
   @@index([adminId])
@@ -1316,18 +1329,18 @@ model FeedbackAudit {
 
 // Track daily rating snapshots for trend analysis
 model MaidRatingHistory {
-  id               String   @id @default(uuid())
-  maidId           String
-  date             DateTime // Daily snapshot (date only, no time)
-  rating           Float
-  totalRatings     Int
-  averageQuality   Float?
+  id                 String   @id @default(uuid())
+  maidId             String
+  date               DateTime // Daily snapshot (date only, no time)
+  rating             Float
+  totalRatings       Int
+  averageQuality     Float?
   averagePunctuality Float?
-  averageBehavior  Float?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  
-  maid             User     @relation("MaidRatingHistories", fields: [maidId], references: [id], onDelete: Cascade)
+  averageBehavior    Float?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  maid User @relation("MaidRatingHistories", fields: [maidId], references: [id], onDelete: Cascade)
 
   @@unique([maidId, date])
   @@index([maidId])
@@ -1336,30 +1349,30 @@ model MaidRatingHistory {
 
 // Track monthly performance metrics
 model MaidMonthlyPerformance {
-  id               String   @id @default(uuid())
-  maidId           String
-  month            Int      // 1-12
-  year             Int
-  
-  totalBookings    Int      @default(0)
-  totalRatings     Int      @default(0)
-  averageRating    Float    @default(0)
-  averageQuality   Float?
+  id     String @id @default(uuid())
+  maidId String
+  month  Int // 1-12
+  year   Int
+
+  totalBookings      Int    @default(0)
+  totalRatings       Int    @default(0)
+  averageRating      Float  @default(0)
+  averageQuality     Float?
   averagePunctuality Float?
-  averageBehavior  Float?
-  
-  positiveCount    Int      @default(0) // 4-5 stars
-  neutralCount     Int      @default(0) // 3 stars
-  negativeCount    Int      @default(0) // 1-2 stars
-  
-  feedbackCount    Int      @default(0)
-  withCommentsCount Int     @default(0)
-  recommendCount   Int      @default(0)
-  
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  
-  maid             User     @relation("MaidMonthlyPerformances", fields: [maidId], references: [id], onDelete: Cascade)
+  averageBehavior    Float?
+
+  positiveCount Int @default(0) // 4-5 stars
+  neutralCount  Int @default(0) // 3 stars
+  negativeCount Int @default(0) // 1-2 stars
+
+  feedbackCount     Int @default(0)
+  withCommentsCount Int @default(0)
+  recommendCount    Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  maid User @relation("MaidMonthlyPerformances", fields: [maidId], references: [id], onDelete: Cascade)
 
   @@unique([maidId, month, year])
   @@index([maidId])

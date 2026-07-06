@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const { authenticateToken, authorizeAdmin, authorizeMaid } = require('../middleware/auth');
 const { handleFileUpload, handleVerificationUpload } = require('../utils/fileUpload');
@@ -23,23 +23,23 @@ const {
 // Public route to get required documents list
 router.get('/required', getRequiredDocumentsList);
 
-// Debug endpoint to test connectivity
-router.get('/test-upload', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Document upload endpoint is accessible',
-    timestamp: new Date().toISOString()
+if (process.env.NODE_ENV !== 'production') {
+  router.get('/test-upload', authenticateToken, authorizeAdmin, (req, res) => {
+    res.json({
+      success: true,
+      message: 'Document upload endpoint is accessible',
+      timestamp: new Date().toISOString()
+    });
   });
-});
 
-// Debug endpoint for upload verification endpoint
-router.get('/test-verification', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Upload verification endpoint is accessible',
-    timestamp: new Date().toISOString()
+  router.get('/test-verification', authenticateToken, authorizeAdmin, (req, res) => {
+    res.json({
+      success: true,
+      message: 'Upload verification endpoint is accessible',
+      timestamp: new Date().toISOString()
+    });
   });
-});
+}
 
 // Maid routes
 router.post('/upload', authenticateToken, authorizeMaid, handleFileUpload, uploadDocument);
@@ -65,3 +65,4 @@ router.get('/download/:documentId', authenticateToken, downloadDocument);
 router.get('/:documentId', authenticateToken, getDocumentById);
 
 module.exports = router;
+

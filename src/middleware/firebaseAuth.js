@@ -53,6 +53,13 @@ const verifyFirebaseToken = async (req, res, next) => {
       });
     }
 
+    if (!decodedToken.email_verified) {
+      return res.status(403).json({
+        success: false,
+        error: 'Please verify your email before continuing.'
+      });
+    }
+
     // Get user from database using Firebase UID
     const prisma = await initializePrisma();
     if (!prisma) {

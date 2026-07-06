@@ -204,32 +204,61 @@ const authenticateToken = async (req, res, next) => {
     }
 
     const sanitizedClaims = buildAuthSuccessResponse(decoded);
-
-    // Optionally refresh user snapshot when token lacks role or when forced
-    if (process.env.AUTH_FORCE_USER_REFRESH === 'true' || !sanitizedClaims.role) {
-      const prisma = getPrismaClient();
-      if (!prisma) {
-        throw new Error('Database unavailable');
-      }
-
-      const freshUser = await prisma.user.findUnique({
-        where: { id: sanitizedClaims.id },
-        include: {
-          customerProfile: true,
-          maidProfile: true,
-          adminProfile: true
-        }
-      });
-
-      if (!freshUser) {
-        throw new Error('User not found');
-      }
-
-      req.user = buildAuthSuccessResponse(decoded, freshUser);
-    } else {
-      req.user = sanitizedClaims;
+    const prisma = getPrismaClient();
+    if (!prisma) {
+      throw new Error('Database unavailable');
     }
 
+    const freshUser = await prisma.user.findUnique({
+      where: { id: sanitizedClaims.id },
+      include: {
+        customerProfile: true,
+        maidProfile: true,
+        adminProfile: true
+      }
+    });
+
+    if (!freshUser || freshUser.status !== 'ACTIVE') {
+      logger.warn('JWT rejected for missing or inactive user', { requestId, userId: sanitizedClaims.id });
+      return res.status(401).json({
+        success: false,
+        message: 'Please authenticate.',
+        code: 'TOKEN_INVALID'
+      });
+    }
+
+    // Only check email verification for users with passwords (email/password users)
+    // OAuth users (no password) are already verified by Google
+    if (freshUser.password && !freshUser.emailVerifiedAt) {
+      return res.status(403).json({
+        success: false,
+        message: 'Please verify your email before continuing.',
+        code: 'EMAIL_NOT_VERIFIED'
+      });
+    }
+
+    if ((decoded.tokenVersion || 0) !== (freshUser.tokenVersion || 0)) {
+      logger.info('JWT rejected due to token version mismatch', { requestId, userId: freshUser.id });
+      return res.status(401).json({
+        success: false,
+        message: 'Please authenticate.',
+        code: 'TOKEN_REVOKED'
+      });
+    }
+
+    if (freshUser.passwordChangedAt && decoded.iat) {
+      const issuedAtMs = decoded.iat * 1000;
+      if (issuedAtMs < freshUser.passwordChangedAt.getTime()) {
+        logger.info('JWT rejected because password changed after token issuance', { requestId, userId: freshUser.id });
+        return res.status(401).json({
+          success: false,
+          message: 'Please authenticate.',
+          code: 'TOKEN_REVOKED'
+        });
+      }
+    }
+
+    req.user = buildAuthSuccessResponse(decoded, freshUser);
     next();
   } catch (error) {
     // Unexpected internal error – log message only in production, full stack in dev

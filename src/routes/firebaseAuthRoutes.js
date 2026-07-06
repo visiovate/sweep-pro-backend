@@ -7,6 +7,42 @@ const { initializePrisma } = require('../utils/database');
 const { getFirebaseAuth } = require('../config/firebase');
 const { getJwtSecret } = require('../config/validateEnv');
 const notificationService = require('../services/notificationService');
+const emailService = require('../services/notification/EmailService');
+const crypto = require('crypto');
+
+// Helper function to send OTP email
+const sendOtpEmail = async (prisma, user) => {
+  await prisma.emailVerificationToken.updateMany({
+    where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
+    data: { usedAt: new Date() }
+  });
+
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+  await prisma.emailVerificationToken.create({
+    data: { userId: user.id, tokenHash, otp, expiresAt }
+  });
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <h1>Verify your Sweepro email</h1>
+      <p>Hi ${String(user.name || 'there').replace(/[<>&"]/g, '')},</p>
+      <p>Your verification code is:</p>
+      <p style="font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #1800ad; text-align: center; padding: 20px; background: #f0f0f0; border-radius: 8px;">${otp}</p>
+      <p style="color:#6b7280;font-size:14px;">This code expires in 24 hours.</p>
+    </div>`;
+
+  await emailService.sendEmail({
+    to: user.email,
+    subject: 'Verify your Sweepro email',
+    html
+  });
+
+  return otp;
+};
 
 /**
  * POST /auth/firebase/login
@@ -36,6 +72,13 @@ router.post('/firebase/login', async (req, res) => {
       return res.status(401).json({
         success: false,
         error: 'Invalid Firebase token. Please sign in again.'
+      });
+    }
+
+    if (!decodedToken.email_verified) {
+      return res.status(403).json({
+        success: false,
+        error: 'Please verify your email before continuing.'
       });
     }
 
@@ -79,6 +122,7 @@ router.post('/firebase/login', async (req, res) => {
           role: null, // Will be set during profile completion
           apartment_id: null,
           profile_completed: false,
+          emailVerifiedAt: new Date(), // Google already verified email
           status: 'ACTIVE'
         },
         include: {
@@ -94,6 +138,21 @@ router.post('/firebase/login', async (req, res) => {
       } catch (notificationError) {
         console.error('Failed to send registration notification:', notificationError);
       }
+
+      // Return response for new user (no verification needed)
+      return res.json({
+        success: true,
+        message: 'Registration successful. Please complete your profile to continue.',
+        data: {
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            isNewUser: true,
+            requiresVerification: false
+          }
+        }
+      });
     } else {
       // If user DOES exist, block signup logic if they are already fully signed up
       if (intent === 'signup' && user.profile_completed) {
@@ -101,6 +160,26 @@ router.post('/firebase/login', async (req, res) => {
           success: false,
           error: 'You already have an account. Please sign in instead.',
           isNewUser: false
+        });
+      }
+
+      // Auto-verify email if not already verified (Google already verified it)
+      if (!user.emailVerifiedAt || user.status === 'PENDING_VERIFICATION') {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            emailVerifiedAt: new Date(),
+            status: 'ACTIVE'
+          }
+        });
+        // Refresh user data after update
+        user = await prisma.user.findUnique({
+          where: { id: user.id },
+          include: {
+            customerProfile: true,
+            maidProfile: true,
+            adminProfile: true
+          }
         });
       }
     }
@@ -113,7 +192,8 @@ router.post('/firebase/login', async (req, res) => {
       {
         userId: user.id,
         id: user.id,
-        role: user.role
+        role: user.role,
+        tokenVersion: user.tokenVersion || 0
       },
       getJwtSecret(),
       { expiresIn: '24h' }
@@ -153,9 +233,7 @@ router.post('/firebase/login', async (req, res) => {
       message: 'Login successful',
       data: {
         user: userResponse,
-        // CROSS-ORIGIN FIX: Return app JWT (not Firebase ID token) so the
-        // frontend can use Authorization-header-based auth in cross-origin deployments.
-        token: appJwt,
+        token: appJwt, // Return JWT in response body for frontend to store in localStorage
         isNewUser: isNewUser
       }
     });
@@ -321,7 +399,8 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
         {
           userId: existingUser.id,
           id: existingUser.id,
-          role: existingUser.role
+          role: existingUser.role,
+          tokenVersion: existingUser.tokenVersion || 0
         },
         getJwtSecret(),
         { expiresIn: '24h' }
@@ -339,8 +418,7 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
         success: true,
         message: 'Profile already completed',
         data: {
-          user: userResponse,
-          token: appJwt
+          user: userResponse
         }
       });
     }
@@ -505,7 +583,8 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
       {
         userId: finalUser.id,
         id: finalUser.id,
-        role: finalUser.role
+        role: finalUser.role,
+        tokenVersion: finalUser.tokenVersion || 0
       },
       getJwtSecret(),
       { expiresIn: '24h' }
@@ -547,9 +626,7 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
       success: true,
       message: 'Profile completed successfully',
       data: {
-        user: userResponse,
-        // Return the new role-bearing JWT so the frontend can update its stored token
-        token: appJwt
+        user: userResponse
       }
     });
 

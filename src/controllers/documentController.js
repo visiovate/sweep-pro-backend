@@ -1,4 +1,4 @@
-const { getPrismaClient } = require('../utils/database');
+﻿const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const { validateDocumentType, getRequiredDocuments } = require('../utils/fileUpload');
 const { uploadMaidDocument, deleteFile, validateFile } = require('../services/cloudinaryService');
@@ -141,9 +141,6 @@ const uploadMaidVerificationDocuments = async (req, res) => {
   try {
     const maidId = req.user.id;
 
-    console.log('Upload verification request received for user:', maidId);
-    console.log('Files received:', req.files ? Object.keys(req.files) : 'No files');
-    console.log('Body:', req.body);
 
     // Get maid profile
     const maidProfile = await prisma.maidProfile.findUnique({
@@ -151,7 +148,7 @@ const uploadMaidVerificationDocuments = async (req, res) => {
     });
 
     if (!maidProfile) {
-      console.log('Maid profile not found for user:', maidId);
+
       return res.status(404).json({
         success: false,
         message: 'Maid profile not found'
@@ -165,7 +162,6 @@ const uploadMaidVerificationDocuments = async (req, res) => {
       });
     }
 
-    console.log('Maid profile found:', maidProfile.id);
 
     const uploadedDocs = [];
     const errors = [];
@@ -181,25 +177,13 @@ const uploadMaidVerificationDocuments = async (req, res) => {
 
     // Handle each uploaded file
     for (const [fieldName, fileArray] of Object.entries(req.files || {})) {
-      console.log(`Processing field: ${fieldName}`);
       if (!fileArray || !fileArray[0]) {
-        console.log(`No file found for field: ${fieldName}`);
         continue;
       }
       
       const uploadedFile = fileArray[0];
       const documentType = documentTypeMapping[fieldName];
       
-      // Debug file properties
-      console.log(`File details for ${fieldName}:`, {
-        originalname: uploadedFile.originalname,
-        mimetype: uploadedFile.mimetype,
-        size: uploadedFile.size,
-        path: uploadedFile.path,
-        fieldname: uploadedFile.fieldname,
-        hasBuffer: !!uploadedFile.buffer,
-        pathExists: uploadedFile.path ? require('fs').existsSync(uploadedFile.path) : false
-      });
       
       if (!documentType) {
         errors.push(`Unknown document type: ${fieldName}`);
@@ -287,7 +271,7 @@ const uploadMaidVerificationDocuments = async (req, res) => {
         
       } catch (error) {
         console.error(`Error uploading ${fieldName}:`, error);
-        errors.push(`Failed to upload ${fieldName}: ${error.message}`);
+        errors.push(`Failed to upload ${fieldName}.`);
         
         // Clean up file on error
         if (fs.existsSync(uploadedFile.path)) {
@@ -1465,3 +1449,5 @@ module.exports = {
   rejectVerification,
   getMaidVerificationStatus
 };
+
+

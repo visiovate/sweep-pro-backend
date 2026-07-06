@@ -78,6 +78,7 @@ class EmailService {
         connectionTimeout,
         greetingTimeout,
         socketTimeout,
+        family: 4, // Force IPv4 to avoid IPv6 connection issues on Render
         auth: {
           user,
           pass
@@ -101,8 +102,10 @@ class EmailService {
   }
 
   async sendEmail({ to, subject, html, text }) {
+    console.log(`📧 EmailService.sendEmail called - provider: ${this.provider}, to: ${to}, subject: ${subject}`);
+    
     if (this.provider === 'disabled') {
-      console.log('📧 Email service disabled, skipping send to:', to);
+      console.log('📧 Email service disabled, skipping outbound send');
       return { success: false, provider: 'disabled', reason: 'disabled' };
     }
 
@@ -115,6 +118,7 @@ class EmailService {
         text: text || this.stripHtml(html)
       };
 
+      console.log(`📧 Sending email via ${this.provider}, from: ${this.fromEmail}`);
       let result;
       if (this.provider === 'sendgrid') {
         result = await this.client.send(emailData);
@@ -135,7 +139,7 @@ class EmailService {
       }
 
       console.log(
-        `✅ Email sent to ${to}: ${subject} provider=${this.provider}` +
+        `✅ Email sent: ${subject} provider=${this.provider}` +
           (statusCode ? ` status=${statusCode}` : '') +
           (messageId ? ` messageId=${messageId}` : '')
       );
@@ -147,6 +151,7 @@ class EmailService {
         : (error?.message || String(error));
 
       console.error('❌ Email send error:', error);
+      console.error('❌ Error details:', errorMessage);
       return { success: false, provider: this.provider, error: errorMessage };
     }
   }
