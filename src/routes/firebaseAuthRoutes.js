@@ -418,7 +418,8 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
         success: true,
         message: 'Profile already completed',
         data: {
-          user: userResponse
+          user: userResponse,
+          token: appJwt
         }
       });
     }
@@ -626,7 +627,8 @@ router.post('/firebase/complete-profile', authenticateToken, async (req, res) =>
       success: true,
       message: 'Profile completed successfully',
       data: {
-        user: userResponse
+        user: userResponse,
+        token: appJwt
       }
     });
 
