@@ -168,10 +168,43 @@ const otpLimiter = rateLimit({
   }
 });
 
+/**
+ * VERY STRICT Rate Limiter for admin authentication endpoints
+ * 3 attempts per 15 minutes per IP (stricter than regular auth)
+ *
+ * Applied to:
+ * - /api/admin/auth/login
+ * - /api/admin/auth/verify-otp
+ */
+const adminAuthRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,               // 15 minutes
+  max: 3,                                 // 3 requests per windowMs (stricter than regular auth)
+  message: {
+    success: false,
+    error: 'Too many admin authentication attempts. Please try again after 15 minutes.',
+    retryAfter: '15 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: true,
+  skip: (req) => {
+    return process.env.NODE_ENV === 'test';
+  },
+  keyGenerator: ipKeyGenerator,
+  handler: (req, res, options) => {
+    res.status(429).json({
+      success: false,
+      error: options.message.error,
+      retryAfter: options.message.retryAfter,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = {
   authLimiter,
   paymentLimiter,
   globalLimiter,
   passwordResetLimiter,
-  otpLimiter
+  otpLimiter,
+  adminAuthRateLimiter
 };

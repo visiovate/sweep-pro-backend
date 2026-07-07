@@ -115,14 +115,31 @@ class EmailService {
         from: { email: this.fromEmail, name: this.fromName },
         subject,
         html,
-        text: text || this.stripHtml(html)
+        text: text || this.stripHtml(html),
+        // Anti-spam headers
+        headers: {
+          'X-Priority': '1',
+          'X-MSMail-Priority': 'High',
+          'Importance': 'high',
+          'X-Mailer': 'Sweepro Email Service',
+          'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
+          'List-Unsubscribe': `<mailto:${this.fromEmail}?subject=unsubscribe>`,
+          'Precedence': 'bulk'
+        }
       };
 
       console.log(`📧 Sending email via ${this.provider}, from: ${this.fromEmail}`);
       let result;
       if (this.provider === 'sendgrid') {
+        // Add custom args for tracking
+        emailData.customArgs = {
+          category: 'transactional',
+          timestamp: Date.now()
+        };
         result = await this.client.send(emailData);
       } else {
+        // Add tracking options for SMTP
+        emailData.priority = 'high';
         result = await this.client.sendMail(emailData);
       }
 

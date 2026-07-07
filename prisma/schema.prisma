@@ -68,6 +68,7 @@ model User {
   maidRatingHistories        MaidRatingHistory[]         @relation("MaidRatingHistories")
   maidMonthlyPerformances    MaidMonthlyPerformance[]    @relation("MaidMonthlyPerformances")
   otpVerifications           OtpVerification[]
+  adminAuditLogs              AdminAuditLog[]
 
   @@index([email])
   @@index([phone])
@@ -105,20 +106,6 @@ model PasswordResetToken {
   @@index([otp])
 }
 
-model EmailVerificationToken {
-  id        String    @id @default(uuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
-}
-
 model OtpVerification {
   id        String   @id @default(uuid())
   userId    String
@@ -140,6 +127,8 @@ enum OtpType {
   EMAIL_VERIFICATION
   PASSWORD_RESET
   MFA
+  ADMIN_LOGIN
+  ADMIN_PASSWORD_RESET
 }
 
 model CustomerProfile {
@@ -831,6 +820,26 @@ model AdminProfile {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AdminAuditLog {
+  id          String   @id @default(uuid())
+  adminId     String
+  action      String   // e.g., "admin.login.success", "user.created", "booking.assigned"
+  resource    String?  // e.g., "User:123", "Booking:456"
+  changes     Json?    // Before/after state
+  ipAddress   String?
+  userAgent   String?
+  success     Boolean
+  errorMessage String?
+  createdAt   DateTime @default(now())
+  
+  admin       User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  
+  @@index([adminId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([success])
 }
 
 model Issue {

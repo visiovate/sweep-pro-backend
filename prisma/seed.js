@@ -30,19 +30,33 @@ async function main() {
   console.log('Seeding database...');
 
   try {
-    // Create admin user
-    const hashedAdminPassword = await bcrypt.hash('admin123', 10);
+    // Create admin user from environment variables
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@sweepro.com';
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const adminName = process.env.ADMIN_NAME || 'Admin User';
+    const adminPhone = process.env.ADMIN_PHONE || '9876543210';
+
+    // Require ADMIN_PASSWORD in production
+    if (!adminPassword && process.env.NODE_ENV === 'production') {
+      throw new Error('ADMIN_PASSWORD environment variable is required in production');
+    }
+
+    // Use default password only in development
+    const passwordToUse = adminPassword || 'admin123';
+    const hashedAdminPassword = await bcrypt.hash(passwordToUse, 12);
+
     const admin = await prisma.user.upsert({
-      where: { email: 'admin@sweepro.com' },
+      where: { email: adminEmail },
       update: {},
       create: {
-        email: 'admin@sweepro.com',
-        name: 'Admin User',
+        email: adminEmail,
+        name: adminName,
         password: hashedAdminPassword,
-        phone: '9876543210',
+        phone: adminPhone,
         role: 'ADMIN',
         profile_completed: true,
         status: 'ACTIVE',
+        emailVerifiedAt: new Date(), // Auto-verify admin email
         address: 'Admin Office',
         profileImage: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Admin',
         bio: 'System Administrator managing Sweep Pro operations',
