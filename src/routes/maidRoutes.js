@@ -12,13 +12,15 @@ const {
   verifyStartOTP,
   completeService,
   getMaidAssignments,
-  generateEndOTP
+  generateEndOTP,
+  generateStartOTP
 } = require('../controllers/maidController');
 
 // Maid service workflow routes (put specific routes first)
 router.get('/my-assignments', authenticateToken, getMaidAssignments);
 router.put('/profile', authenticateToken, updateMaidProfile);
 router.put('/availability', authenticateToken, authorizeMaid, setMaidAvailability);
+router.post('/generate-start-otp', authenticateToken, generateStartOTP);
 router.post('/verify-start-otp', authenticateToken, verifyStartOTP);
 router.post('/generate-end-otp', authenticateToken, generateEndOTP);
 router.post('/complete-service', authenticateToken, completeService);

@@ -160,6 +160,10 @@ router.post('/register', registerValidation, async (req, res) => {
           }
         });
       } else if (role === 'MAID') {
+        // Auto-generate a unique verification code for the new maid
+        const { generateUniqueVerificationCode } = require('../controllers/customerBookingCompletionController');
+        const verificationCode = await generateUniqueVerificationCode();
+
         await prisma.maidProfile.create({
           data: {
             userId: createdUser.id,
@@ -184,7 +188,8 @@ router.post('/register', registerValidation, async (req, res) => {
             cancelledBookings: 0,
             attendanceStreak: 0,
             performanceScore: 0,
-            commissionRate: 0.15
+            commissionRate: 0.15,
+            verificationCode
           }
         });
       }
