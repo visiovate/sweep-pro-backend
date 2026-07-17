@@ -14,10 +14,23 @@ let prisma = null;
  * Create a new PrismaClient instance with proper configuration
  */
 function createPrismaClient() {
-  return new PrismaClient({
+  let dbUrl = process.env.DATABASE_URL || '';
+  if (dbUrl && !dbUrl.includes('connection_limit=')) {
+    dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'connection_limit=5';
+  }
+
+  const options = {
     log: ['error', 'warn'],
     errorFormat: 'pretty',
-  });
+  };
+
+  if (dbUrl) {
+    options.datasources = {
+      db: { url: dbUrl }
+    };
+  }
+
+  return new PrismaClient(options);
 }
 
 /**

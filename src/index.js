@@ -409,6 +409,7 @@ app.use((err, req, res, next) => {
 
 // Start server only if not in test environment
 if (process.env.NODE_ENV !== 'test') {
+  // Uses PORT from .env (3000) and connection_limit=5 for database pool
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, async () => {
     logger.info(`Server running on port ${PORT}`);
