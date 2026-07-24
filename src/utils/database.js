@@ -9,14 +9,27 @@ const MAX_CONNECTION_ATTEMPTS = 3;
 // IMPORTANT: PrismaClient is created lazily to prevent connection pool exhaustion
 // when running as cron jobs that may fail before proper cleanup.
 let prisma = null;
+let prismaInstanceCount = 0;
 
 /**
  * Create a new PrismaClient instance with proper configuration
  */
 function createPrismaClient() {
+  // Add connection pool limit to DATABASE_URL if not present
+  let databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl.includes('connection_limit')) {
+    const separator = databaseUrl.includes('?') ? '&' : '?';
+    databaseUrl = `${databaseUrl}${separator}connection_limit=5`;
+  }
+
   return new PrismaClient({
     log: ['error', 'warn'],
     errorFormat: 'pretty',
+    datasources: {
+      db: {
+        url: databaseUrl
+      }
+    }
   });
 }
 
@@ -76,9 +89,14 @@ async function initializePrisma() {
  * NOTE: For cron jobs, always call initializePrisma() first to ensure proper connection.
  * For the main app, this lazy creation handles the case where modules are imported
  * before initializePrisma() is called.
+ * 
+ * IMPORTANT: This function is called at module level in many controllers.
+ * We must ensure it always returns the same instance to prevent connection pool exhaustion.
  */
 function getPrismaClient() {
   if (!prisma) {
+    prismaInstanceCount++;
+    console.log(`⚠️ Creating new PrismaClient instance #${prismaInstanceCount} (should only happen once)`);
     prisma = createPrismaClient();
   }
   return prisma;

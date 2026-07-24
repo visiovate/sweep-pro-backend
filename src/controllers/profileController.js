@@ -2,13 +2,12 @@ const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
 const notificationService = require('../services/notificationService');
 
-const prisma = getPrismaClient();
-
 /**
  * Get complete profile with all related data
  */
 const getCompleteProfile = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
 
     const user = await prisma.user.findUnique({

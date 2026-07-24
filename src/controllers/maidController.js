@@ -1,10 +1,10 @@
 const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = getPrismaClient();
 
 // Get all maids
 const getAllMaids = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const maids = await prisma.user.findMany({
       where: { role: 'MAID' },
       include: { maidProfile: true }

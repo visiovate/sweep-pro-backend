@@ -502,6 +502,7 @@ class RazorpayService {
         data: {
           status: 'COMPLETED',
           paymentMethod: this.mapRazorpayMethod(payment_method || paymentDetails.method),
+          transactionId: razorpay_payment_id,  // Store Razorpay payment ID for accurate tracking
           gatewayResponse: paymentDetails,
           updatedAt: new Date()
         }

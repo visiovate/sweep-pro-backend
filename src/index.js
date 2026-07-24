@@ -66,8 +66,11 @@ const { initializeFirebaseAdmin } = require('./config/firebase');
 // Import Redis utility
 const { testRedisConnection } = require('./config/redis');
 
-// Import notification service
-const notificationService = require('./services/notificationService');
+// Import notification service (simplified version without BullMQ/Redis)
+const notificationService = require('./services/simplifiedNotificationService');
+
+// Import notification cleanup cron
+const notificationCleanupCron = require('./cron/notificationCleanupCron');
 
 // ⚠️ REMOVED: BullMQ job scheduler initialization (moved to worker)
 // ⚠️ REMOVED: Monthly subscription scheduler (moved to dedicated cron)
@@ -75,7 +78,11 @@ const notificationService = require('./services/notificationService');
 // ⚠️ REMOVED: Buffer period scheduler (moved to dedicated cron)
 
 // Initialize notification service with WebSocket server
-notificationService.init(wss);
+// Note: Simplified service doesn't need WebSocket init, but we keep it for compatibility
+// notificationService.init(wss);
+
+// Start notification cleanup cron (runs daily at 2 AM)
+notificationCleanupCron.start();
 
 // -------------------------------------------------------------------
 // M8: WebSocket Authentication – JWT verification on upgrade handshake

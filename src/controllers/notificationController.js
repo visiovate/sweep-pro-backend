@@ -1,5 +1,6 @@
 const { getPrismaClient } = require('../utils/database');
-const notificationService = require('../services/notificationService');
+const notificationService = require('../services/simplifiedNotificationService');
+const notificationErrorHandler = require('../utils/notificationErrorHandler');
 
 /**
  * Enhanced Notification Controller
@@ -403,14 +404,17 @@ const sendTestNotification = async (req, res) => {
       timestamp: new Date().toISOString()
     };
 
-    await notificationService.sendToUser(userId, notification);
+    await notificationErrorHandler.withErrorHandling(
+      async () => await notificationService.sendToUser(userId, notification),
+      { action: 'sendTestNotification', userId }
+    );
     
     res.json({
       success: true,
       message: 'Test notification sent successfully'
     });
   } catch (error) {
-    console.error('Error sending test notification:', error);
+    notificationErrorHandler.logError(error, { action: 'sendTestNotification' });
     res.status(500).json({ 
       success: false,
       error: 'Failed to send test notification' 
@@ -441,22 +445,31 @@ const sendBroadcastNotification = async (req, res) => {
     if (targetRole) {
       // Send to specific role
       if (targetRole === 'ADMIN' || targetRole === 'SUPERVISOR') {
-        await notificationService.sendToAdmins(notification);
+        await notificationErrorHandler.withErrorHandling(
+          async () => await notificationService.sendToAdmins(notification),
+          { action: 'sendBroadcastNotification', targetRole }
+        );
       } else if (targetRole === 'MAID' || targetRole === 'FLOATING_MAID') {
-        await notificationService.sendToAllMaids(notification);
+        await notificationErrorHandler.withErrorHandling(
+          async () => await notificationService.sendToAllMaids(notification),
+          { action: 'sendBroadcastNotification', targetRole }
+        );
       } else if (targetRole === 'CUSTOMER') {
-        // Send to all customers
-        const customers = await getPrismaClient().user.findMany({
-          where: { role: 'CUSTOMER' },
-          select: { id: true }
-        });
-        for (const customer of customers) {
-          await notificationService.sendToUser(customer.id, notification);
-        }
+        await notificationErrorHandler.withErrorHandling(
+          async () => await notificationService.sendToAllCustomers(notification),
+          { action: 'sendBroadcastNotification', targetRole }
+        );
       }
     } else {
-      // Broadcast to all
-      await notificationService.broadcast(notification);
+      // Broadcast to all (send to admins, maids, and customers)
+      await notificationErrorHandler.withErrorHandling(
+        async () => {
+          await notificationService.sendToAdmins(notification);
+          await notificationService.sendToAllMaids(notification);
+          await notificationService.sendToAllCustomers(notification);
+        },
+        { action: 'sendBroadcastNotification', targetRole: 'ALL' }
+      );
     }
     
     res.json({
@@ -464,7 +477,7 @@ const sendBroadcastNotification = async (req, res) => {
       message: 'Broadcast notification sent successfully'
     });
   } catch (error) {
-    console.error('Error sending broadcast notification:', error);
+    notificationErrorHandler.logError(error, { action: 'sendBroadcastNotification' });
     res.status(500).json({ 
       success: false,
       error: 'Failed to send broadcast notification' 
@@ -529,14 +542,19 @@ const sendEmergencyAlert = async (req, res) => {
 // Get WebSocket connection health (Admin only)
 const getConnectionHealth = async (req, res) => {
   try {
-    const healthStatus = await notificationService.healthCheck();
+    const healthStatus = {
+      service: 'simplified',
+      stats: notificationService.getStats(),
+      errorStats: notificationErrorHandler.getErrorStats(),
+      timestamp: new Date().toISOString()
+    };
     
     res.json({
       success: true,
       data: healthStatus
     });
   } catch (error) {
-    console.error('Error checking notification health:', error);
+    notificationErrorHandler.logError(error, { action: 'getConnectionHealth' });
     res.status(500).json({ 
       success: false,
       error: 'Failed to check notification health' 

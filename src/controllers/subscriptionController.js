@@ -4,16 +4,12 @@ const subscriptionBufferService = require('../services/subscriptionBufferService
 const { calculatePrice } = require('../services/pricingService');
 const { publishNotificationEvent } = require('../notifications/events/publishEvent');
 const { NOTIFICATION_TOPICS } = require('../notifications/events/topics');
-const prisma = getPrismaClient();
 
 // Get all subscription plans
 const getSubscriptionPlans = async (req, res) => {
   try {
-    // Use initializePrisma() to ensure Prisma is ready on first request,
-    // avoiding a null-dereference crash when the module-level `prisma`
-    // snapshot was taken before the DB connection was established.
-    const db = (await initializePrisma()) || prisma;
-    const plans = await db.servicePlan.findMany({
+    const prisma = getPrismaClient();
+    const plans = await prisma.servicePlan.findMany({
       where: { isActive: true },
       include: {
         service: true,
@@ -56,6 +52,7 @@ const MAX_USERS_PER_SLOT = 20;
 // Subscribe user to a plan
 const subscribeToPlan = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const { planId, startDate: requestedStartDate, serviceDetails, planDuration } = req.body;
     const userId = req.user.id;
 
@@ -295,6 +292,7 @@ const subscribeToPlan = async (req, res) => {
 // Get user's current subscription
 const getUserSubscription = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
 
     // Get customer profile
@@ -470,6 +468,7 @@ const getUserSubscription = async (req, res) => {
 // Get monthly subscription status with buffer information
 const getMonthlySubscriptionStatus = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
 
     // Get customer profile
@@ -559,6 +558,7 @@ const getMonthlySubscriptionStatus = async (req, res) => {
 // Manually start buffer period
 const startBufferPeriod = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
     const { reason = 'CUSTOMER_REQUEST' } = req.body;
 
@@ -630,6 +630,7 @@ const startBufferPeriod = async (req, res) => {
 // End buffer period and resume services
 const endBufferPeriod = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
 
     // Get customer profile
@@ -681,6 +682,7 @@ const completeSubscriptionPayment = async (req, res) => {
 
     const { subscriptionId, paymentId, transactionId, gateway, gatewayResponse } = req.body;
     const userId = req.user.id;
+    const prisma = getPrismaClient();
 
     if (!subscriptionId || !paymentId || !transactionId) {
       return res.status(400).json({
@@ -775,6 +777,7 @@ const completeSubscriptionPayment = async (req, res) => {
 // Cancel subscription
 const cancelSubscription = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
 
     // Get customer profile
@@ -839,6 +842,7 @@ const cancelSubscription = async (req, res) => {
 // Check subscription status for booking
 const checkSubscriptionStatus = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
 
     // Get or create customer profile
@@ -889,6 +893,7 @@ const checkSubscriptionStatus = async (req, res) => {
 // Admin: Update subscription plan
 const updateSubscriptionPlan = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const { id } = req.params;
     const {
       name,
@@ -977,6 +982,7 @@ const updateSubscriptionPlan = async (req, res) => {
 // Admin: Create subscription plan
 const createSubscriptionPlan = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const {
       name,
       description,
@@ -1054,6 +1060,7 @@ const createSubscriptionPlan = async (req, res) => {
 // Admin: Delete subscription plan
 const deleteSubscriptionPlan = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const { id } = req.params;
 
     // Check if user is admin
@@ -1103,6 +1110,7 @@ const deleteSubscriptionPlan = async (req, res) => {
 // Admin: Get subscription by ID with full details
 const getSubscriptionById = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ message: 'Access denied. Admin only.' });
     }
@@ -1199,6 +1207,7 @@ const getSubscriptionById = async (req, res) => {
 // Admin: Cancel a subscription
 const adminCancelSubscription = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ message: 'Access denied. Admin only.' });
     }
@@ -1242,6 +1251,7 @@ const adminCancelSubscription = async (req, res) => {
 // Admin: Get all subscription cycles
 const getSubscriptionCycles = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ message: 'Access denied. Admin only.' });
     }
@@ -1308,6 +1318,7 @@ const getSubscriptionCycles = async (req, res) => {
 // Admin: Get all buffer periods
 const getBufferPeriods = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ message: 'Access denied. Admin only.' });
     }
@@ -1374,6 +1385,7 @@ const getBufferPeriods = async (req, res) => {
 // Admin: Manually start buffer period for a subscription
 const adminStartBufferPeriod = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ message: 'Access denied. Admin only.' });
     }
@@ -1422,6 +1434,7 @@ const adminStartBufferPeriod = async (req, res) => {
 // Admin: Manually end buffer period for a subscription
 const adminEndBufferPeriod = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ message: 'Access denied. Admin only.' });
     }
@@ -1461,6 +1474,7 @@ const adminEndBufferPeriod = async (req, res) => {
 // Admin: Get subscription analytics
 const getSubscriptionAnalytics = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ message: 'Access denied. Admin only.' });
     }
@@ -1573,6 +1587,7 @@ const getSubscriptionAnalytics = async (req, res) => {
 // Get upcoming services for subscription
 const getUpcomingServices = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
 
     // Get customer profile
@@ -1639,6 +1654,7 @@ const getUpcomingServices = async (req, res) => {
 // Get global time slot counts (total customers who selected each slot)
 const getTimeSlotCounts = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     // Get all time slot bookings (global counts)
     const existingSlots = await prisma.timeSlotBooking.findMany();
 
@@ -1685,6 +1701,7 @@ const getTimeSlotCounts = async (req, res) => {
 // Increment time slot count when a subscription is created/activated
 const incrementTimeSlotCount = async (timeSlot) => {
   try {
+    const prisma = getPrismaClient();
     console.log(`🔄 Attempting to increment count for timeSlot: "${timeSlot}"`);
 
     // Validate timeSlot format
@@ -1737,6 +1754,7 @@ const incrementTimeSlotCount = async (timeSlot) => {
 // Internal function to check if a time slot is available (used within subscribeToPlan)
 const isTimeSlotAvailableInternal = async (timeSlot) => {
   try {
+    const prisma = getPrismaClient();
     const existingSlot = await prisma.timeSlotBooking.findUnique({
       where: {
         timeSlot: timeSlot

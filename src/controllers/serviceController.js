@@ -1,10 +1,10 @@
 const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = getPrismaClient();
 
 // Create a new service
 const createService = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const { name, description, basePrice, baseDuration, category } = req.body;
     
     // Validate required fields

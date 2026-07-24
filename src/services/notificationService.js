@@ -1,7 +1,7 @@
 const { getPrismaClient } = require('../utils/database');
 const { WebSocketServer } = require('ws');
 const jwt = require('jsonwebtoken');
-const cron = require('node-cron');
+const simplifiedNotificationService = require('./simplifiedNotificationService');
 
 class NotificationService {
   constructor() {
@@ -18,7 +18,8 @@ class NotificationService {
       maidConnections: 0,
       customerConnections: 0
     };
-    this.initializeScheduledJobs();
+    // Scheduled jobs disabled for simplified system
+    // this.initializeScheduledJobs();
   }
 
   init(wss) {
@@ -151,13 +152,14 @@ class NotificationService {
 
   // Send notification to specific user
   async sendToUser(userId, notification) {
+    // Send via WebSocket for real-time delivery
     const client = this.clients.get(userId);
     if (client && client.readyState === client.OPEN) {
       client.send(JSON.stringify(notification));
     }
     
-    // Also save to database for offline users
-    await this.saveNotificationToDatabase(userId, notification);
+    // Delegate to simplified service for database persistence
+    await simplifiedNotificationService.sendToUser(userId, notification);
   }
 
   // Send notification to all admins
@@ -177,18 +179,8 @@ class NotificationService {
     
     console.log(`📊 Sent to ${sentCount} connected admin(s) via WebSocket`);
 
-    // Save to admin users in database
-    const adminUsers = await getPrismaClient().user.findMany({
-      where: { role: { in: ['ADMIN', 'SUPERVISOR'] } },
-      select: { id: true, name: true, email: true }
-    });
-
-    console.log(`💾 Saving notification to ${adminUsers.length} admin(s) in database`);
-    
-    for (const admin of adminUsers) {
-      await this.saveNotificationToDatabase(admin.id, notification);
-      console.log(`✅ Saved notification for admin userId=${admin.id}`);
-    }
+    // Delegate to simplified service for database persistence
+    await simplifiedNotificationService.sendToAdmins(notification);
   }
 
   // Send notification to specific maid
@@ -198,7 +190,8 @@ class NotificationService {
       client.send(JSON.stringify(notification));
     }
     
-    await this.saveNotificationToDatabase(maidId, notification);
+    // Delegate to simplified service for database persistence
+    await simplifiedNotificationService.sendToMaid(maidId, notification);
   }
 
   // Send notification to all maids
@@ -209,15 +202,8 @@ class NotificationService {
       }
     });
 
-    // Save to all maid users in database
-    const maidUsers = await getPrismaClient().user.findMany({
-      where: { role: { in: ['MAID', 'FLOATING_MAID'] } },
-      select: { id: true }
-    });
-
-    for (const maid of maidUsers) {
-      await this.saveNotificationToDatabase(maid.id, notification);
-    }
+    // Delegate to simplified service for database persistence
+    await simplifiedNotificationService.sendToAllMaids(notification);
   }
 
   // Broadcast to all connected clients
@@ -1219,37 +1205,13 @@ class NotificationService {
     await this.sendToUser(subscription.customer.userId, notification);
   }
 
-  // Scheduled job initialization
+  // Scheduled job initialization - DISABLED for simplified system
+  // These jobs are now handled by separate cron jobs if needed
   initializeScheduledJobs() {
-    // Daily booking reminders at 6 PM
-    cron.schedule('0 18 * * *', async () => {
-      await this.sendDailyBookingReminders();
-    });
-
-    // Payment reminders every 6 hours
-    cron.schedule('0 */6 * * *', async () => {
-      await this.sendPaymentReminders();
-    });
-
-    // Subscription expiry reminders daily at 9 AM
-    cron.schedule('0 9 * * *', async () => {
-      await this.sendSubscriptionExpiryReminders();
-    });
-
-    // Performance alerts weekly on Monday at 10 AM
-    cron.schedule('0 10 * * 1', async () => {
-      await this.sendPerformanceAlerts();
-    });
-
-    // Attendance alerts daily at 9:30 AM
-    cron.schedule('30 9 * * *', async () => {
-      await this.sendAttendanceAlerts();
-    });
-
-    // Connection cleanup every hour
-    cron.schedule('0 * * * *', () => {
-      this.cleanupInactiveConnections();
-    });
+    // Scheduled jobs moved to separate cron files for simplified system
+    // Use notificationCleanupCron.js for cleanup jobs
+    // Add additional cron jobs as needed in src/cron/ directory
+    console.log('⚠️ Scheduled jobs disabled in simplified notification service');
   }
 
   async sendDailyBookingReminders() {

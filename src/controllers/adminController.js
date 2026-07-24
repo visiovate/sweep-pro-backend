@@ -1,10 +1,10 @@
 const { getPrismaClient } = require('../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const prisma = getPrismaClient();
 
 // Get all customers with active subscriptions for admin dashboard
 const getActiveCustomers = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const customers = await prisma.subscription.findMany({
       where: {
         status: 'ACTIVE',
@@ -45,6 +45,7 @@ const getActiveCustomers = async (req, res) => {
 const getPendingBookings = async (req, res) => {
   try {
     console.log('🔍 Fetching pending bookings for admin...');
+    const prisma = getPrismaClient();
 
     const bookings = await prisma.booking.findMany({
       where: {
@@ -99,6 +100,7 @@ const getPendingBookings = async (req, res) => {
 const getAvailableMaids = async (req, res) => {
   try {
     const { date, latitude, longitude } = req.query;
+    const prisma = getPrismaClient();
 
     const maids = await prisma.user.findMany({
       where: {
@@ -211,6 +213,7 @@ const getAvailableMaids = async (req, res) => {
 const assignMaidToBooking = async (req, res) => {
   try {
     const { bookingId, maidId } = req.body;
+    const prisma = getPrismaClient();
 
     // Check if maid is available
     const maid = await prisma.user.findFirst({
@@ -359,6 +362,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 // Get comprehensive admin statistics
 const getAdminStats = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     // Get all statistics in parallel
     const [users, bookings, subscriptions, payments] = await Promise.all([
       prisma.user.findMany({
@@ -479,6 +483,7 @@ const getAdminStats = async (req, res) => {
 // Get all subscriptions for admin
 const getAllSubscriptions = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const { status, plan } = req.query;
 
     let whereClause = {};
@@ -539,6 +544,7 @@ const getAllSubscriptions = async (req, res) => {
 // Get all payments for admin
 const getAllPayments = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const { status, type } = req.query;
 
     let whereClause = {};
@@ -605,6 +611,7 @@ const getAllPayments = async (req, res) => {
 // Get all maids with their document verification status
 const getAllMaidsWithDocuments = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const maids = await prisma.user.findMany({
       where: { role: 'MAID' },
       include: {

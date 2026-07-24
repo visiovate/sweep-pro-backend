@@ -6,8 +6,6 @@ const notificationService = require('../services/notificationService');
 // SECURITY: Import JWT secret getter
 const { getJwtSecret } = require('../config/validateEnv');
 
-const prisma = getPrismaClient();
-
 // Note: Registration is now handled in authRoutes.js
 // This method is kept for backward compatibility if needed
 const register = async (req, res) => {
@@ -39,6 +37,7 @@ const login = async (req, res) => {
 
 const getProfile = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
 
     const user = await prisma.user.findUnique({
@@ -69,6 +68,7 @@ const getProfile = async (req, res) => {
 
 const updateProfile = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
     const { name, phone, address, latitude, longitude, pincode, locality, addressLine, city, state, landmark } = req.body;
 
@@ -139,6 +139,7 @@ const updateProfile = async (req, res) => {
 
 const getAllUsers = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const users = await prisma.user.findMany({
       select: {
         id: true,
@@ -166,6 +167,7 @@ const getAllUsers = async (req, res) => {
 
 const getUserById = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const { id } = req.params;
     const user = await prisma.user.findUnique({
       where: { id },
