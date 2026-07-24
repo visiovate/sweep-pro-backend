@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sweep Pro E2E Test Runner</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Courier New', monospace; background: #0d1117; color: #c9d1d9; padding: 20px; }
+  h1 { color: #58a6ff; margin-bottom: 10px; }
+  .info { color: #8b949e; margin-bottom: 20px; }
+  #log { white-space: pre-wrap; font-size: 13px; line-height: 1.6; }
+  .pass { color: #3fb950; }
+  .fail { color: #f85149; }
+  .warn { color: #d29922; }
+  .skip { color: #8b949e; }
+  .phase { color: #58a6ff; font-weight: bold; font-size: 15px; margin-top: 10px; }
+  .bug { color: #f85149; background: #1a0000; padding: 8px; margin: 5px 0; border-left: 3px solid #f85149; }
+  .summary { background: #161b22; border: 1px solid #30363d; padding: 15px; margin-top: 20px; border-radius: 6px; }
+  button { background: #238636; color: white; border: none; padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 6px; margin-bottom: 20px; }
+  button:hover { background: #2ea043; }
+  button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<h1>🧹 Sweep Pro — Client Handover E2E Test Suite</h1>
+<p class="info">Target: http://localhost:5000 | Click "Run Tests" to start</p>
+<button id="runBtn" onclick="runAllTests()">▶ Run Tests</button>
+<div id="log"></div>
+
+<script>
+const BASE = 'http://localhost:5000';
+const logEl = document.getElementById('log');
+let bugs = [], testNum = 0, passed = 0, failed = 0, skipped = 0;
+let customerToken, maidToken, adminToken, customerId, maidId, bookingId, serviceId, verificationCode, assignmentId;
+
+function log(cls, msg) {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function bug(id, title, component, severity, expected, observed, rootCause) {
+  bugs.push({id, title, component, severity, expected, observed, rootCause});
+}
+
+async function api(method, path, body, token) {
+  const opts = { method, headers: {'Content-Type':'application/json','Accept':'application/json'} };
+  if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+  if (body) opts.body = JSON.stringify(body);
+  try {
+    const r = await fetch(BASE + path, opts);
+    const data = await r.json().catch(() => ({rawBody: 'non-json'}));
+    return {status: r.status, body: data};
+  } catch(e) {
+    return {status: 0, body: {error: e.message}};
+  }
+}
+
+async function test(name, fn) {
+  testNum++;
+  try {
+    await fn();
+    passed++;
+    log('pass', `✅ Test ${testNum}: ${name} — PASSED`);
+    return true;
+  } catch(e) {
+    failed++;
+    log('fail', `❌ Test ${testNum}: ${name} — FAILED: ${e.message}`);
+    return false;
+  }
+}
+
+function assert(cond, msg) { if (!cond) throw new Error(msg); }
+
+async function runAllTests() {
+  document.getElementById('runBtn').disabled = true;
+  logEl.innerHTML = '';
+  bugs = []; testNum = 0; passed = 0; failed = 0; skipped = 0;
+
+  // ════════════════════════════════════════════
+  // PHASE 0
+  // ════════════════════════════════════════════
+  log('phase', '═══ PHASE 0: Health Check & Connectivity ═══');
+
+  await test('Backend Health Check', async () => {
+    const r = await api('GET', '/health');
+    assert(r.status === 200 || r.status === 503, 'Health returned ' + r.status);
+    log('', `   Database: ${r.body.dependencies?.database}, Redis: ${r.body.dependencies?.redis}`);
+    if (r.body.dependencies?.database === 'unhealthy') {
+      bug('BUG-001', 'Database unhealthy', 'Backend/DB', 'HIGH', 'healthy', r.body.dependencies.database, 'DB connection issue');
+    }
+  });
+
+  await test('CORS Test', async () => {
+    const r = await api('GET', '/api/cors-test');
+    assert(r.status === 200, 'CORS returned ' + r.status);
+  });
+
+  // ════════════════════════════════════════════
+  // PHASE 1: Auth & Registration
+  // ════════════════════════════════════════════
+  log('phase', '\n═══ PHASE 1: Authentication & Registration ═══');
+
+  await test('1.1 — Customer Registration', async () => {
+    const r = await api('POST', '/api/auth/register', {
+      name: 'E2E Test Customer', email: 'e2e.test.customer@sweepro-test.com',
+      phone: '9876500001', role: 'CUSTOMER', password: 'TestPass123!',
+      confirmPassword: 'TestPass123!', address: '101 E2E Test Lane, Bangalore, Karnataka - 560001'
+    });
+    log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+    if (r.status === 400 && r.body.message?.includes('already')) {
+      log('warn', '   Already exists — will login');
+    } else if (r.status === 201) {
+      customerId = r.body.data?.user?.id;
+      log('', `   Customer ID: ${customerId}`);
+    }
+  });
+
+  await test('1.1b — Customer Login', async () => {
+    const r = await api('POST', '/api/auth/login', {email: 'e2e.test.customer@sweepro-test.com', password: 'TestPass123!'});
+    log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+    if (r.status === 403 && r.body.code === 'EMAIL_NOT_VERIFIED') {
+      log('warn', '   Email not verified — will try seed customer');
+      bug('BUG-002', 'Test accounts need email verification', 'Backend/Auth', 'MEDIUM',
+        'Login succeeds', 'Blocked: EMAIL_NOT_VERIFIED', 'Registration sets emailVerifiedAt=null');
+    } else if (r.status === 200) {
+      customerToken = r.body.data?.token;
+      customerId = r.body.data?.user?.id;
+      log('', `   Token: ${customerToken?.substring(0,20)}...`);
+    }
+  });
+
+  await test('1.2 — Maid Registration', async () => {
+    const r = await api('POST', '/api/auth/register', {
+      name: 'E2E Test Maid', email: 'e2e.test.maid@sweepro-test.com',
+      phone: '9876500002', role: 'MAID', password: 'TestPass123!',
+      confirmPassword: 'TestPass123!', address: '202 E2E Service Road, Bangalore, Karnataka - 560002',
+      pincode: '560002'
+    });
+    log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+    if (r.status === 201) { maidId = r.body.data?.user?.id; }
+  });
+
+  await test('1.2b — Maid Login', async () => {
+    const r = await api('POST', '/api/auth/login', {email: 'e2e.test.maid@sweepro-test.com', password: 'TestPass123!'});
+    log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+    if (r.status === 200) { maidToken = r.body.data?.token; maidId = r.body.data?.user?.id; }
+    else { log('warn', '   Maid login blocked'); }
+  });
+
+  await test('1.3 — Admin Login', async () => {
+    const r = await api('POST', '/api/auth/login', {email: 'admin@sweepro.com', password: 'admin123'});
+    log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+    if (r.status === 200) {
+      adminToken = r.body.data?.token;
+      assert(r.body.data?.user?.role === 'ADMIN', 'Not admin role');
+      log('', `   Admin Token: ${adminToken?.substring(0,20)}...`);
+    } else {
+      bug('BUG-003', 'Admin login fails', 'Backend/Auth', 'HIGH', 'Login OK', `${r.status}: ${r.body.message}`, 'Admin not seeded or email not verified');
+    }
+  });
+
+  // ── PHASE 1.5: Fallback to seed accounts ──
+  log('phase', '\n═══ PHASE 1.5: Fallback — Seed Account Login ═══');
+
+  if (!customerToken) {
+    await test('1.5a — Seed Customer Login', async () => {
+      const r = await api('POST', '/api/auth/login', {email: 'customer@sweepro.com', password: 'customer123'});
+      log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+      if (r.status === 200) {
+        customerToken = r.body.data?.token; customerId = r.body.data?.user?.id;
+        log('', `   Using seed customer: ${r.body.data?.user?.name}`);
+      } else {
+        bug('BUG-004', 'No customer can log in', 'Backend/Auth', 'HIGH', 'Login OK', `${r.status}: ${r.body.message}`, 'Email verification or seed issue');
+      }
+    });
+  }
+
+  if (!maidToken) {
+    await test('1.5b — Seed Maid Login', async () => {
+      const r = await api('POST', '/api/auth/login', {email: 'maid@sweepro.com', password: 'maid123'});
+      log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+      if (r.status === 200) {
+        maidToken = r.body.data?.token; maidId = r.body.data?.user?.id;
+        log('', `   Using seed maid: ${r.body.data?.user?.name}`);
+      } else {
+        bug('BUG-005', 'No maid can log in', 'Backend/Auth', 'HIGH', 'Login OK', `${r.status}: ${r.body.message}`, 'Email verification or seed issue');
+      }
+    });
+  }
+
+  // ── Auth/me checks ──
+  if (customerToken) {
+    await test('1.6a — Customer /auth/me', async () => {
+      const r = await api('GET', '/api/auth/me', null, customerToken);
+      assert(r.status === 200, 'me returned ' + r.status);
+      assert(r.body.data?.role === 'CUSTOMER', 'Wrong role: ' + r.body.data?.role);
+      log('', `   Profile completed: ${r.body.data?.profile_completed}`);
+    });
+  }
+  if (adminToken) {
+    await test('1.6b — Admin /auth/me', async () => {
+      const r = await api('GET', '/api/auth/me', null, adminToken);
+      assert(r.status === 200, 'me returned ' + r.status);
+      assert(r.body.data?.role === 'ADMIN', 'Wrong role: ' + r.body.data?.role);
+    });
+  }
+
+  // ════════════════════════════════════════════
+  // PHASE 2: Services & Booking
+  // ════════════════════════════════════════════
+  log('phase', '\n═══ PHASE 2: Service Selection & Booking ═══');
+
+  if (!customerToken) { log('skip', '⏭️ SKIPPING Phase 2 — no customer token'); skipped += 4; }
+  else {
+    await test('2.1 — Get Available Services', async () => {
+      const r = await api('GET', '/api/services', null, customerToken);
+      const svcs = Array.isArray(r.body) ? r.body : (r.body.data || []);
+      log('', `   Found ${svcs.length} services`);
+      if (svcs.length > 0) { serviceId = svcs[0].id; log('', `   Using: ${svcs[0].name} (₹${svcs[0].basePrice})`); }
+      else { bug('BUG-006', 'No services', 'Backend/Services', 'HIGH', '≥1 service', '0', 'Seed missing'); }
+    });
+
+    await test('2.2 — Check Time Slots', async () => {
+      const tmrw = new Date(Date.now()+86400000).toISOString().split('T')[0];
+      const r = await api('GET', '/api/bookings/available-slots?date='+tmrw, null, customerToken);
+      log('', `   Status: ${r.status}, Body: ${JSON.stringify(r.body).substring(0,200)}`);
+    });
+
+    await test('2.3 — Create Booking', async () => {
+      const tmrw = new Date(Date.now()+86400000).toISOString().split('T')[0];
+      const r = await api('POST', '/api/bookings', {scheduledDate: tmrw, timeSlot: '09:00-12:00', specialInstructions: 'E2E Test'}, customerToken);
+      log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+      if (r.status === 201 || r.status === 200) {
+        bookingId = r.body.data?.id || r.body.data?.booking?.id;
+        log('', `   Booking ID: ${bookingId}, Status: ${r.body.data?.status}`);
+      } else if (r.status === 402) {
+        bug('BUG-007', 'Booking blocked — no active subscription', 'Backend/Bookings', 'MEDIUM', 'Booking created', `${r.status}: ${r.body.message}`, 'Subscription validation middleware blocks without active sub');
+      } else {
+        bug('BUG-009', `Booking creation ${r.status}`, 'Backend/Bookings', 'HIGH', '200/201', `${r.status}: ${r.body.message}`, 'TBD');
+      }
+    });
+
+    // Role guard test
+    if (maidToken) {
+      await test('2.4 — Role Guard: Maid Cannot Book', async () => {
+        const tmrw = new Date(Date.now()+86400000).toISOString().split('T')[0];
+        const r = await api('POST', '/api/bookings', {scheduledDate: tmrw, timeSlot: '14:00-17:00'}, maidToken);
+        log('', `   Status: ${r.status}`);
+        if (r.status === 403) log('', '   ✅ Correctly blocked');
+        else bug('BUG-010', `Maid not blocked (got ${r.status})`, 'Backend/Security', 'HIGH', '403', `${r.status}`, 'Role guard order');
+      });
+    }
+
+    await test('2.5 — Get My Bookings', async () => {
+      const r = await api('GET', '/api/bookings/my-bookings', null, customerToken);
+      const bks = Array.isArray(r.body) ? r.body : (r.body.data || []);
+      log('', `   Total bookings: ${bks.length}`);
+      if (!bookingId && bks.length > 0) {
+        const p = bks.find(b => ['PENDING','CONFIRMED'].includes(b.status));
+        if (p) { bookingId = p.id; log('', `   Using existing: ${bookingId} (${p.status})`); }
+      }
+    });
+  }
+
+  // ════════════════════════════════════════════
+  // PHASE 3: Assignment
+  // ════════════════════════════════════════════
+  log('phase', '\n═══ PHASE 3: Maid Assignment ═══');
+
+  if (!adminToken || !bookingId) { log('skip', `⏭️ SKIPPING Phase 3 — admin:${!!adminToken} booking:${bookingId}`); skipped += 4; }
+  else {
+    await test('3.1 — Admin Assigns Maid', async () => {
+      const r = await api('PUT', '/api/bookings/'+bookingId+'/assign', {maidId}, adminToken);
+      log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+      if (r.status !== 200) bug('BUG-012', 'Maid assignment failed', 'Backend/Assignments', 'HIGH', 'Assigned', `${r.status}: ${r.body.message}`, 'TBD');
+    });
+
+    if (maidToken) {
+      await test('3.2 — Maid Assigned Bookings', async () => {
+        const r = await api('GET', '/api/booking-completion/maid/assigned', null, maidToken);
+        log('', `   Status: ${r.status}, Count: ${r.body.count || (r.body.data?.length||0)}`);
+      });
+
+      await test('3.3 — Maid Pending Assignments', async () => {
+        const r = await api('GET', '/api/assignments/pending', null, maidToken);
+        const a = Array.isArray(r.body) ? r.body : (r.body.data || []);
+        log('', `   Pending: ${a.length}`);
+        if (a.length > 0) { assignmentId = a[0].id; log('', `   Assignment: ${assignmentId}`); }
+      });
+
+      if (assignmentId) {
+        await test('3.4 — Maid Accepts Assignment', async () => {
+          const r = await api('POST', '/api/assignments/'+assignmentId+'/accept', {}, maidToken);
+          log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+          if (r.status !== 200) bug('BUG-014', 'Accept failed', 'Backend/Assignments', 'HIGH', 'Accepted', `${r.status}: ${r.body.message}`, 'TBD');
+        });
+      }
+    }
+  }
+
+  // ════════════════════════════════════════════
+  // PHASE 4: Service Execution & QR
+  // ════════════════════════════════════════════
+  log('phase', '\n═══ PHASE 4: Service Execution & QR Code ═══');
+
+  if (!maidToken || !bookingId) { log('skip', `⏭️ SKIPPING Phase 4 — maid:${!!maidToken} booking:${bookingId}`); skipped += 3; }
+  else {
+    await test('4.1 — Maid Starts Service', async () => {
+      const r = await api('POST', '/api/booking-completion/'+bookingId+'/start', {}, maidToken);
+      log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+      if (r.status !== 200) bug('BUG-015', 'Start failed', 'Backend/Completion', 'HIGH', 'IN_PROGRESS', `${r.status}: ${r.body.message}`, 'TBD');
+    });
+
+    await test('4.2 — Maid Gets Verification Code', async () => {
+      const r = await api('GET', '/api/booking-completion/maid/qr-code', null, maidToken);
+      log('', `   Status: ${r.status}`);
+      if (r.status === 200) {
+        verificationCode = r.body.data?.verificationCode;
+        log('', `   Code: ${verificationCode}`);
+        if (!verificationCode) bug('BUG-016', 'Verification code is null', 'Backend/MaidProfile', 'HIGH', 'ABCDE12345', 'null', 'Not generated during verification');
+      } else {
+        bug('BUG-017', 'QR endpoint fails', 'Backend/Completion', 'MEDIUM', '200', `${r.status}`, 'TBD');
+      }
+    });
+
+    await test('4.3 — Booking-Specific QR', async () => {
+      const r = await api('GET', '/api/booking-completion/'+bookingId+'/qr-code', null, maidToken);
+      log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+    });
+  }
+
+  // ════════════════════════════════════════════
+  // PHASE 5: QR Scanning & Completion
+  // ════════════════════════════════════════════
+  log('phase', '\n═══ PHASE 5: Customer QR Scan & Completion ═══');
+
+  if (!customerToken || !bookingId) { log('skip', `⏭️ SKIPPING Phase 5`); skipped += 3; }
+  else {
+    await test('5.1 — Invalid Code Rejected', async () => {
+      const r = await api('POST', '/api/bookings/'+bookingId+'/complete-with-qr', {verificationCode:'WRONGCODE1'}, customerToken);
+      log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+      if (r.status === 400) log('', '   ✅ Correctly rejected');
+      else if (r.status !== 404) bug('BUG-018', 'Invalid code not rejected', 'Backend/Security', 'HIGH', '400', `${r.status}`, 'TBD');
+    });
+
+    if (verificationCode) {
+      await test('5.2 — Valid Code → COMPLETED', async () => {
+        const r = await api('POST', '/api/bookings/'+bookingId+'/complete-with-qr', {verificationCode, completionNotes:'E2E test complete'}, customerToken);
+        log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+        if (r.status === 200) {
+          log('', `   Status: ${r.body.data?.status}, Completed: ${r.body.data?.completedAt}, QR: ${r.body.data?.qrVerified}`);
+        } else {
+          bug('BUG-019', 'Completion with valid code fails', 'Backend/Completion', 'HIGH', 'COMPLETED', `${r.status}: ${r.body.message}`, 'TBD');
+        }
+      });
+    } else { log('skip', '⏭️ Skipping 5.2 — no verification code'); skipped++; }
+
+    await test('5.3 — Customer Bookings View', async () => {
+      const r = await api('GET', '/api/booking-completion/customer/bookings', null, customerToken);
+      log('', `   Status: ${r.status}, Count: ${r.body.count || 0}`);
+    });
+  }
+
+  // ════════════════════════════════════════════
+  // PHASE 6: Feedback & Admin Audit
+  // ════════════════════════════════════════════
+  log('phase', '\n═══ PHASE 6: Feedback & Admin Audit ═══');
+
+  if (customerToken && bookingId) {
+    await test('6.1 — Submit Feedback', async () => {
+      const r = await api('POST', '/api/feedback', {bookingId, overallRating:5, qualityRating:5, punctualityRating:4, behaviorRating:5, comment:'E2E test!', wouldRecommend:true}, customerToken);
+      log('', `   Status: ${r.status} — ${r.body.message || ''}`);
+    });
+  }
+
+  if (adminToken) {
+    await test('6.2a — Admin Stats', async () => {
+      const r = await api('GET', '/api/admin/stats', null, adminToken);
+      log('', `   Status: ${r.status}`);
+      if (r.status !== 200) bug('BUG-020', 'Admin stats fails', 'Backend/Admin', 'MEDIUM', '200', `${r.status}`, 'TBD');
+    });
+
+    await test('6.2b — Admin All Bookings', async () => {
+      const r = await api('GET', '/api/bookings', null, adminToken);
+      const bks = Array.isArray(r.body) ? r.body : (r.body.data || []);
+      log('', `   Total bookings: ${bks.length}`);
+    });
+
+    await test('6.2c — Admin All Maids', async () => {
+      const r = await api('GET', '/api/maids', null, adminToken);
+      const ms = Array.isArray(r.body) ? r.body : (r.body.data || []);
+      log('', `   Total maids: ${ms.length}`);
+    });
+
+    await test('6.2d — Admin Assignments', async () => {
+      const r = await api('GET', '/api/admin/customer-assignments', null, adminToken);
+      log('', `   Status: ${r.status}`);
+    });
+
+    await test('6.2e — Feedback Stats', async () => {
+      const r = await api('GET', '/api/feedback/stats', null, adminToken);
+      log('', `   Status: ${r.status}`);
+    });
+  }
+
+  if (maidToken) {
+    await test('6.3a — Maid Profile', async () => {
+      const r = await api('GET', '/api/profile/me', null, maidToken);
+      log('', `   Verified: ${r.body.data?.maidProfile?.isVerified}, Code: ${r.body.data?.maidProfile?.verificationCode || 'NULL'}`);
+      if (r.status === 200 && !r.body.data?.maidProfile?.verificationCode) {
+        bug('BUG-021', 'Maid missing verification code', 'Backend/MaidProfile', 'HIGH', 'Code exists', 'null', 'Not generated');
+      }
+    });
+
+    await test('6.3b — Maid Reviews', async () => {
+      const r = await api('GET', '/api/feedback/maid-reviews', null, maidToken);
+      log('', `   Status: ${r.status}`);
+    });
+  }
+
+  if (customerToken) {
+    await test('6.4 — Notifications', async () => {
+      const r = await api('GET', '/api/notifications', null, customerToken);
+      const ns = Array.isArray(r.body) ? r.body : (r.body.data || []);
+      log('', `   Notifications: ${ns.length}`);
+    });
+  }
+
+  // ════════════════════════════════════════════
+  // PHASE 7: Cleanup
+  // ════════════════════════════════════════════
+  log('phase', '\n═══ PHASE 7: Cleanup ═══');
+
+  await test('7.1 — Cleanup Test Users', async () => {
+    const r = await api('DELETE', '/api/test/cleanup-test-users');
+    log('', `   Status: ${r.status} — Deleted: ${r.body.deletedCount || 0}`);
+  });
+
+  // ═══════ FINAL SUMMARY ═══════
+  log('phase', '\n╔══════════════════════════════════════════════════════════════╗');
+  log('phase', '║  E2E TEST RESULTS SUMMARY                                  ║');
+  log('phase', '╠══════════════════════════════════════════════════════════════╣');
+  log('', `  Total Tests: ${testNum}`);
+  log('pass', `  ✅ Passed:   ${passed}`);
+  log('fail', `  ❌ Failed:   ${failed}`);
+  log('skip', `  ⏭️ Skipped:  ${skipped}`);
+  log('fail', `  🐛 Bugs:     ${bugs.length}`);
+  log('phase', '╚══════════════════════════════════════════════════════════════╝');
+
+  if (bugs.length > 0) {
+    log('phase', '\n══ BUG REPORT ══');
+    bugs.forEach(b => {
+      log('bug', `${b.id}: ${b.title}\n  Component: ${b.component} | Severity: ${b.severity}\n  Expected: ${b.expected}\n  Observed: ${b.observed}\n  Root Cause: ${b.rootCause}`);
+    });
+  }
+
+  document.getElementById('runBtn').disabled = false;
+}
+</script>
+</body>
+</html>

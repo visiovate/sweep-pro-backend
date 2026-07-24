@@ -9,6 +9,24 @@ const getAllMaids = async (req, res) => {
       where: { role: 'MAID' },
       include: { maidProfile: true }
     });
+
+    // Auto-generate verificationCode for any maid profile missing one
+    const { generateUniqueVerificationCode } = require('./customerBookingCompletionController');
+    for (const maid of maids) {
+      if (maid.maidProfile && !maid.maidProfile.verificationCode) {
+        try {
+          const code = await generateUniqueVerificationCode();
+          maid.maidProfile = await prisma.maidProfile.update({
+            where: { id: maid.maidProfile.id },
+            data: { verificationCode: code }
+          });
+          console.log(`✅ Auto-generated verification code ${code} for maid ${maid.name}`);
+        } catch (genErr) {
+          console.error(`⚠️ Failed to auto-generate code for maid ${maid.name}:`, genErr.message);
+        }
+      }
+    }
+
     res.json(maids);
   } catch (error) {
     console.error('Error fetching maids:', error);
@@ -51,6 +69,9 @@ const updateMaidWeeklyOffDay = async (req, res) => {
         return res.status(400).json({ error: 'User is not a maid' });
       }
 
+      const { generateUniqueVerificationCode } = require('./customerBookingCompletionController');
+      const verificationCode = await generateUniqueVerificationCode();
+
       const createdProfile = await prisma.maidProfile.create({
         data: {
           userId: maidUser.id,
@@ -59,7 +80,8 @@ const updateMaidWeeklyOffDay = async (req, res) => {
           availability: {
             isAvailable: true
           },
-          weeklyOffDay: normalizedWeeklyOffDay
+          weeklyOffDay: normalizedWeeklyOffDay,
+          verificationCode
         },
         select: { id: true }
       });
@@ -194,9 +216,10 @@ const verifyStartOTP = async (req, res) => {
       where: {
         id: bookingId,
         maidId,
-        status: 'ASSIGNED'
+        status: { in: ['ASSIGNED', 'CONFIRMED'] }
       },
       include: {
+        service: true,
         serviceOTP: true,
         customer: {
           select: {
@@ -236,6 +259,25 @@ const verifyStartOTP = async (req, res) => {
       })
     ]);
 
+    try {
+      if (booking.customer && booking.customer.id) {
+        await prisma.notification.create({
+          data: {
+            userId: booking.customer.id,
+            type: 'SERVICE_STARTED',
+            title: 'Service Started',
+            message: `Your cleaning service ${booking.service?.name || ''} has been started by your maid.`,
+            data: {
+              bookingId: booking.id,
+              startedAt: new Date().toISOString()
+            }
+          }
+        });
+      }
+    } catch (notifErr) {
+      console.error('Warning: failed to send service start notification', notifErr.message);
+    }
+
     res.json({
       success: true,
       message: 'Service started successfully'
@@ -261,6 +303,8 @@ const completeService = async (req, res) => {
         status: 'IN_PROGRESS'
       },
       include: {
+        service: true,
+        customer: true,
         serviceOTP: true
       }
     });
@@ -293,6 +337,25 @@ const completeService = async (req, res) => {
         }
       })
     ]);
+
+    try {
+      if (booking.customer && booking.customer.id) {
+        await prisma.notification.create({
+          data: {
+            userId: booking.customer.id,
+            type: 'SERVICE_COMPLETED',
+            title: 'Service Completed',
+            message: `Your cleaning service ${booking.service?.name || ''} has been successfully completed.`,
+            data: {
+              bookingId: booking.id,
+              completedAt: new Date().toISOString()
+            }
+          }
+        });
+      }
+    } catch (notifErr) {
+      console.error('Warning: failed to send service complete notification', notifErr.message);
+    }
 
     // Update maid performance metrics
     await updateMaidPerformance(maidId);
@@ -358,6 +421,10 @@ const generateEndOTP = async (req, res) => {
         id: bookingId,
         maidId,
         status: 'IN_PROGRESS'
+      },
+      include: {
+        customer: true,
+        service: true
       }
     });
 
@@ -382,15 +449,135 @@ const generateEndOTP = async (req, res) => {
       }
     });
 
+    // Notify customer
+    try {
+      if (booking.customer && booking.customer.id) {
+        await prisma.notification.create({
+          data: {
+            userId: booking.customer.id,
+            type: 'SERVICE_OTP',
+            title: 'Service Completion OTP',
+            message: `Your Completion OTP for ${booking.service?.name || 'cleaning'} service is: ${endOTP}. Please share this with your maid to confirm service completion.`,
+            data: {
+              bookingId: booking.id,
+              otp: endOTP,
+              type: 'END_OTP'
+            }
+          }
+        });
+      }
+    } catch (notifErr) {
+      console.error('Warning: failed to send end OTP notification to customer', notifErr.message);
+    }
+
+    try {
+      const emailService = require('../notifications/email/resendEmailService');
+      if (booking.customer && booking.customer.email) {
+        await emailService.sendEmail({
+          to: booking.customer.email,
+          subject: `Completion OTP for your SweepPro Service - ${endOTP}`,
+          html: `<p>Hello ${booking.customer.name || 'Customer'},</p><p>Your maid has finished cleaning! Your verification Completion OTP is: <strong>${endOTP}</strong>.</p><p>Please share this code with your maid to mark the service as completed.</p>`
+        });
+      }
+    } catch (emailErr) {
+      console.error('Warning: failed to send end OTP email to customer', emailErr.message);
+    }
+
     res.json({
       success: true,
       message: 'Completion OTP generated and sent to customer',
-      otp: endOTP // In production, don't send OTP in response
+      otp: endOTP // In development/testing, return OTP in response
     });
 
   } catch (error) {
     console.error('Error generating end OTP:', error);
     res.status(500).json({ message: 'Failed to generate completion OTP' });
+  }
+};
+
+// Generate start OTP (when maid arrives at customer location)
+const generateStartOTP = async (req, res) => {
+  try {
+    const { bookingId } = req.body;
+    const maidId = req.user.id;
+
+    // Check if maid is assigned and booking is in ASSIGNED or CONFIRMED state
+    const booking = await prisma.booking.findFirst({
+      where: {
+        id: bookingId,
+        maidId,
+        status: { in: ['ASSIGNED', 'CONFIRMED'] }
+      },
+      include: {
+        customer: true,
+        service: true
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found or not in assigned state' });
+    }
+
+    // Generate start OTP
+    const startOTP = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Update or create service OTP
+    await prisma.serviceOTP.upsert({
+      where: { bookingId },
+      update: {
+        startOTP,
+        startOTPGeneratedAt: new Date()
+      },
+      create: {
+        bookingId,
+        startOTP,
+        startOTPGeneratedAt: new Date()
+      }
+    });
+
+    // Notify customer
+    try {
+      if (booking.customer && booking.customer.id) {
+        await prisma.notification.create({
+          data: {
+            userId: booking.customer.id,
+            type: 'SERVICE_OTP',
+            title: 'Service Start OTP',
+            message: `Your Start OTP for ${booking.service?.name || 'cleaning'} service is: ${startOTP}. Please share this with your maid upon arrival.`,
+            data: {
+              bookingId: booking.id,
+              otp: startOTP,
+              type: 'START_OTP'
+            }
+          }
+        });
+      }
+    } catch (notifErr) {
+      console.error('Warning: failed to send start OTP notification to customer', notifErr.message);
+    }
+
+    try {
+      const emailService = require('../notifications/email/resendEmailService');
+      if (booking.customer && booking.customer.email) {
+        await emailService.sendEmail({
+          to: booking.customer.email,
+          subject: `Start OTP for your SweepPro Service - ${startOTP}`,
+          html: `<p>Hello ${booking.customer.name || 'Customer'},</p><p>Your maid has arrived! Your verification Start OTP is: <strong>${startOTP}</strong>.</p><p>Please share this code with your maid to start the cleaning service.</p>`
+        });
+      }
+    } catch (emailErr) {
+      console.error('Warning: failed to send start OTP email to customer', emailErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Start OTP generated and sent to customer',
+      otp: startOTP // In development/testing, return OTP in response
+    });
+
+  } catch (error) {
+    console.error('Error generating start OTP:', error);
+    res.status(500).json({ message: 'Failed to generate start OTP' });
   }
 };
 
@@ -459,5 +646,6 @@ module.exports = {
   verifyStartOTP,
   completeService,
   getMaidAssignments,
-  generateEndOTP
+  generateEndOTP,
+  generateStartOTP
 };

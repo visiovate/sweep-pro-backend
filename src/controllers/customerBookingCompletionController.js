@@ -62,13 +62,26 @@ const customerCompleteBookingWithQR = async (req, res) => {
     const { qrCodeData, verificationCode: inputCode, completionNotes } = req.body || {};
 
     // Accept either qrCodeData (for backward compatibility) or verificationCode
-    const codeToVerify = inputCode || qrCodeData;
+    let codeToVerify = inputCode || qrCodeData;
 
     if (!codeToVerify) {
       return res.status(400).json({
         success: false,
         message: 'Please enter the maid\'s verification code'
       });
+    }
+
+    if (typeof codeToVerify === 'object' && codeToVerify !== null) {
+      codeToVerify = codeToVerify.code || codeToVerify.verificationCode || codeToVerify.toString();
+    } else if (typeof codeToVerify === 'string') {
+      try {
+        const parsed = JSON.parse(codeToVerify);
+        if (parsed && typeof parsed === 'object' && (parsed.code || parsed.verificationCode)) {
+          codeToVerify = parsed.code || parsed.verificationCode;
+        }
+      } catch (e) {
+        // Not JSON, use raw text
+      }
     }
 
     // Normalize the code (uppercase, trim)
@@ -120,12 +133,15 @@ const customerCompleteBookingWithQR = async (req, res) => {
       });
     }
 
-    // Check if maid has a verification code
+    // Auto-generate verification code if maid doesn't have one
     if (!maidProfile.verificationCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Maid does not have a verification code. Please contact support.'
+      const newCode = await generateUniqueVerificationCode();
+      await prisma.maidProfile.update({
+        where: { id: maidProfile.id },
+        data: { verificationCode: newCode }
       });
+      maidProfile.verificationCode = newCode;
+      console.log(`✅ Auto-generated verification code ${newCode} for maid ${booking.maid.id} during booking completion`);
     }
 
     // Verify the code matches
