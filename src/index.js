@@ -310,6 +310,10 @@ app.use('/api', globalLimiter);
 // The double-submit cookie pattern validates X-CSRF-Token header against
 // the csrf-token cookie on all state-changing requests.
 const { csrfProtection } = require('./middleware/csrf');
+
+// Register public routes BEFORE CSRF protection (they don't need CSRF)
+app.use('/api/b2b', b2bRoutes);
+
 app.use('/api', csrfProtection);
 
 // Legacy compatibility - keep for existing code
@@ -352,7 +356,6 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/terms', termsRoutes);
-app.use('/api/b2b', b2bRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
