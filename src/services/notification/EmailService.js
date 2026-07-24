@@ -103,7 +103,7 @@ class EmailService {
 
   async sendEmail({ to, subject, html, text }) {
     console.log(`📧 EmailService.sendEmail called - provider: ${this.provider}, to: ${to}, subject: ${subject}`);
-    
+
     if (this.provider === 'disabled') {
       console.log('📧 Email service disabled, skipping outbound send');
       return { success: false, provider: 'disabled', reason: 'disabled' };
@@ -113,18 +113,22 @@ class EmailService {
       const emailData = {
         to,
         from: { email: this.fromEmail, name: this.fromName },
+        replyTo: this.fromEmail, // Set Reply-To to match From for better deliverability
         subject,
         html,
         text: text || this.stripHtml(html),
-        // Anti-spam headers
+        // Improved anti-spam headers for better deliverability
         headers: {
-          'X-Priority': '1',
-          'X-MSMail-Priority': 'High',
-          'Importance': 'high',
           'X-Mailer': 'Sweepro Email Service',
           'X-Auto-Response-Suppress': 'OOF, DR, RN, NRN, AutoReply',
+          'X-Priority': '3', // Normal priority (1-5, 3 is normal) - high priority can trigger spam filters
+          'X-MSMail-Priority': 'Normal',
+          'Importance': 'normal',
+          'Precedence': 'auto', // Changed from 'bulk' to 'auto' for transactional emails
           'List-Unsubscribe': `<mailto:${this.fromEmail}?subject=unsubscribe>`,
-          'Precedence': 'bulk'
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          'Feedback-ID': `sweepro-${Date.now()}@${this.fromEmail.split('@')[1]}`,
+          'Message-ID': `<${Date.now()}@${this.fromEmail.split('@')[1]}>`
         }
       };
 

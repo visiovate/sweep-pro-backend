@@ -42,6 +42,10 @@ const CSRF_EXEMPT_PATHS = [
   '/api/auth/verify-email',
   '/api/auth/resend-verification',
   '/api/auth/logout',
+
+  // Public forms: B2B partnership form is public and doesn't require authentication
+  // Protected by rate limiting and input validation instead
+  '/api/b2b/partnership',
 ];
 
 /**

@@ -200,11 +200,44 @@ const adminAuthRateLimiter = rateLimit({
   }
 });
 
+/**
+ * MODERATE Rate Limiter for public form submissions
+ * 3 submissions per hour per IP to prevent spam/abuse
+ *
+ * Applied to:
+ * - /api/b2b/partnership
+ * - Other public form endpoints
+ */
+const publicFormLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,               // 1 hour
+  max: 3,                                 // 3 submissions per hour
+  message: {
+    success: false,
+    error: 'Too many form submissions. Please try again after 1 hour.',
+    retryAfter: '1 hour'
+  },
+  standardHeaders: true,
+  legacyHeaders: true,
+  skip: (req) => {
+    return process.env.NODE_ENV === 'test';
+  },
+  keyGenerator: ipKeyGenerator,
+  handler: (req, res, options) => {
+    res.status(429).json({
+      success: false,
+      error: options.message.error,
+      retryAfter: options.message.retryAfter,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = {
   authLimiter,
   paymentLimiter,
   globalLimiter,
   passwordResetLimiter,
   otpLimiter,
-  adminAuthRateLimiter
+  adminAuthRateLimiter,
+  publicFormLimiter
 };

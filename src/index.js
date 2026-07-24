@@ -43,6 +43,7 @@ const feedbackRoutes = require('./routes/feedbackRoutes');
 const termsRoutes = require('./routes/termsRoutes');
 const firebaseAuthRoutes = require('./routes/firebaseAuthRoutes');
 const eventRoutes = require('./routes/eventRoutes');
+const b2bRoutes = require('./routes/b2bRoutes');
 
 // SECURITY: Import rate limiters
 const { authLimiter, paymentLimiter, globalLimiter } = require('./middleware/rateLimiters');
@@ -351,6 +352,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/terms', termsRoutes);
+app.use('/api/b2b', b2bRoutes);
 
 // Health check route
 app.get('/health', async (req, res) => {
