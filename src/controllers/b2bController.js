@@ -50,8 +50,8 @@ const validators = {
 };
 
 /**
- * Handle B2B Partnership Form Submission
- * Sends email notification with partnership details
+ * Handle B2B Services Form Submission
+ * Sends email notification with service request details
  */
 async function submitPartnershipRequest(req, res) {
   const startTime = Date.now();
@@ -311,9 +311,9 @@ async function submitPartnershipRequest(req, res) {
     // This reduces TTFB from ~600ms to ~10ms
     const emailStart = Date.now();
 
-    const adminEmail = process.env.ADMIN_EMAIL || 'partnerships@sweepro.com';
+    const adminEmail = process.env.ADMIN_EMAIL || 'services@sweepro.com';
     const adminEmailText = `
-      New B2B Partnership Request
+      New B2B Service Request
 
       Contact Details:
       - Contact Person: ${validatedData.contactPerson}

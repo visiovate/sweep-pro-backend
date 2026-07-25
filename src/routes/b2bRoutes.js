@@ -3,7 +3,7 @@ const router = express.Router();
 const { submitPartnershipRequest } = require('../controllers/b2bController');
 const { publicFormLimiter } = require('../middleware/rateLimiters');
 
-// B2B Partnership Routes
-router.post('/partnership', publicFormLimiter, submitPartnershipRequest);
+// B2B Services Routes
+router.post('/services', publicFormLimiter, submitPartnershipRequest);
 
 module.exports = router;
