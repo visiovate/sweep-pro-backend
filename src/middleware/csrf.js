@@ -57,13 +57,13 @@ const csrfProtection = (req, res, next) => {
   const existingToken = req.cookies?.['csrf-token'];
   const csrfToken = existingToken || crypto.randomBytes(32).toString('hex');
 
-  const isSecure = process.env.NODE_ENV === 'production';
+  const isSecure = process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true';
 
   // Always (re-)set the cookie so the client has a fresh value
   res.cookie('csrf-token', csrfToken, {
     httpOnly: false,   // must be readable by JS
     secure: isSecure,
-    sameSite: isSecure ? 'none' : 'strict',  // 'none' for cross-origin in production, 'strict' for same-origin dev
+    sameSite: process.env.COOKIE_SAME_SITE || (isSecure ? 'none' : 'strict'),  // 'none' for cross-origin, 'strict' for same-origin dev
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   });
   res.setHeader('X-CSRF-Token', csrfToken);
@@ -114,12 +114,12 @@ const csrfProtection = (req, res, next) => {
  * the cookie before any state-changing call.
  */
 const csrfIssue = (req, res, next) => {
-  const isSecure = process.env.NODE_ENV === 'production';
+  const isSecure = process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true';
   const token = crypto.randomBytes(32).toString('hex');
   res.cookie('csrf-token', token, {
     httpOnly: false,
     secure: isSecure,
-    sameSite: isSecure ? 'none' : 'strict',  // 'none' for cross-origin in production, 'strict' for same-origin dev
+    sameSite: process.env.COOKIE_SAME_SITE || (isSecure ? 'none' : 'strict'),  // 'none' for cross-origin, 'strict' for same-origin dev
     maxAge: 24 * 60 * 60 * 1000
   });
   res.setHeader('X-CSRF-Token', token);
