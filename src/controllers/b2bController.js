@@ -193,7 +193,7 @@ async function submitPartnershipRequest(req, res) {
 
     const htmlGenStart = Date.now();
     // Create email content using validated data
-    const emailSubject = `Partnership Inquiry: ${validatedData.companyName}`;
+    const emailSubject = `Service request from ${validatedData.companyName}`;
 
     const emailHtml = `
       <!DOCTYPE html>
@@ -201,64 +201,61 @@ async function submitPartnershipRequest(req, res) {
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Partnership Inquiry</title>
+        <title>Service Request</title>
       </head>
       <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4;">
         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
           <!-- Header -->
-          <div style="background: linear-gradient(135deg, #1800ad 0%, #2a1fb8 100%); padding: 30px 20px; text-align: center;">
-            <div style="font-size: 32px; font-weight: bold; color: white; margin: 0; letter-spacing: 2px;">
+          <div style="background-color: #1800ad; padding: 25px 20px; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold; color: white; margin: 0; letter-spacing: 1px;">
               SWEEPRO
-            </div>
-            <div style="font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 8px;">
-              Professional Cleaning & Security Services
             </div>
           </div>
 
           <!-- Content -->
           <div style="padding: 30px 20px;">
-            <h1 style="margin: 0 0 10px 0; color: #1800ad; font-size: 24px; font-weight: 600;">New Partnership Inquiry</h1>
-            <p style="margin: 0 0 25px 0; color: #666666; font-size: 16px; border-bottom: 2px solid #1800ad; padding-bottom: 15px;">
-              <strong>${validatedData.companyName}</strong> is interested in partnering with Sweepro
+            <h1 style="margin: 0 0 10px 0; color: #333333; font-size: 20px; font-weight: 600;">Service Request</h1>
+            <p style="margin: 0 0 25px 0; color: #666666; font-size: 14px; border-bottom: 1px solid #e0e0e0; padding-bottom: 15px;">
+              From: ${validatedData.companyName}
             </p>
 
             <!-- Contact Information -->
-            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1800ad;">
-              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">📋 Contact Information</h2>
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 4px; margin-bottom: 20px;">
+              <h2 style="margin: 0 0 15px 0; color: #333333; font-size: 16px; font-weight: 600;">Contact Information</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500; width: 140px;">Contact Person:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.contactPerson}</td>
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500; width: 140px;">Contact Person:</td>
+                  <td style="padding: 8px 0; color: #333333;">${validatedData.contactPerson}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Email:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500;">Email:</td>
+                  <td style="padding: 8px 0; color: #333333;">
                     <a href="mailto:${validatedData.email}" style="color: #1800ad; text-decoration: none;">${validatedData.email}</a>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Phone:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.phone}</td>
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500;">Phone:</td>
+                  <td style="padding: 8px 0; color: #333333;">${validatedData.phone}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Preferred Contact:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600; text-transform: capitalize;">${validatedData.preferredContactMethod}</td>
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500;">Preferred Contact:</td>
+                  <td style="padding: 8px 0; color: #333333; text-transform: capitalize;">${validatedData.preferredContactMethod}</td>
                 </tr>
               </table>
             </div>
 
             <!-- Company Information -->
-            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1800ad;">
-              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">🏢 Company Information</h2>
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 4px; margin-bottom: 20px;">
+              <h2 style="margin: 0 0 15px 0; color: #333333; font-size: 16px; font-weight: 600;">Company Information</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500; width: 140px;">Company Name:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.companyName}</td>
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500; width: 140px;">Company Name:</td>
+                  <td style="padding: 8px 0; color: #333333;">${validatedData.companyName}</td>
                 </tr>
                 ${validatedData.website ? `
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Website:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500;">Website:</td>
+                  <td style="padding: 8px 0; color: #333333;">
                     <a href="${validatedData.website}" style="color: #1800ad; text-decoration: none;" target="_blank">${validatedData.website}</a>
                   </td>
                 </tr>
@@ -267,40 +264,38 @@ async function submitPartnershipRequest(req, res) {
             </div>
 
             <!-- Service Requirements -->
-            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1800ad;">
-              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">🧹 Service Requirements</h2>
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 4px; margin-bottom: 20px;">
+              <h2 style="margin: 0 0 15px 0; color: #333333; font-size: 16px; font-weight: 600;">Service Requirements</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500; width: 140px; vertical-align: top;">Service Types:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">
-                    ${Array.isArray(validatedData.serviceType) ? validatedData.serviceType.map(type => `
-                      <span style="display: inline-block; background-color: #1800ad; color: white; padding: 4px 12px; border-radius: 15px; font-size: 12px; margin: 2px;">${type}</span>
-                    `).join('') : validatedData.serviceType}
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500; width: 140px; vertical-align: top;">Service Types:</td>
+                  <td style="padding: 8px 0; color: #333333;">
+                    ${Array.isArray(validatedData.serviceType) ? validatedData.serviceType.join(', ') : validatedData.serviceType}
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Service Locations:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.serviceLocations}</td>
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500;">Service Locations:</td>
+                  <td style="padding: 8px 0; color: #333333;">${validatedData.serviceLocations}</td>
                 </tr>
               </table>
             </div>
 
             ${validatedData.message ? `
             <!-- Additional Information -->
-            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1800ad;">
-              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">💬 Additional Information</h2>
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 4px; margin-bottom: 20px;">
+              <h2 style="margin: 0 0 15px 0; color: #333333; font-size: 16px; font-weight: 600;">Additional Information</h2>
               <p style="margin: 0; color: #333333; line-height: 1.6;">${validatedData.message}</p>
             </div>
             ` : ''}
           </div>
 
           <!-- Footer -->
-          <div style="background-color: #1800ad; padding: 25px 20px; text-align: center;">
-            <p style="margin: 0 0 10px 0; color: white; font-size: 14px;">
-              <strong>Submitted on:</strong> ${new Date().toLocaleString()}
+          <div style="background-color: #f9f9f9; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">
+            <p style="margin: 0 0 5px 0; color: #666666; font-size: 12px;">
+              Submitted: ${new Date().toLocaleString()}
             </p>
-            <p style="margin: 0; color: rgba(255,255,255,0.8); font-size: 12px;">
-              This is an automated message from Sweepro Partnership System
+            <p style="margin: 0; color: #999999; font-size: 11px;">
+              Automated message from Sweepro
             </p>
           </div>
         </div>
@@ -343,77 +338,71 @@ async function submitPartnershipRequest(req, res) {
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Partnership Request Received</title>
+        <title>Service Request Received</title>
       </head>
       <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4;">
         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
           <!-- Header -->
-          <div style="background: linear-gradient(135deg, #1800ad 0%, #2a1fb8 100%); padding: 30px 20px; text-align: center;">
-            <div style="font-size: 32px; font-weight: bold; color: white; margin: 0; letter-spacing: 2px;">
+          <div style="background-color: #1800ad; padding: 25px 20px; text-align: center;">
+            <div style="font-size: 28px; font-weight: bold; color: white; margin: 0; letter-spacing: 1px;">
               SWEEPRO
-            </div>
-            <div style="font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 8px;">
-              Professional Cleaning & Security Services
             </div>
           </div>
 
           <!-- Content -->
           <div style="padding: 30px 20px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-              <div style="background-color: #10b981; color: white; width: 60px; height: 60px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 30px; margin-bottom: 15px;">
-                ✓
-              </div>
-              <h1 style="margin: 0 0 10px 0; color: #1800ad; font-size: 24px; font-weight: 600;">Partnership Request Received!</h1>
-              <p style="margin: 0; color: #666666; font-size: 16px;">Thank you for your interest in Sweepro</p>
-            </div>
-
-            <p style="margin: 0 0 20px 0; color: #333333; font-size: 16px; line-height: 1.6;">
-              Dear <strong>${validatedData.contactPerson}</strong>,
+            <h1 style="margin: 0 0 10px 0; color: #333333; font-size: 20px; font-weight: 600;">Service Request Received</h1>
+            <p style="margin: 0 0 25px 0; color: #666666; font-size: 14px; border-bottom: 1px solid #e0e0e0; padding-bottom: 15px;">
+              Reference: ${validatedData.companyName}
             </p>
-            <p style="margin: 0 0 25px 0; color: #333333; font-size: 16px; line-height: 1.6;">
-              Thank you for submitting your partnership request for <strong>${validatedData.companyName}</strong>. We have received your application and our team will review it within 24-48 hours.
+
+            <p style="margin: 0 0 20px 0; color: #333333; font-size: 15px; line-height: 1.6;">
+              Dear ${validatedData.contactPerson},
+            </p>
+            <p style="margin: 0 0 25px 0; color: #333333; font-size: 15px; line-height: 1.6;">
+              Thank you for submitting your service request for ${validatedData.companyName}. We have received your request and our team will review it within 24-48 hours.
             </p>
 
             <!-- What happens next -->
-            <div style="background-color: #f8f9ff; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #1800ad;">
-              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">📋 What happens next?</h2>
-              <ul style="margin: 0; padding-left: 20px; color: #333333; line-height: 2;">
-                <li>Our team will review your partnership request</li>
-                <li>We will contact you via <strong>${validatedData.preferredContactMethod}</strong> within 24-48 hours</li>
-                <li>We will schedule a call to discuss partnership opportunities</li>
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 4px; margin-bottom: 20px;">
+              <h2 style="margin: 0 0 15px 0; color: #333333; font-size: 16px; font-weight: 600;">Next Steps</h2>
+              <ul style="margin: 0; padding-left: 20px; color: #333333; line-height: 1.8; font-size: 14px;">
+                <li>Our team will review your service request</li>
+                <li>We will contact you via ${validatedData.preferredContactMethod} within 24-48 hours</li>
+                <li>We will schedule a call to discuss service requirements</li>
                 <li>We will provide you with onboarding materials and next steps</li>
               </ul>
             </div>
 
             <!-- Request Reference -->
-            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #1800ad;">
-              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">📝 Request Reference</h2>
+            <div style="background-color: #f9f9f9; padding: 20px; border-radius: 4px; margin-bottom: 20px;">
+              <h2 style="margin: 0 0 15px 0; color: #333333; font-size: 16px; font-weight: 600;">Request Reference</h2>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500; width: 140px;">Company:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.companyName}</td>
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500; width: 140px;">Company:</td>
+                  <td style="padding: 8px 0; color: #333333;">${validatedData.companyName}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Submitted:</td>
-                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${new Date().toLocaleDateString()}</td>
+                  <td style="padding: 8px 0; color: #666666; font-weight: 500;">Submitted:</td>
+                  <td style="padding: 8px 0; color: #333333;">${new Date().toLocaleDateString()}</td>
                 </tr>
               </table>
             </div>
 
-            <p style="margin: 0 0 25px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+            <p style="margin: 0 0 25px 0; color: #333333; font-size: 15px; line-height: 1.6;">
               If you have any questions in the meantime, please do not hesitate to contact us.
             </p>
 
-            <p style="margin: 0 0 25px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+            <p style="margin: 0 0 25px 0; color: #333333; font-size: 15px; line-height: 1.6;">
               Best regards,<br>
-              <strong>The Sweepro Partnership Team</strong>
+              Sweepro Team
             </p>
           </div>
 
           <!-- Footer -->
-          <div style="background-color: #1800ad; padding: 25px 20px; text-align: center;">
-            <p style="margin: 0; color: rgba(255,255,255,0.8); font-size: 12px;">
-              This is an automated message from Sweepro Partnership System
+          <div style="background-color: #f9f9f9; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">
+            <p style="margin: 0; color: #999999; font-size: 11px;">
+              Automated message from Sweepro
             </p>
           </div>
         </div>
@@ -422,16 +411,16 @@ async function submitPartnershipRequest(req, res) {
     `;
 
     const confirmationEmailText = `
-      Partnership Request Received - Sweepro
+      Service Request Received - Sweepro
 
       Dear ${validatedData.contactPerson},
 
-      Thank you for submitting your partnership request for ${validatedData.companyName}. We have received your application and our team will review it within 24-48 hours.
+      Thank you for submitting your service request for ${validatedData.companyName}. We have received your request and our team will review it within 24-48 hours.
 
       What happens next?
-      - Our team will review your partnership request
+      - Our team will review your service request
       - We will contact you via ${validatedData.preferredContactMethod} within 24-48 hours
-      - We will schedule a call to discuss partnership opportunities
+      - We will schedule a call to discuss service requirements
       - We will provide you with onboarding materials and next steps
 
       Request Reference:
@@ -441,7 +430,7 @@ async function submitPartnershipRequest(req, res) {
       If you have any questions in the meantime, please do not hesitate to contact us.
 
       Best regards,
-      The Sweepro Partnership Team
+      Sweepro Team
     `;
 
     // Fire-and-forget: send emails in background without awaiting
@@ -455,7 +444,7 @@ async function submitPartnershipRequest(req, res) {
 
     emailService.sendEmail({
       to: validatedData.email,
-      subject: 'Partnership Request Received - Sweepro',
+      subject: 'Service Request Received - Sweepro',
       html: confirmationHtml,
       text: confirmationEmailText,
     }).catch(err => console.error('📧 Confirmation email failed:', err));
@@ -465,17 +454,17 @@ async function submitPartnershipRequest(req, res) {
     const responseStart = Date.now();
     res.status(200).json({
       success: true,
-      message: 'Partnership request submitted successfully',
+      message: 'Service request submitted successfully',
       emailSent: true, // Emails queued in background
     });
     console.log(`📊 [B2B] Response serialization: ${Date.now() - responseStart}ms`);
     console.log(`📊 [B2B] TOTAL REQUEST TIME: ${Date.now() - startTime}ms`);
   } catch (error) {
-    console.error('Error submitting partnership request:', error);
+    console.error('Error submitting service request:', error);
     console.log(`📊 [B2B] TOTAL REQUEST TIME (ERROR): ${Date.now() - startTime}ms`);
     res.status(500).json({
       success: false,
-      error: 'Failed to submit partnership request',
+      error: 'Failed to submit service request',
       details: error.message,
     });
   }
