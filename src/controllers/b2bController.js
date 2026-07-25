@@ -203,30 +203,106 @@ async function submitPartnershipRequest(req, res) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Partnership Inquiry</title>
       </head>
-      <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #ffffff;">
-        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="margin: 0 0 10px 0; color: #333333; font-size: 20px;">Partnership Inquiry</h1>
-          <p style="margin: 0 0 20px 0; color: #666666; font-size: 14px;">${validatedData.companyName}</p>
+      <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #1800ad 0%, #2a1fb8 100%); padding: 30px 20px; text-align: center;">
+            <div style="font-size: 32px; font-weight: bold; color: white; margin: 0; letter-spacing: 2px;">
+              SWEEPRO
+            </div>
+            <div style="font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 8px;">
+              Professional Cleaning & Security Services
+            </div>
+          </div>
 
-          <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 16px;">Contact Information</h2>
-          <p style="margin: 0 0 5px 0; color: #333333; font-size: 14px;"><strong>Contact Person:</strong> ${validatedData.contactPerson}</p>
-          <p style="margin: 0 0 5px 0; color: #333333; font-size: 14px;"><strong>Email:</strong> ${validatedData.email}</p>
-          <p style="margin: 0 0 5px 0; color: #333333; font-size: 14px;"><strong>Phone:</strong> ${validatedData.phone}</p>
-          <p style="margin: 0 0 20px 0; color: #333333; font-size: 14px;"><strong>Preferred Contact:</strong> ${validatedData.preferredContactMethod}</p>
+          <!-- Content -->
+          <div style="padding: 30px 20px;">
+            <h1 style="margin: 0 0 10px 0; color: #1800ad; font-size: 24px; font-weight: 600;">New Partnership Inquiry</h1>
+            <p style="margin: 0 0 25px 0; color: #666666; font-size: 16px; border-bottom: 2px solid #1800ad; padding-bottom: 15px;">
+              <strong>${validatedData.companyName}</strong> is interested in partnering with Sweepro
+            </p>
 
-          <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 16px;">Company Information</h2>
-          <p style="margin: 0 0 5px 0; color: #333333; font-size: 14px;"><strong>Company Name:</strong> ${validatedData.companyName}</p>
-          ${validatedData.website ? `<p style="margin: 0 0 20px 0; color: #333333; font-size: 14px;"><strong>Website:</strong> ${validatedData.website}</p>` : '<br>'}
+            <!-- Contact Information -->
+            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1800ad;">
+              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">📋 Contact Information</h2>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500; width: 140px;">Contact Person:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.contactPerson}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Email:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">
+                    <a href="mailto:${validatedData.email}" style="color: #1800ad; text-decoration: none;">${validatedData.email}</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Phone:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.phone}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Preferred Contact:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600; text-transform: capitalize;">${validatedData.preferredContactMethod}</td>
+                </tr>
+              </table>
+            </div>
 
-          <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 16px;">Service Requirements</h2>
-          <p style="margin: 0 0 5px 0; color: #333333; font-size: 14px;"><strong>Service Types:</strong> ${Array.isArray(validatedData.serviceType) ? validatedData.serviceType.join(', ') : validatedData.serviceType}</p>
-          <p style="margin: 0 0 20px 0; color: #333333; font-size: 14px;"><strong>Service Locations:</strong> ${validatedData.serviceLocations}</p>
+            <!-- Company Information -->
+            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1800ad;">
+              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">🏢 Company Information</h2>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500; width: 140px;">Company Name:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.companyName}</td>
+                </tr>
+                ${validatedData.website ? `
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Website:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">
+                    <a href="${validatedData.website}" style="color: #1800ad; text-decoration: none;" target="_blank">${validatedData.website}</a>
+                  </td>
+                </tr>
+                ` : ''}
+              </table>
+            </div>
 
-          ${validatedData.message ? `<h2 style="margin: 0 0 10px 0; color: #333333; font-size: 16px;">Additional Information</h2><p style="margin: 0 0 20px 0; color: #333333; font-size: 14px;">${validatedData.message}</p>` : ''}
+            <!-- Service Requirements -->
+            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1800ad;">
+              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">🧹 Service Requirements</h2>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500; width: 140px; vertical-align: top;">Service Types:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">
+                    ${Array.isArray(validatedData.serviceType) ? validatedData.serviceType.map(type => `
+                      <span style="display: inline-block; background-color: #1800ad; color: white; padding: 4px 12px; border-radius: 15px; font-size: 12px; margin: 2px;">${type}</span>
+                    `).join('') : validatedData.serviceType}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Service Locations:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.serviceLocations}</td>
+                </tr>
+              </table>
+            </div>
 
-          <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
-          <p style="margin: 0 0 5px 0; color: #666666; font-size: 12px;">Submitted on: ${new Date().toLocaleString()}</p>
-          <p style="margin: 0; color: #666666; font-size: 12px;">This is an automated message from Sweepro Partnership System</p>
+            ${validatedData.message ? `
+            <!-- Additional Information -->
+            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #1800ad;">
+              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">💬 Additional Information</h2>
+              <p style="margin: 0; color: #333333; line-height: 1.6;">${validatedData.message}</p>
+            </div>
+            ` : ''}
+          </div>
+
+          <!-- Footer -->
+          <div style="background-color: #1800ad; padding: 25px 20px; text-align: center;">
+            <p style="margin: 0 0 10px 0; color: white; font-size: 14px;">
+              <strong>Submitted on:</strong> ${new Date().toLocaleString()}
+            </p>
+            <p style="margin: 0; color: rgba(255,255,255,0.8); font-size: 12px;">
+              This is an automated message from Sweepro Partnership System
+            </p>
+          </div>
         </div>
       </body>
       </html>
@@ -269,39 +345,77 @@ async function submitPartnershipRequest(req, res) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Partnership Request Received</title>
       </head>
-      <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #ffffff;">
-        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="margin: 0 0 10px 0; color: #333333; font-size: 20px;">Partnership Request Received</h1>
-          <p style="margin: 0 0 20px 0; color: #666666; font-size: 14px;">Thank you for your interest in Sweepro</p>
+      <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f4;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #1800ad 0%, #2a1fb8 100%); padding: 30px 20px; text-align: center;">
+            <div style="font-size: 32px; font-weight: bold; color: white; margin: 0; letter-spacing: 2px;">
+              SWEEPRO
+            </div>
+            <div style="font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 8px;">
+              Professional Cleaning & Security Services
+            </div>
+          </div>
 
-          <p style="margin: 0 0 10px 0; color: #333333; font-size: 14px;">Dear ${validatedData.contactPerson},</p>
-          <p style="margin: 0 0 20px 0; color: #333333; font-size: 14px;">
-            Thank you for submitting your partnership request for ${validatedData.companyName}. We have received your application and our team will review it within 24-48 hours.
-          </p>
+          <!-- Content -->
+          <div style="padding: 30px 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <div style="background-color: #10b981; color: white; width: 60px; height: 60px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 30px; margin-bottom: 15px;">
+                ✓
+              </div>
+              <h1 style="margin: 0 0 10px 0; color: #1800ad; font-size: 24px; font-weight: 600;">Partnership Request Received!</h1>
+              <p style="margin: 0; color: #666666; font-size: 16px;">Thank you for your interest in Sweepro</p>
+            </div>
 
-          <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 16px;">What happens next?</h2>
-          <ul style="margin: 0 0 20px 0; color: #333333; font-size: 14px; padding-left: 20px;">
-            <li>Our team will review your partnership request</li>
-            <li>We will contact you via ${validatedData.preferredContactMethod} within 24-48 hours</li>
-            <li>We will schedule a call to discuss partnership opportunities</li>
-            <li>We will provide you with onboarding materials and next steps</li>
-          </ul>
+            <p style="margin: 0 0 20px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+              Dear <strong>${validatedData.contactPerson}</strong>,
+            </p>
+            <p style="margin: 0 0 25px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+              Thank you for submitting your partnership request for <strong>${validatedData.companyName}</strong>. We have received your application and our team will review it within 24-48 hours.
+            </p>
 
-          <h2 style="margin: 0 0 10px 0; color: #333333; font-size: 16px;">Request Reference</h2>
-          <p style="margin: 0 0 5px 0; color: #333333; font-size: 14px;"><strong>Company:</strong> ${validatedData.companyName}</p>
-          <p style="margin: 0 0 20px 0; color: #333333; font-size: 14px;"><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
+            <!-- What happens next -->
+            <div style="background-color: #f8f9ff; padding: 25px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #1800ad;">
+              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">📋 What happens next?</h2>
+              <ul style="margin: 0; padding-left: 20px; color: #333333; line-height: 2;">
+                <li>Our team will review your partnership request</li>
+                <li>We will contact you via <strong>${validatedData.preferredContactMethod}</strong> within 24-48 hours</li>
+                <li>We will schedule a call to discuss partnership opportunities</li>
+                <li>We will provide you with onboarding materials and next steps</li>
+              </ul>
+            </div>
 
-          <p style="margin: 0 0 20px 0; color: #333333; font-size: 14px;">
-            If you have any questions in the meantime, please do not hesitate to contact us.
-          </p>
+            <!-- Request Reference -->
+            <div style="background-color: #f8f9ff; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #1800ad;">
+              <h2 style="margin: 0 0 15px 0; color: #1800ad; font-size: 18px; font-weight: 600;">📝 Request Reference</h2>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500; width: 140px;">Company:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${validatedData.companyName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #555555; font-weight: 500;">Submitted:</td>
+                  <td style="padding: 8px 0; color: #333333; font-weight: 600;">${new Date().toLocaleDateString()}</td>
+                </tr>
+              </table>
+            </div>
 
-          <p style="margin: 0 0 20px 0; color: #333333; font-size: 14px;">
-            Best regards,<br>
-            The Sweepro Partnership Team
-          </p>
+            <p style="margin: 0 0 25px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+              If you have any questions in the meantime, please do not hesitate to contact us.
+            </p>
 
-          <hr style="margin: 20px 0; border: none; border-top: 1px solid #e0e0e0;">
-          <p style="margin: 0; color: #666666; font-size: 12px;">This is an automated message from Sweepro Partnership System</p>
+            <p style="margin: 0 0 25px 0; color: #333333; font-size: 16px; line-height: 1.6;">
+              Best regards,<br>
+              <strong>The Sweepro Partnership Team</strong>
+            </p>
+          </div>
+
+          <!-- Footer -->
+          <div style="background-color: #1800ad; padding: 25px 20px; text-align: center;">
+            <p style="margin: 0; color: rgba(255,255,255,0.8); font-size: 12px;">
+              This is an automated message from Sweepro Partnership System
+            </p>
+          </div>
         </div>
       </body>
       </html>
