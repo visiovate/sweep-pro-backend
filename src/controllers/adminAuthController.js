@@ -323,10 +323,11 @@ const verifyAdminLoginOtp = async (req, res) => {
     );
 
     // Set HttpOnly cookie
+    const isSecure = process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true';
     res.cookie('authToken', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: isSecure,
+      sameSite: process.env.COOKIE_SAME_SITE || (isSecure ? 'none' : 'lax'),
       maxAge: 30 * 60 * 1000 // 30 minutes
     });
 

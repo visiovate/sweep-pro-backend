@@ -27,12 +27,15 @@ const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 
 const hashOpaqueToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
-const buildCookieOptions = (maxAge) => ({
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-  maxAge
-});
+const buildCookieOptions = (maxAge) => {
+  const isSecure = process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true';
+  return {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: process.env.COOKIE_SAME_SITE || (isSecure ? 'none' : 'lax'),
+    maxAge
+  };
+};
 
 const signAccessToken = (user, expiresIn = ACCESS_TOKEN_TTL) => jwt.sign(
   {
