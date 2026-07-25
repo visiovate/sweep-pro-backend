@@ -19,9 +19,9 @@ const validators = {
     return emailRegex.test(email);
   },
 
-  // Validate phone number (basic format)
+  // Validate phone number (exactly 10 digits)
   isValidPhone: (phone) => {
-    const phoneRegex = /^[\d\s\+\-\(\)]{10,20}$/;
+    const phoneRegex = /^\d{10}$/;
     return phoneRegex.test(phone);
   },
 
