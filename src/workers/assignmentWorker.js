@@ -750,7 +750,7 @@ process.on('SIGINT', shutdown);
 console.log(`
 ╔════════════════════════════════════════════════════════════════╗
 ║                                                                ║
-║   🚀 SWEEPRO ASSIGNMENT WORKER                                ║
+║   🚀 Sweepro Assignment Worker                                ║
 ║                                                                ║
 ║   Status: Running 24/7                                        ║
 ║   Queue: maid-assignment                                      ║

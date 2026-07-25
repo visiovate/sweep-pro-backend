@@ -480,7 +480,7 @@ process.on('SIGINT', shutdown);
 console.log(`
 ╔════════════════════════════════════════════════════════════════╗
 ║                                                                ║
-║   🚀 SWEEPRO SUBSCRIPTION WORKER                              ║
+║   🚀 Sweepro Subscription Worker                              ║
 ║                                                                ║
 ║   Status: Running 24/7                                        ║
 ║   Queue: subscription-management                              ║

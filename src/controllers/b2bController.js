@@ -208,7 +208,7 @@ async function submitPartnershipRequest(req, res) {
           <!-- Header -->
           <div style="background-color: #1800ad; padding: 25px 20px; text-align: center;">
             <div style="font-size: 28px; font-weight: bold; color: white; margin: 0; letter-spacing: 1px;">
-              SWEEPRO
+              Sweepro
             </div>
           </div>
 
@@ -348,7 +348,7 @@ async function submitPartnershipRequest(req, res) {
           <!-- Header -->
           <div style="background-color: #1800ad; padding: 25px 20px; text-align: center;">
             <div style="font-size: 28px; font-weight: bold; color: white; margin: 0; letter-spacing: 1px;">
-              SWEEPRO
+              Sweepro
             </div>
           </div>
 

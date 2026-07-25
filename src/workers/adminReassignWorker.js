@@ -420,7 +420,7 @@ process.on('SIGINT', shutdown);
 console.log(`
 ╔════════════════════════════════════════════════════════════════╗
 ║                                                                ║
-║   🚀 SWEEPRO ADMIN REASSIGNMENT WORKER                      ║
+║   🚀 Sweepro Admin Reassignment Worker                      ║
 ║                                                                ║
 ║   Status: Running 24/7                                        ║
 ║   Queue: admin-reassignment                                   ║
