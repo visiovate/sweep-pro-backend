@@ -220,6 +220,9 @@ const assignMaidToCustomer = async (req, res) => {
       }
 
       return { assignmentRequest, assignment };
+    }, {
+      maxWait: 5000,
+      timeout: 20000
     });
 
     console.log('✅ Assignment created successfully:', result.assignment.id);
