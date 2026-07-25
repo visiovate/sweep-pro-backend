@@ -571,6 +571,56 @@ class NotificationService {
     }
   }
 
+  // Assignment Notifications
+  async notifyAssignmentRequest(assignmentRequest) {
+    const notification = {
+      type: 'ASSIGNMENT_REQUEST',
+      title: 'New Service Assignment Request',
+      message: `You have a new service assignment request`,
+      data: {
+        assignmentRequestId: assignmentRequest.id,
+        bookingId: assignmentRequest.bookingId,
+        expiresAt: assignmentRequest.expiresAt
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    // Notify maid
+    await this.sendToMaid(assignmentRequest.maidId, notification);
+  }
+
+  async notifyAssignmentAccepted(assignmentRequest) {
+    const notification = {
+      type: 'ASSIGNMENT_ACCEPTED',
+      title: 'Assignment Accepted',
+      message: `Maid has accepted the service assignment`,
+      data: {
+        assignmentRequestId: assignmentRequest.id,
+        bookingId: assignmentRequest.bookingId
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    // Notify admins
+    await this.sendToAdmins(notification);
+  }
+
+  async notifyAssignmentRejected(assignmentRequest) {
+    const notification = {
+      type: 'ASSIGNMENT_REJECTED',
+      title: 'Assignment Rejected',
+      message: `Maid has rejected the service assignment`,
+      data: {
+        assignmentRequestId: assignmentRequest.id,
+        bookingId: assignmentRequest.bookingId
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    // Notify admins
+    await this.sendToAdmins(notification);
+  }
+
   // Additional comprehensive notification methods
   async notifyUserProfileUpdate(user) {
     const notification = {

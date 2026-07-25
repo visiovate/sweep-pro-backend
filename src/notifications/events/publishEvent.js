@@ -1,6 +1,6 @@
 const { getPrismaClient } = require('../../utils/database');
 const { PrismaClient } = require('@prisma/client');
-const simplifiedNotificationService = require('../../services/simplifiedNotificationService');
+const notificationService = require('../../services/notificationService');
 
 // Use singleton pattern to prevent connection pool exhaustion
 let prisma = null;
@@ -59,7 +59,7 @@ async function publishNotificationEvent({
             include: { customer: true, service: true }
           });
           if (booking) {
-            await simplifiedNotificationService.notifyBookingCreated(booking);
+            await notificationService.notifyBookingCreated(booking);
           }
         }
         break;
@@ -72,9 +72,9 @@ async function publishNotificationEvent({
           });
           if (payment) {
             if (payload.status === 'COMPLETED') {
-              await simplifiedNotificationService.notifyPaymentReceived(payment);
+              await notificationService.notifyPaymentReceived(payment);
             } else if (payload.status === 'FAILED') {
-              await simplifiedNotificationService.notifyPaymentFailed(payment);
+              await notificationService.notifyPaymentFailed(payment);
             }
           }
         }
@@ -87,7 +87,7 @@ async function publishNotificationEvent({
             include: { plan: true, customer: { include: { user: true } } }
           });
           if (subscription) {
-            await simplifiedNotificationService.notifySubscriptionCreated(subscription);
+            await notificationService.notifySubscriptionCreated(subscription);
           }
         }
         break;
@@ -99,7 +99,7 @@ async function publishNotificationEvent({
             include: { plan: true, customer: { include: { user: true } } }
           });
           if (subscription) {
-            await simplifiedNotificationService.notifySubscriptionCancelled(subscription, payload.reason || 'User requested');
+            await notificationService.notifySubscriptionCancelled(subscription, payload.reason || 'User requested');
           }
         }
         break;
@@ -111,7 +111,7 @@ async function publishNotificationEvent({
             include: { booking: true }
           });
           if (assignmentRequest) {
-            await simplifiedNotificationService.notifyAssignmentRequest(assignmentRequest);
+            await notificationService.notifyAssignmentRequest(assignmentRequest);
           }
         }
         break;
@@ -122,7 +122,7 @@ async function publishNotificationEvent({
             where: { id: payload.assignmentRequestId }
           });
           if (assignmentRequest) {
-            await simplifiedNotificationService.notifyAssignmentAccepted(assignmentRequest);
+            await notificationService.notifyAssignmentAccepted(assignmentRequest);
           }
         }
         break;
@@ -133,7 +133,7 @@ async function publishNotificationEvent({
             where: { id: payload.assignmentRequestId }
           });
           if (assignmentRequest) {
-            await simplifiedNotificationService.notifyAssignmentRejected(assignmentRequest);
+            await notificationService.notifyAssignmentRejected(assignmentRequest);
           }
         }
         break;
@@ -145,7 +145,7 @@ async function publishNotificationEvent({
             include: { service: true, maid: true, customer: true }
           });
           if (booking) {
-            await simplifiedNotificationService.notifyServiceCompleted(booking);
+            await notificationService.notifyServiceCompleted(booking);
           }
         }
         break;
@@ -156,13 +156,13 @@ async function publishNotificationEvent({
             where: { id: payload.userId }
           });
           if (user) {
-            await simplifiedNotificationService.notifyUserRegistration(user);
+            await notificationService.notifyUserRegistration(user);
           }
         }
         break;
 
       default:
-        console.log(`[publishNotificationEvent] Topic ${topic} not handled by simplified service`);
+        console.log(`[publishNotificationEvent] Topic ${topic} not handled by notification service`);
     }
 
     // Still log to outbox for audit purposes (optional)
