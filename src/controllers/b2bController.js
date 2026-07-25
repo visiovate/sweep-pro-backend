@@ -294,8 +294,11 @@ async function submitPartnershipRequest(req, res) {
             <p style="margin: 0 0 5px 0; color: #666666; font-size: 12px;">
               Submitted: ${new Date().toLocaleString()}
             </p>
-            <p style="margin: 0; color: #999999; font-size: 11px;">
-              Automated message from Sweepro
+            <p style="margin: 0 0 5px 0; color: #999999; font-size: 11px;">
+              Sweepro Cleaning Services
+            </p>
+            <p style="margin: 0; color: #999999; font-size: 10px;">
+              Hyderabad, India | <a href="mailto:sweeproindia@gmail.com" style="color: #999999;">sweeproindia@gmail.com</a>
             </p>
           </div>
         </div>
@@ -401,8 +404,11 @@ async function submitPartnershipRequest(req, res) {
 
           <!-- Footer -->
           <div style="background-color: #f9f9f9; padding: 20px; text-align: center; border-top: 1px solid #e0e0e0;">
-            <p style="margin: 0; color: #999999; font-size: 11px;">
-              Automated message from Sweepro
+            <p style="margin: 0 0 5px 0; color: #999999; font-size: 11px;">
+              Sweepro Cleaning Services
+            </p>
+            <p style="margin: 0; color: #999999; font-size: 10px;">
+              Hyderabad, India | <a href="mailto:sweeproindia@gmail.com" style="color: #999999;">sweeproindia@gmail.com</a>
             </p>
           </div>
         </div>
