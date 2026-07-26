@@ -9,15 +9,15 @@ router.get('/unread', authenticateToken, notificationController.getUnreadNotific
 router.get('/unread/count', authenticateToken, notificationController.getUnreadCount);
 router.get('/types', authenticateToken, notificationController.getNotificationTypes);
 
-// Mark as read
-router.patch('/:id/read', authenticateToken, notificationController.markAsRead);
+// Mark as read (bulk routes first to avoid :id matching)
 router.patch('/read-multiple', authenticateToken, notificationController.markMultipleAsRead);
 router.patch('/read-all', authenticateToken, notificationController.markAllAsRead);
+router.patch('/:id/read', authenticateToken, notificationController.markAsRead);
 
-// Delete notifications
-router.delete('/:id', authenticateToken, notificationController.deleteNotification);
+// Delete notifications (bulk routes first to avoid :id matching)
 router.delete('/bulk/delete', authenticateToken, notificationController.deleteMultipleNotifications);
 router.delete('/bulk/clear-read', authenticateToken, notificationController.clearReadNotifications);
+router.delete('/:id', authenticateToken, notificationController.deleteNotification);
 
 // Admin routes
 router.get('/admin/stats', authenticateToken, authorizeAdmin, notificationController.getNotificationStats);

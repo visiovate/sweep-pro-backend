@@ -249,7 +249,8 @@ class NotificationService {
 
   // Mark notification as read
   async markAsRead(notificationId, userId) {
-    return await getPrismaClient().notification.update({
+    // Use updateMany because Prisma's update() doesn't support compound where clauses
+    const result = await getPrismaClient().notification.updateMany({
       where: {
         id: notificationId,
         userId
@@ -259,6 +260,17 @@ class NotificationService {
         readAt: new Date()
       }
     });
+
+    if (result.count === 0) {
+      throw new Error('Notification not found or you do not have permission to update it');
+    }
+
+    // Return the updated notification
+    const updated = await getPrismaClient().notification.findUnique({
+      where: { id: notificationId }
+    });
+
+    return updated;
   }
 
   // Mark all notifications as read for a user

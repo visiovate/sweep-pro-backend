@@ -111,19 +111,23 @@ const markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
-    
+
+    console.log('[MarkAsRead] Attempting to mark notification as read:', { id, userId });
+
     const notification = await notificationService.markAsRead(id, userId);
-    
+
+    console.log('[MarkAsRead] Notification marked as read successfully:', notification);
+
     res.json({
       success: true,
       data: notification,
       message: 'Notification marked as read'
     });
   } catch (error) {
-    console.error('Error marking notification as read:', error);
-    res.status(500).json({ 
+    console.error('[MarkAsRead] Error marking notification as read:', error);
+    res.status(500).json({
       success: false,
-      error: 'Failed to mark notification as read' 
+      error: error.message || 'Failed to mark notification as read'
     });
   }
 };
@@ -190,20 +194,33 @@ const deleteNotification = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
-    
-    await getPrismaClient().notification.delete({
+
+    console.log('[DeleteNotification] Attempting to delete notification:', { id, userId });
+
+    // Use deleteMany because Prisma's delete() doesn't support compound where clauses
+    const result = await getPrismaClient().notification.deleteMany({
       where: { id, userId }
     });
-    
+
+    console.log('[DeleteNotification] Delete result:', result);
+
+    if (result.count === 0) {
+      console.log('[DeleteNotification] No notification found to delete');
+      return res.status(404).json({
+        success: false,
+        error: 'Notification not found or you do not have permission to delete it'
+      });
+    }
+
     res.json({
       success: true,
       message: 'Notification deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting notification:', error);
-    res.status(500).json({ 
+    console.error('[DeleteNotification] Error deleting notification:', error);
+    res.status(500).json({
       success: false,
-      error: 'Failed to delete notification' 
+      error: 'Failed to delete notification'
     });
   }
 };

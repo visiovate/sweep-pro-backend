@@ -483,6 +483,52 @@ class SimplifiedNotificationService {
     await this.sendToAdmins(notification);
   }
 
+  // Mark notification as read
+  async markAsRead(notificationId, userId) {
+    try {
+      const result = await this.getPrisma().notification.updateMany({
+        where: {
+          id: notificationId,
+          userId
+        },
+        data: {
+          read: true,
+          readAt: new Date()
+        }
+      });
+
+      if (result.count === 0) {
+        throw new Error('Notification not found or you do not have permission to update it');
+      }
+
+      return await this.getPrisma().notification.findUnique({
+        where: { id: notificationId }
+      });
+    } catch (error) {
+      console.error('[SimplifiedNotification] Failed to mark as read:', error.message);
+      throw error;
+    }
+  }
+
+  // Mark all notifications as read for a user
+  async markAllAsRead(userId) {
+    try {
+      return await this.getPrisma().notification.updateMany({
+        where: {
+          userId,
+          read: false
+        },
+        data: {
+          read: true,
+          readAt: new Date()
+        }
+      });
+    } catch (error) {
+      console.error('[SimplifiedNotification] Failed to mark all as read:', error.message);
+      throw error;
+    }
+  }
+
   async notifyServiceCompleted(booking) {
     const notification = {
       type: 'SERVICE_COMPLETED',
