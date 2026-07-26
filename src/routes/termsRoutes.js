@@ -16,9 +16,24 @@ router.get('/', (req, res) => {
     
     const terms = type === 'customer' ? CUSTOMER_TERMS : WORKER_TERMS;
     
+    // Set effective date to current date when terms are requested (when user accepts)
+    const currentDate = new Date();
+    const formattedDate = currentDate.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    
+    // Create a copy of terms with dynamic dates
+    const termsWithDates = {
+      ...terms,
+      effectiveDate: formattedDate,
+      lastUpdated: formattedDate
+    };
+    
     res.status(200).json({
       success: true,
-      data: terms,
+      data: termsWithDates,
       message: 'Terms and Conditions retrieved successfully'
     });
   } catch (error) {

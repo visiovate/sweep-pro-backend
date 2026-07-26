@@ -4,8 +4,8 @@ const CUSTOMER_TERMS = {
   companyName: "SWEEPRO PRIVATE LIMITED",
   registeredOffice: "Hyderabad, Telangana",
   customerSupportEmail: "sweeprocustomerservice@gmail.com",
-  effectiveDate: "January 1, 2025",
-  lastUpdated: "January 1, 2025",
+  effectiveDate: null, // Will be set dynamically when user accepts
+  lastUpdated: null, // Will be set dynamically
   sections: [
     {
       id: "1",
@@ -85,8 +85,8 @@ const WORKER_TERMS = {
   title: "HOME CARE PARTNERS TERMS AND CONDITIONS",
   companyName: "SWEEPRO",
   registeredOffice: "Hyderabad, Telangana",
-  effectiveDate: "January 1, 2025",
-  lastUpdated: "January 1, 2025",
+  effectiveDate: null, // Will be set dynamically when user accepts
+  lastUpdated: null, // Will be set dynamically
   sections: [
     {
       id: "1",
