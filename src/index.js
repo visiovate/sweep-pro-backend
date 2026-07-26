@@ -82,6 +82,9 @@ const notificationCleanupCron = require('./cron/notificationCleanupCron');
 // Initialize notification service with WebSocket server
 notificationService.init(wss);
 
+// Initialize simplified notification service with WebSocket server for real-time broadcasts
+simplifiedNotificationService.init(wss);
+
 // Start notification cleanup cron (runs daily at 2 AM)
 notificationCleanupCron.start();
 

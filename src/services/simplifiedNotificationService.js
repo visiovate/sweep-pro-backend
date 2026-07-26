@@ -16,6 +16,59 @@ class SimplifiedNotificationService {
     };
     // Use single PrismaClient instance to prevent connection pool exhaustion
     this.prisma = null;
+    this.wss = null; // WebSocket server instance
+  }
+
+  /**
+   * Initialize with WebSocket server
+   * @param {WebSocketServer} wss - WebSocket server instance
+   */
+  init(wss) {
+    this.wss = wss;
+    console.log('[SimplifiedNotification] WebSocket server initialized');
+  }
+
+  /**
+   * Broadcast notification to specific user via WebSocket
+   * @param {string} userId - User ID to send notification to
+   * @param {object} notification - Notification object
+   */
+  broadcastToUser(userId, notification) {
+    if (!this.wss) {
+      console.warn('[SimplifiedNotification] WebSocket server not initialized, skipping broadcast');
+      return;
+    }
+
+    try {
+      const notificationData = {
+        type: 'notification',
+        notification: {
+          id: notification.id || null, // Will be null before DB save
+          userId,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          data: notification.data || {},
+          read: false,
+          delivered: true,
+          createdAt: notification.timestamp || new Date().toISOString()
+        }
+      };
+
+      let sentCount = 0;
+      this.wss.clients.forEach((client) => {
+        if (client.readyState === client.OPEN && client.authenticated && client.user?.id === userId) {
+          client.send(JSON.stringify(notificationData));
+          sentCount++;
+        }
+      });
+
+      if (sentCount > 0) {
+        console.log(`[SimplifiedNotification] Broadcasted notification to user ${userId} (${sentCount} connection(s))`);
+      }
+    } catch (error) {
+      console.error('[SimplifiedNotification] Failed to broadcast notification:', error.message);
+    }
   }
 
   /**
@@ -36,6 +89,8 @@ class SimplifiedNotificationService {
   async sendToUser(userId, notification) {
     try {
       await this.saveNotificationToDatabase(userId, notification);
+      // Broadcast via WebSocket after saving to database
+      this.broadcastToUser(userId, notification);
       this.notificationStats.totalSent++;
       return { success: true };
     } catch (error) {
@@ -60,6 +115,8 @@ class SimplifiedNotificationService {
 
       for (const admin of adminUsers) {
         await this.saveNotificationToDatabase(admin.id, notification);
+        // Broadcast to each admin
+        this.broadcastToUser(admin.id, notification);
       }
 
       this.notificationStats.totalSent += adminUsers.length;
@@ -87,6 +144,8 @@ class SimplifiedNotificationService {
 
       for (const maid of maidUsers) {
         await this.saveNotificationToDatabase(maid.id, notification);
+        // Broadcast to each maid
+        this.broadcastToUser(maid.id, notification);
       }
 
       this.notificationStats.totalSent += maidUsers.length;
@@ -109,6 +168,8 @@ class SimplifiedNotificationService {
   async sendToMaid(maidId, notification) {
     try {
       await this.saveNotificationToDatabase(maidId, notification);
+      // Broadcast via WebSocket
+      this.broadcastToUser(maidId, notification);
       this.notificationStats.totalSent++;
       return { success: true };
     } catch (error) {
@@ -133,6 +194,8 @@ class SimplifiedNotificationService {
 
       for (const customer of customers) {
         await this.saveNotificationToDatabase(customer.id, notification);
+        // Broadcast to each customer
+        this.broadcastToUser(customer.id, notification);
       }
 
       this.notificationStats.totalSent += customers.length;
