@@ -240,6 +240,7 @@ const getPublicProfile = async (req, res) => {
  */
 const updateUserProfile = async (req, res) => {
   try {
+    const prisma = getPrismaClient();
     const userId = req.user.id;
     const {
       name,
@@ -260,7 +261,8 @@ const updateUserProfile = async (req, res) => {
       coverImage,
       socialLinks,
       isProfilePublic,
-      languagePreferences
+      languagePreferences,
+      apartment_id
     } = req.body;
 
     // Build update data dynamically
@@ -284,6 +286,7 @@ const updateUserProfile = async (req, res) => {
     if (socialLinks !== undefined) updateData.socialLinks = socialLinks;
     if (isProfilePublic !== undefined) updateData.isProfilePublic = isProfilePublic;
     if (languagePreferences !== undefined) updateData.languagePreferences = languagePreferences;
+    if (apartment_id !== undefined) updateData.apartment_id = apartment_id;
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
@@ -312,6 +315,8 @@ const updateUserProfile = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating profile:', error);
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
     if (error.code === 'P2002') {
       return res.status(400).json({ 
         success: false,
@@ -320,7 +325,8 @@ const updateUserProfile = async (req, res) => {
     }
     res.status(500).json({ 
       success: false,
-      error: 'Error updating profile' 
+      error: 'Error updating profile',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

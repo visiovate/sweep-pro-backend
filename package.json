@@ -61,6 +61,7 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.17.2",
+    "psql": "^0.0.1",
     "razorpay": "^2.9.6",
     "react-toastify": "^11.0.5",
     "resend": "^3.0.0",
