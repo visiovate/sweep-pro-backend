@@ -7,6 +7,9 @@ WORKDIR /app
 # Copy package.json and package-lock.json first (for caching)
 COPY package*.json ./
 
+# Copy prisma schema before npm install so postinstall 'prisma generate' can find it
+COPY prisma ./prisma/
+
 # Install dependencies
 RUN npm install --production
 
@@ -16,8 +19,9 @@ COPY . .
 # Expose your backend port (example: 5000)
 EXPOSE 5000
 
-# Set environment variables (optional)
+# Set environment variables
 ENV NODE_ENV=production
 
 # Command to run your app
-CMD ["node", "server.js"]
+CMD ["node", "src/index.js"]
+
