@@ -442,8 +442,15 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Password confirmation does not match password' });
     }
 
+    if (/[^\x20-\x7E]/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password cannot contain emojis or non-standard characters'
+      });
+    }
+
     // Keep same complexity policy used in registration
-    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&].*$/;
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{}|;:'",.<>\/~\`])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{}|;:'",.<>\/~\`]{8,128}$/;
     if (!strongPasswordRegex.test(newPassword)) {
       return res.status(400).json({
         success: false,
@@ -834,7 +841,14 @@ router.post('/change-password', authenticateToken, async (req, res) => {
       return res.status(400).json({ success: false, message: 'New password confirmation does not match' });
     }
 
-    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&].*$/;
+    if (/[^\x20-\x7E]/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password cannot contain emojis or non-standard characters'
+      });
+    }
+
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{}|;:'",.<>\/~\`])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{}|;:'",.<>\/~\`]{8,128}$/;
     if (!strongPasswordRegex.test(newPassword)) {
       return res.status(400).json({
         success: false,

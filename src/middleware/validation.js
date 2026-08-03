@@ -24,8 +24,16 @@ const registerValidation = [
     .matches(/^[a-zA-Z\s]+$/)
     .withMessage('Name can only contain letters and spaces'),
   body('email')
-    .isEmail()
-    .withMessage('Please provide a valid email address')
+    .trim()
+    .custom((value) => {
+      if (!value) throw new Error('Please provide a valid email address');
+      if (/[^\x20-\x7E]/.test(value)) throw new Error('Email cannot contain emojis or non-standard characters');
+      if (/[`\s]/.test(value)) throw new Error('Email contains invalid characters');
+      if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(value)) {
+        throw new Error('Please provide a valid email address with a valid domain (e.g. user@example.com)');
+      }
+      return true;
+    })
     .normalizeEmail()
     .isLength({ max: 255 })
     .withMessage('Email address is too long'),
@@ -36,10 +44,17 @@ const registerValidation = [
     .isIn(['CUSTOMER', 'MAID'])
     .withMessage('Role must be either CUSTOMER or MAID'),
   body('password')
-    .isLength({ min: 8, max: 128 })
-    .withMessage('Password must be between 8 and 128 characters long')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&].*$/)
-    .withMessage('Password must contain at least one lowercase letter, one uppercase letter, one digit, and one special character'),
+    .custom((value) => {
+      if (!value) throw new Error('Password is required');
+      if (/[^\x20-\x7E]/.test(value)) throw new Error('Password cannot contain emojis or non-standard characters');
+      const len = Array.from(value).length;
+      if (len < 8 || len > 128) throw new Error('Password must be between 8 and 128 characters long');
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{}|;:'",.<>\/~\`])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{}|;:'",.<>\/~\`]{8,128}$/;
+      if (!passwordRegex.test(value)) {
+        throw new Error('Password must contain at least one lowercase letter, one uppercase letter, one digit, and one special character');
+      }
+      return true;
+    }),
   body('confirmPassword')
     .custom((value, { req }) => {
       if (value !== req.body.password) {

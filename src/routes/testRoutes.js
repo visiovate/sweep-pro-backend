@@ -169,7 +169,7 @@ if (isTestEnvironment) {
       }
 
       // Validate email
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      if (!email || /[^\x20-\x7E]/.test(email) || /[`\s]/.test(email) || !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
         validationResults.valid = false;
         validationResults.errors.push('Please provide a valid email address');
       }
@@ -187,11 +187,11 @@ if (isTestEnvironment) {
       }
 
       // Validate password
-      if (!password || password.length < 8) {
+      if (!password || Array.from(password).length < 8 || /[^\x20-\x7E]/.test(password)) {
         validationResults.valid = false;
-        validationResults.errors.push('Password must be at least 8 characters long');
+        validationResults.errors.push('Password must be at least 8 characters long and cannot contain emojis or non-standard characters');
       } else {
-        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&].*$/;
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#^()_+\-=\[\]{}|;:'",.<>\/~\`])[A-Za-z\d@$!%*?&#^()_+\-=\[\]{}|;:'",.<>\/~\`]{8,128}$/;
         if (!passwordRegex.test(password)) {
           validationResults.valid = false;
           validationResults.errors.push('Password must contain at least one lowercase letter, one uppercase letter, one digit, and one special character');
